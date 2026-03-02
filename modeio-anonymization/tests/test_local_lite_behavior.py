@@ -47,6 +47,8 @@ class TestLocalLiteBehavior(unittest.TestCase):
                 phone_items = [item for item in result["items"] if item["type"] == "phone"]
                 self.assertGreaterEqual(len(phone_items), 1)
                 self.assertIn("[PHONE_1]", result["sanitizedText"])
+                for item in result["items"]:
+                    self.assertNotIn("confidence", item)
 
     def test_non_phone_lookalike_is_not_detected_as_phone(self):
         text = "Order number 415-555-12345 should remain unchanged."

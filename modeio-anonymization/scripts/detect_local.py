@@ -356,7 +356,6 @@ def detect_sensitive_local(text: str) -> Dict[str, Any]:
             "label": m["label"],
             "value": m["value"],
             "maskedValue": masked,
-            "confidence": 85,
             "riskLevel": _infer_risk_level(m["type"]),
             "startIndex": m["startIndex"],
             "endIndex": m["endIndex"],

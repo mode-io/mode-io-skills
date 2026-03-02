@@ -18,6 +18,7 @@ description: Runs safety checks for instruction risk including destructive opera
 - `-i, --input`: required, instruction text to evaluate
 - `-c, --context`: optional, execution context
 - `-t, --target`: optional, operation target such as file path, table name, or service name
+- `--json`: output unified JSON contract for machine consumption
 - Script calls the Cloudflare safety endpoint internally: `https://safety-cf.modeio.ai/api/cf/safety`.
 - Override endpoint via `SAFETY_API_URL` environment variable.
 
@@ -27,6 +28,8 @@ python scripts/safety.py -i "Delete all log files"
 python scripts/safety.py -i "Modify database permissions" -c "production" -t "/var/lib/mysql"
 
 python scripts/safety.py -i "$(cat instruction.txt)"
+
+python scripts/safety.py -i "Delete all log files" --json
 ```
 
 ### Output
@@ -39,6 +42,13 @@ python scripts/safety.py -i "$(cat instruction.txt)"
 - `recommendation`: suggested safer action
 - `is_destructive`: whether action is destructive
 - `is_reversible`: whether action is reversible
+
+`--json` output contract:
+
+- `success`: `true`
+- `tool`: `modeio-safety`
+- `mode`: `api`
+- `data`: full backend safety response
 
 ```json
 {
@@ -56,6 +66,12 @@ Failure behavior:
 
 - HTTP/network failure: script exits non-zero and prints URL/status/exception details to `stderr`.
 - API payload with top-level `error`: script exits non-zero and prints the full response JSON to `stderr`.
+- With `--json`, failures are emitted as a unified JSON envelope:
+  - `success: false`
+  - `tool: modeio-safety`
+  - `mode: api`
+  - `error.type`: `validation_error` / `network_error` / `api_error`
+  - `error.message`: failure description
 
 ---
 
