@@ -7,50 +7,69 @@
 </p>
 <h1>Mode IO.AI: Dynamic Privacy & Compliance Protector</h1>
 
-
-
 </div>
 
 <p align="center">
   <a href='https://www.modeio.ai/'>
-  <img src='https://img.shields.io/badge/Web-page-blue'></a>
+  <img src='https://img.shields.io/badge/Website-modeio.ai-blue?logo=google-chrome&logoColor=white'></a>
   <a href='https://github.com/mode-io/mode-io-skills'>
   <img src='https://img.shields.io/badge/GitHub-Code-black?style=flat&logo=github&logoColor=white'></a>
+  <img src='https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white'>
+  <img src='https://img.shields.io/badge/API-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white'>
   <a href="" target='_blank'>
   <img src="https://visitor-badge.laobi.icu/badge?page_id=mode-io.mode-io-skills&left_color=gray&right_color=%2342b983">
   </a>
 </p>
 
-# 😎 About Us
+# About Us
 
-**Mode IO.AI** is your **dynamic privacy and compliance protector**. We provide privacy capabilities for HIPAA, GDPR, and similar compliance scenarios—helping you safely anonymize and redact personally identifiable information (PII) in data processing, cross-border transfers, and AI workflows.
+**Mode IO.AI** is your **dynamic privacy and compliance protector**. We provide privacy capabilities for HIPAA, GDPR, and similar compliance scenarios — helping you safely anonymize and redact personally identifiable information (PII) in data processing, cross-border transfers, and AI workflows.
 
-This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, Cursor, and other AI environments. Through standardized skill descriptions and scripts, AI assistants can automatically call Modeio APIs whenever anonymization, redaction, PII removal, or safety checks are needed. **Every operation performs a real API request** (no caching), so results are auditable and traceable.
+This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, Cursor, and other AI environments. Through standardized skill descriptions and scripts, AI assistants can automatically call Modeio APIs whenever anonymization, redaction, PII removal, or safety checks are needed.
 
-Think of this repo as a lightweight privacy-and-safety layer your AI agent can use by default.
+> [!NOTE]
+> Every operation performs a real API request (no caching), so results are auditable and traceable. Think of this repo as a lightweight privacy-and-safety layer your AI agent can use by default.
 
-- 📦 **Capabilities:** PII detection & anonymization, compliance-ready redaction, instruction safety checks, data protection for cross-border use cases
-- 🤖 **This repo:** Skills and scripts that tell AI agents when and how to call Modeio, so privacy protection and safety checks fit seamlessly into your workflow
+**Why teams like this:**
 
-## ✨ Why teams like this
+- **Fast onboarding** — install only the skill you need
+- **Real checks, not mock logic** — each run calls live APIs for traceable output
+- **Multi-agent friendly** — works across Claude Code, Codex CLI, OpenClaw, OpenCode, and Cursor
 
-- Fast onboarding: install only the skill you need.
-- Real checks, not mock logic: each run calls live APIs for traceable output.
-- Multi-agent friendly: skills work across Claude Code, Codex CLI, OpenClaw, OpenCode, and Cursor.
-
-# 🧰 Skills at a Glance
+# Skills at a Glance
 
 | Skill | Trigger phrases | What it does |
 |---|---|---|
 | `modeio-anonymization` | "anonymize", "redact PII", "mask sensitive data", "scrub credentials", "detect personal data" | Calls the Modeio anonymization API to mask PII in text or JSON. Optional offline regex mode is also available. |
 | `modeio-safety` | "safety check", "risk assessment", "security audit", "destructive check", "instruction audit" | Evaluates instructions for destructive operations, prompt injection, irreversible actions, and compliance violations. |
 
-# 🚀 Quick Start
+### Anonymization levels
 
-## 1) OpenClaw quick start 🦞
+| Feature | `lite` | `dynamic` | `strict` | `crossborder` |
+|---------|:------:|:---------:|:--------:|:-------------:|
+| Regex redaction | x | x | x | x |
+| LLM anonymization | | x | x | x |
+| GDPR compliance | | | x | x |
+| Cross-border legal | | | | x |
+
+### How it works
+
+```mermaid
+flowchart LR
+    A[Your AI Agent] -->|install skill| B(modeio-anonymization)
+    A -->|install skill| C(modeio-safety)
+    B -->|API call| D[safety-cf.modeio.ai]
+    C -->|API call| D
+```
+
+# Quick Start
+
+> [!TIP]
+> This is a central repo with multiple skills. Install only the specific skill you need.
+
+## 1) OpenClaw quick start
 
 - OpenClaw website: https://openclaw.ai
-- This is a central repo with multiple skills, so install only the specific skill you need.
 
 Copy/paste one prompt into your OpenClaw agent:
 
@@ -108,12 +127,10 @@ Anonymize this text before sharing externally: "Name: John Doe, SSN: 123-45-6789
 Run a safety check on this instruction: "Delete all log files in production"
 ```
 
-If installation is correct, the agent should discover and invoke the skills automatically.
-
-Tip: if you get anonymized output and a structured safety risk response, you are fully set up.
+> [!TIP]
+> If you get anonymized output and a structured safety risk response, you are fully set up.
 
 ## 7) Install dependencies (for manual script execution)
-
 
 ```bash
 python -m venv .venv
@@ -123,18 +140,23 @@ python -m pip install -r requirements.txt
 
 Reuse one environment for all AI clients.
 
-# 🛠 Manual API Call (Advanced / Manual Path)
+<details>
+<summary><h1>Manual API Call (Advanced)</h1></summary>
 
-This section is for manual operation only. In normal usage, install the skills and let the agent invoke them automatically.
+> [!WARNING]
+> This section is for manual operation only. In normal usage, install the skills and let the agent invoke them automatically.
 
 ## Run scripts manually
 
 From the repo root:
 
 ```bash
-# Anonymization (API-backed)
+# Anonymization (API-backed, default crossborder level)
 python modeio-anonymization/scripts/anonymize.py --input "Name: John Doe, SSN: 123-45-6789"
 python modeio-anonymization/scripts/anonymize.py --input "$(cat sensitive_data.json)"
+
+# Anonymization with a specific level
+python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com" --level dynamic
 
 # Anonymization (offline / local)
 python modeio-anonymization/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com"
@@ -152,8 +174,4 @@ For full details, see [modeio-anonymization/SKILL.md](modeio-anonymization/SKILL
 - Anonymization API: `https://safety-cf.modeio.ai/api/cf/anonymize`
 - Safety API: `https://safety-cf.modeio.ai/api/cf/safety`
 
-## Endpoint defaults
-
-- Default script endpoints use Cloudflare routes:
-  - `modeio-anonymization/scripts/anonymize.py` -> `https://safety-cf.modeio.ai/api/cf/anonymize`
-  - `modeio-safety/scripts/safety.py` -> `https://safety-cf.modeio.ai/api/cf/safety`
+</details>
