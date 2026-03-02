@@ -25,7 +25,7 @@
 
 **Mode IO.AI** is your **dynamic privacy and compliance protector**. We provide privacy capabilities for HIPAA, GDPR, and similar compliance scenarios—helping you safely anonymize and redact personally identifiable information (PII) in data processing, cross-border transfers, and AI workflows.
 
-This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenCode, Cursor, and other AI environments. Through standardized skill descriptions and scripts, AI assistants can automatically call Modeio APIs whenever anonymization, redaction, PII removal, or safety checks are needed. **Every operation performs a real API request** (no caching), so results are auditable and traceable.
+This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Codex CLI, OpenClaw, Cursor, and other AI environments. Through standardized skill descriptions and scripts, AI assistants can automatically call Modeio APIs whenever anonymization, redaction, PII removal, or safety checks are needed. **Every operation performs a real API request** (no caching), so results are auditable and traceable.
 
 Think of this repo as a lightweight privacy-and-safety layer your AI agent can use by default.
 
@@ -34,9 +34,9 @@ Think of this repo as a lightweight privacy-and-safety layer your AI agent can u
 
 ## ✨ Why teams like this
 
-- Fast onboarding: one install command and skills are ready.
+- Fast onboarding: install only the skill you need.
 - Real checks, not mock logic: each run calls live APIs for traceable output.
-- Multi-agent friendly: one repo works across Claude Code, Codex CLI, OpenCode, and Cursor.
+- Multi-agent friendly: skills work across Codex CLI, OpenClaw, and Cursor.
 
 # 🧰 Skills at a Glance
 
@@ -47,58 +47,66 @@ Think of this repo as a lightweight privacy-and-safety layer your AI agent can u
 
 # 🚀 Quick Start
 
-## 1) Install for AI Agents (recommended)
+## 1) OpenClaw quick start 🦞 (recommended)
 
-**Option A — `skills` CLI (ecosystem standard)**
+- OpenClaw website: https://openclaw.ai
+- This is a central repo with multiple skills, so install only the specific skill you need.
 
-Start here for the smoothest setup:
+Copy/paste one prompt below into your OpenClaw agent.
 
-```bash
-npx skills add mode-io/mode-io-skills
+**Prompt A — install `modeio-anonymization` only**
+
+```text
+Install one skill for me from the Mode IO central skills repo.
+
+Skill name: modeio-anonymization
+Do NOT clone the full repo.
+Install only these files into a `modeio-anonymization` skill folder:
+- https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/SKILL.md
+- https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/anonymize.py
+- https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/detect_local.py
+
+After install, run a smoke test with:
+Name: John Doe, SSN: 123-45-6789
+Then show me the result.
 ```
 
-Target a specific client if needed:
+**Prompt B — install `modeio-safety` only**
 
-```bash
-npx skills add mode-io/mode-io-skills -a claude-code
-npx skills add mode-io/mode-io-skills -a codex
-npx skills add mode-io/mode-io-skills -a opencode
-npx skills add mode-io/mode-io-skills -a cursor
+```text
+Install one skill for me from the Mode IO central skills repo.
+
+Skill name: modeio-safety
+Do NOT clone the full repo.
+Install only these files into a `modeio-safety` skill folder:
+- https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/SKILL.md
+- https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/scripts/safety.py
+
+After install, run a smoke test with:
+Delete all log files in production
+Then show me the safety assessment JSON.
 ```
 
-**Option B — alternative installer**
+## 2) Manual per-skill install (fallback)
+
+If you prefer manual install, place each skill in its own folder (`modeio-anonymization` or `modeio-safety`) under your client's skills directory.
+
+Base directory mapping:
+- Codex CLI: `~/.agents/skills`
+- Cursor: `~/.cursor/skills`
+- OpenClaw: your OpenClaw-configured skills directory
+
+Example for Codex CLI:
 
 ```bash
-npx ai-agent-skills install mode-io/mode-io-skills
-```
+mkdir -p ~/.agents/skills/modeio-anonymization/scripts
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/SKILL.md -o ~/.agents/skills/modeio-anonymization/SKILL.md
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/anonymize.py -o ~/.agents/skills/modeio-anonymization/scripts/anonymize.py
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/detect_local.py -o ~/.agents/skills/modeio-anonymization/scripts/detect_local.py
 
----
-
-## 2) Manual install paths (fallback)
-
-If you prefer manual installation, use these skill directories.
-
-| Client | Project-level path | Global path |
-|---|---|---|
-| Claude Code ("cloud code") | `.claude/skills/mode-io-skills` | `~/.claude/skills/mode-io-skills` |
-| Codex CLI | `.agents/skills/mode-io-skills` | `~/.agents/skills/mode-io-skills` |
-| OpenCode | `.agents/skills/mode-io-skills` or `.opencode/skills/mode-io-skills` | `~/.config/opencode/skills/mode-io-skills` |
-| Cursor | `.agents/skills/mode-io-skills` or `.cursor/skills/mode-io-skills` | `~/.cursor/skills/mode-io-skills` |
-
-Example (global install, pick the client you use):
-
-```bash
-# Claude Code
-git clone https://github.com/mode-io/mode-io-skills.git ~/.claude/skills/mode-io-skills
-
-# Codex CLI
-git clone https://github.com/mode-io/mode-io-skills.git ~/.agents/skills/mode-io-skills
-
-# OpenCode
-git clone https://github.com/mode-io/mode-io-skills.git ~/.config/opencode/skills/mode-io-skills
-
-# Cursor
-git clone https://github.com/mode-io/mode-io-skills.git ~/.cursor/skills/mode-io-skills
+mkdir -p ~/.agents/skills/modeio-safety/scripts
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/SKILL.md -o ~/.agents/skills/modeio-safety/SKILL.md
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/scripts/safety.py -o ~/.agents/skills/modeio-safety/scripts/safety.py
 ```
 
 ## 3) Verify in 30 seconds
@@ -162,4 +170,3 @@ For full details, see [modeio-anonymization/SKILL.md](modeio-anonymization/SKILL
 - Default script endpoints use Cloudflare routes:
   - `modeio-anonymization/scripts/anonymize.py` -> `https://safety-cf.modeio.ai/api/cf/anonymize`
   - `modeio-safety/scripts/safety.py` -> `https://safety-cf.modeio.ai/api/cf/safety`
-- `modeio-safety/scripts/safety.py` still supports override via `SAFETY_API_URL`.
