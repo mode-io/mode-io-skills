@@ -14,13 +14,19 @@ description: Runs PII anonymization checks for text or JSON. Supports server-sid
 
 ### Primary mode: `scripts/anonymize.py`
 
-- `-i, --input`: content to anonymize
-- Script calls the Cloudflare anonymization endpoint internally: `https://safety-cf.modeio.ai/api/cf/anonymize`.
+- `-i, --input`: required, content to anonymize
+- `--level`: anonymization level (`lite`, `dynamic`, `strict`, `crossborder`; default: `crossborder`)
+- `--input-type`: content type (`text`, `file`; default: `text`)
+- `--sender-code`: sender jurisdiction code, required for `crossborder` level (default: `CN SHA`)
+- `--recipient-code`: recipient jurisdiction code, required for `crossborder` level (default: `US NYC`)
+- Script calls `https://safety-cf.modeio.ai/api/cf/anonymize` by default. Override via `ANONYMIZE_API_URL` environment variable.
 
 ```bash
 python scripts/anonymize.py --input "Name: Jack, ID number: 110101199001011234"
 
 python scripts/anonymize.py --input "$(cat sensitive_data.json)"
+
+python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic
 ```
 
 ### Output
@@ -61,8 +67,3 @@ python scripts/detect_local.py --input "Name: Alice Wang, phone 415-555-1234" --
 
 - `scripts/anonymize.py`: default script, calls `https://safety-cf.modeio.ai/api/cf/anonymize`
 - `scripts/detect_local.py`: offline regex detection
-
-## Migration context
-
-- Script default endpoint is `https://safety-cf.modeio.ai/api/cf/anonymize`.
-- Anonymization skill traffic is aligned with the Cloudflare rollout.

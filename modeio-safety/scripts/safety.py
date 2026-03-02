@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Modeio AI 安全检测脚本：调用 modeioAI_safety_backend 对指令进行安全分析。
-侧重破坏性、安全风险、可逆性等维度的检测。
+Modeio AI Safety Skill - instruction risk analysis.
+Evaluates instructions for destructive operations, prompt injection,
+irreversible actions, and compliance violations via the Modeio safety API.
 """
 
 import argparse
@@ -11,14 +12,14 @@ import sys
 
 import requests
 
-# 后端 API URL，可通过环境变量 SAFETY_API_URL 覆盖
+# Backend API URL, overridable via SAFETY_API_URL environment variable
 URL = os.environ.get("SAFETY_API_URL", "https://safety-cf.modeio.ai/api/cf/safety")
 
 
 def detect_safety(instruction: str, context: str = None, target: str = None) -> dict:
     """
-    调用 modeioAI_safety_backend，返回完整响应 JSON。
-    包含 approved、risk_level、risk_types、concerns、recommendation 等。
+    Call the Modeio safety backend and return the full response JSON.
+    Response includes: approved, risk_level, risk_types, concerns, recommendation, etc.
     """
     payload = {"instruction": instruction}
     if context:
@@ -32,17 +33,17 @@ def detect_safety(instruction: str, context: str = None, target: str = None) -> 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="使用 modeioAI_safety_backend 对指令进行安全检测（破坏性、风险等级、可逆性等）"
+        description="Evaluate instructions for safety risks (destructive ops, risk level, reversibility, etc.)"
     )
-    parser.add_argument("-i", "--input", type=str, required=True, help="待检测的指令或操作描述")
-    parser.add_argument("-c", "--context", type=str, default=None, help="执行上下文（可选）")
-    parser.add_argument("-t", "--target", type=str, default=None, help="操作目标，如文件路径（可选）")
+    parser.add_argument("-i", "--input", type=str, required=True, help="Instruction or operation description to evaluate")
+    parser.add_argument("-c", "--context", type=str, default=None, help="Execution context (optional)")
+    parser.add_argument("-t", "--target", type=str, default=None, help="Operation target such as file path, table name, or service (optional)")
     args = parser.parse_args()
 
     raw_input = args.input
 
     if not raw_input or not raw_input.strip():
-        print("Error: 输入为空", file=sys.stderr)
+        print("Error: --input must not be empty.", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -52,7 +53,12 @@ def main():
             target=args.target,
         )
     except requests.RequestException as e:
-        print(f"Error: API 请求失败: {e}", file=sys.stderr)
+        response = getattr(e, "response", None)
+        status_code = getattr(response, "status_code", None)
+        print(f"Error: safety request failed. url={URL}", file=sys.stderr)
+        if status_code is not None:
+            print(f"Error: status_code={status_code}", file=sys.stderr)
+        print(f"Error: exception={type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(1)
 
     if result.get("error"):
@@ -60,11 +66,8 @@ def main():
         print(json.dumps(result, indent=2, ensure_ascii=False), file=sys.stderr)
         sys.exit(1)
 
-    # 兼容旧格式：success=True, data=完整结果
-    output = {"success": True, "data": result}
-
     print("Status: success", file=sys.stderr)
-    print(json.dumps(output["data"], indent=2, ensure_ascii=False))
+    print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

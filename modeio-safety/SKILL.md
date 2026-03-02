@@ -48,8 +48,4 @@ python scripts/safety.py -i "$(cat instruction.txt)"
 ## Resources
 
 - `scripts/safety.py`: runs real-time safety checks via `https://safety-cf.modeio.ai/api/cf/safety`
-
-## Migration context
-
-- Script default endpoint is `https://safety-cf.modeio.ai/api/cf/safety`.
-- Runtime override remains available via `SAFETY_API_URL`.
+- Override endpoint via `SAFETY_API_URL` environment variable.
