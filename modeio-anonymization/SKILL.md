@@ -1,0 +1,68 @@
+---
+name: modeio-anonymization
+description: Runs PII anonymization checks for text or JSON. Supports server-side masking and offline regex detection. Use when asked to anonymize data, redact PII, mask sensitive information, detect personal data, check for sensitive content, scrub credentials, or run Modeio anonymization.
+---
+
+# Run anonymization checks for text and JSON
+
+## Execution policy
+
+1. Default: run `scripts/anonymize.py`.
+2. Use `scripts/detect_local.py` only if the user explicitly asks for offline, no-network, or local-only detection.
+
+## Script commands
+
+### Primary mode: `scripts/anonymize.py`
+
+- `-i, --input`: content to anonymize
+- Script calls the Cloudflare anonymization endpoint internally: `https://safety-cf.modeio.ai/api/cf/anonymize`.
+
+```bash
+python scripts/anonymize.py --input "Name: Jack, ID number: 110101199001011234"
+
+python scripts/anonymize.py --input "$(cat sensitive_data.json)"
+```
+
+### Output
+
+- `data.anonymizedContent`: anonymized content string
+- `data.hasPII`: whether sensitive data was detected
+- Optional fields include mapping and analysis metadata
+
+### Offline mode: `scripts/detect_local.py`
+
+Use only when user explicitly asks for offline or local detection.
+
+- `-i, --input`: content to scan
+- `--json`: output full detection details instead of masked text only
+- No network call is made.
+
+```bash
+python scripts/detect_local.py --input "Phone 13812345678 Email test@example.com"
+
+python scripts/detect_local.py --input "Name: Alice Wang, phone 415-555-1234" --json
+```
+
+### Output
+
+- `sanitizedText`: masked text
+- `items`: detected entities
+- `riskScore`: 0-100
+- `riskLevel`: `low` / `medium` / `high`
+
+---
+
+## When NOT to use
+
+- For command safety or destructive-operation analysis; use `modeio-safety` instead.
+- For pure policy or legal discussion when no text needs anonymization.
+
+## Resources
+
+- `scripts/anonymize.py`: default script, calls `https://safety-cf.modeio.ai/api/cf/anonymize`
+- `scripts/detect_local.py`: offline regex detection
+
+## Migration context
+
+- Script default endpoint is `https://safety-cf.modeio.ai/api/cf/anonymize`.
+- Anonymization skill traffic is aligned with the Cloudflare rollout.

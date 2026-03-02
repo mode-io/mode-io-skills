@@ -12,7 +12,7 @@ import sys
 import requests
 
 # 后端 API URL，可通过环境变量 SAFETY_API_URL 覆盖
-URL = os.environ.get("SAFETY_API_URL", "https://safety.modeio.ai/api/safety")
+URL = os.environ.get("SAFETY_API_URL", "https://safety-cf.modeio.ai/api/cf/safety")
 
 
 def detect_safety(instruction: str, context: str = None, target: str = None) -> dict:
