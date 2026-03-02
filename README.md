@@ -47,7 +47,7 @@ Think of this repo as a lightweight privacy-and-safety layer your AI agent can u
 
 # 🚀 Quick Start
 
-## 1) OpenClaw quick start 🦞 (recommended)
+## 1) OpenClaw quick start 🦞
 
 - OpenClaw website: https://openclaw.ai
 - This is a central repo with multiple skills, so install only the specific skill you need.
@@ -68,28 +68,28 @@ https://github.com/mode-io/mode-io-skills/tree/main/modeio-safety
 
 For CLI installs below, add `-g` for global (user-level) install.
 
-## 2) Install for Claude Code (per skill)
+## 2) Install for Claude Code
 
 ```bash
 npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent claude-code --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-safety --agent claude-code --yes --copy
 ```
 
-## 3) Install for Codex CLI (per skill)
+## 3) Install for Codex CLI
 
 ```bash
 npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent codex --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-safety --agent codex --yes --copy
 ```
 
-## 4) Install for OpenCode (per skill)
+## 4) Install for OpenCode
 
 ```bash
 npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent opencode --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-safety --agent opencode --yes --copy
 ```
 
-## 5) Install for Cursor (per skill)
+## 5) Install for Cursor
 
 ```bash
 npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent cursor --yes --copy
