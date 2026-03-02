@@ -21,7 +21,7 @@
   </a>
 </p>
 
-# About Us
+# 😎 About Us
 
 **Mode IO.AI** is your **dynamic privacy and compliance protector**. We provide privacy capabilities for HIPAA, GDPR, and similar compliance scenarios — helping you safely anonymize and redact personally identifiable information (PII) in data processing, cross-border transfers, and AI workflows.
 
@@ -30,44 +30,39 @@ This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claud
 > [!NOTE]
 > Every operation performs a real API request (no caching), so results are auditable and traceable. Think of this repo as a lightweight privacy-and-safety layer your AI agent can use by default.
 
-**Why teams like this:**
+## ✨ Why teams like this
 
 - **Fast onboarding** — install only the skill you need
 - **Real checks, not mock logic** — each run calls live APIs for traceable output
 - **Multi-agent friendly** — works across Claude Code, Codex CLI, OpenClaw, OpenCode, and Cursor
 
-# Skills at a Glance
+# 🧰 Skills
 
-| Skill | Trigger phrases | What it does |
-|---|---|---|
-| `modeio-anonymization` | "anonymize", "redact PII", "mask sensitive data", "scrub credentials", "detect personal data" | Calls the Modeio anonymization API to mask PII in text or JSON. Optional offline regex mode is also available. |
-| `modeio-safety` | "safety check", "risk assessment", "security audit", "destructive check", "instruction audit" | Evaluates instructions for destructive operations, prompt injection, irreversible actions, and compliance violations. |
+**`modeio-anonymization`** — Masks PII in text or JSON via the Modeio anonymization API. Also supports offline regex detection.
 
-### Anonymization levels
+> Trigger phrases: *"anonymize", "redact PII", "mask sensitive data", "scrub credentials", "detect personal data"*
 
-| Feature | `lite` | `dynamic` | `strict` | `crossborder` |
-|---------|:------:|:---------:|:--------:|:-------------:|
-| Regex redaction | x | x | x | x |
-| LLM anonymization | | x | x | x |
-| GDPR compliance | | | x | x |
-| Cross-border legal | | | | x |
+**`modeio-safety`** — Evaluates instructions for destructive operations, prompt injection, irreversible actions, and compliance violations.
 
-### How it works
+> Trigger phrases: *"safety check", "risk assessment", "security audit", "destructive check", "instruction audit"*
 
-```mermaid
-flowchart LR
-    A[Your AI Agent] -->|install skill| B(modeio-anonymization)
-    A -->|install skill| C(modeio-safety)
-    B -->|API call| D[safety-cf.modeio.ai]
-    C -->|API call| D
-```
+## 🔬 Anonymization Levels
 
-# Quick Start
+Each level uses a **different strategy** (not additive layers):
+
+| Level | Strategy | What it does |
+|-------|----------|-------------|
+| `lite` | Local regex | Fast pattern-based redaction (emails, phones, SSNs, credit cards, API keys, etc.). No LLM call. |
+| `dynamic` | LLM | Context-aware semantic anonymization. Detects direct + inferrable PII. |
+| `strict` | LLM + compliance | Same as `dynamic`, plus a parallel GDPR compliance analysis. |
+| `crossborder` | LLM + compliance + legal | Same as `strict`, plus a cross-border data transfer legal analysis. Requires sender/recipient jurisdiction codes. |
+
+# 🚀 Quick Start
 
 > [!TIP]
 > This is a central repo with multiple skills. Install only the specific skill you need.
 
-## 1) OpenClaw quick start
+## 1) OpenClaw quick start 🦞
 
 - OpenClaw website: https://openclaw.ai
 
@@ -115,7 +110,7 @@ npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent curso
 npx skills add mode-io/mode-io-skills --skill modeio-safety --agent cursor --yes --copy
 ```
 
-## 6) Verify in 30 seconds
+## 6) Verify in 30 seconds ✅
 
 After installing, ask your agent:
 
@@ -130,7 +125,7 @@ Run a safety check on this instruction: "Delete all log files in production"
 > [!TIP]
 > If you get anonymized output and a structured safety risk response, you are fully set up.
 
-## 7) Install dependencies (for manual script execution)
+## 7) Install dependencies (for manual script execution) 📦
 
 ```bash
 python -m venv .venv
@@ -141,7 +136,7 @@ python -m pip install -r requirements.txt
 Reuse one environment for all AI clients.
 
 <details>
-<summary><h1>Manual API Call (Advanced)</h1></summary>
+<summary><h1>🛠 Manual API Call (Advanced)</h1></summary>
 
 > [!WARNING]
 > This section is for manual operation only. In normal usage, install the skills and let the agent invoke them automatically.
@@ -168,7 +163,7 @@ python modeio-safety/scripts/safety.py -i "Modify database permissions" -c "prod
 
 For full details, see [modeio-anonymization/SKILL.md](modeio-anonymization/SKILL.md) and [modeio-safety/SKILL.md](modeio-safety/SKILL.md).
 
-## Links
+## 🔗 Links
 
 - Website: [modeio.ai](https://www.modeio.ai/)
 - Anonymization API: `https://safety-cf.modeio.ai/api/cf/anonymize`
