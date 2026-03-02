@@ -25,7 +25,7 @@
 
 **Mode IO.AI** is your **dynamic privacy and compliance protector**. We provide privacy capabilities for HIPAA, GDPR, and similar compliance scenarios—helping you safely anonymize and redact personally identifiable information (PII) in data processing, cross-border transfers, and AI workflows.
 
-This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Codex CLI, OpenClaw, Cursor, and other AI environments. Through standardized skill descriptions and scripts, AI assistants can automatically call Modeio APIs whenever anonymization, redaction, PII removal, or safety checks are needed. **Every operation performs a real API request** (no caching), so results are auditable and traceable.
+This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, Cursor, and other AI environments. Through standardized skill descriptions and scripts, AI assistants can automatically call Modeio APIs whenever anonymization, redaction, PII removal, or safety checks are needed. **Every operation performs a real API request** (no caching), so results are auditable and traceable.
 
 Think of this repo as a lightweight privacy-and-safety layer your AI agent can use by default.
 
@@ -36,7 +36,7 @@ Think of this repo as a lightweight privacy-and-safety layer your AI agent can u
 
 - Fast onboarding: install only the skill you need.
 - Real checks, not mock logic: each run calls live APIs for traceable output.
-- Multi-agent friendly: skills work across Codex CLI, OpenClaw, and Cursor.
+- Multi-agent friendly: skills work across Claude Code, Codex CLI, OpenClaw, OpenCode, and Cursor.
 
 # 🧰 Skills at a Glance
 
@@ -52,64 +52,81 @@ Think of this repo as a lightweight privacy-and-safety layer your AI agent can u
 - OpenClaw website: https://openclaw.ai
 - This is a central repo with multiple skills, so install only the specific skill you need.
 
-Copy/paste one prompt below into your OpenClaw agent.
-
-**Prompt A — install `modeio-anonymization` only**
+Copy/paste one prompt into your OpenClaw agent:
 
 ```text
-Install one skill for me from the Mode IO central skills repo.
-
-Skill name: modeio-anonymization
-Do NOT clone the full repo.
-Install only these files into a `modeio-anonymization` skill folder:
-- https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/SKILL.md
-- https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/anonymize.py
-- https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/detect_local.py
-
-After install, run a smoke test with:
-Name: John Doe, SSN: 123-45-6789
-Then show me the result.
+Install this skill:
+https://github.com/mode-io/mode-io-skills/tree/main/modeio-anonymization
 ```
 
-**Prompt B — install `modeio-safety` only**
+or
 
 ```text
-Install one skill for me from the Mode IO central skills repo.
-
-Skill name: modeio-safety
-Do NOT clone the full repo.
-Install only these files into a `modeio-safety` skill folder:
-- https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/SKILL.md
-- https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/scripts/safety.py
-
-After install, run a smoke test with:
-Delete all log files in production
-Then show me the safety assessment JSON.
+Install this skill:
+https://github.com/mode-io/mode-io-skills/tree/main/modeio-safety
 ```
 
-## 2) Manual per-skill install (fallback)
-
-If you prefer manual install, place each skill in its own folder (`modeio-anonymization` or `modeio-safety`) under your client's skills directory.
-
-Base directory mapping:
-- Codex CLI: `~/.agents/skills`
-- Cursor: `~/.cursor/skills`
-- OpenClaw: your OpenClaw-configured skills directory
-
-Example for Codex CLI:
+## 2) Install for Claude Code (per skill)
 
 ```bash
-mkdir -p ~/.agents/skills/modeio-anonymization/scripts
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/SKILL.md -o ~/.agents/skills/modeio-anonymization/SKILL.md
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/anonymize.py -o ~/.agents/skills/modeio-anonymization/scripts/anonymize.py
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/detect_local.py -o ~/.agents/skills/modeio-anonymization/scripts/detect_local.py
+ROOT=~/.claude/skills
 
-mkdir -p ~/.agents/skills/modeio-safety/scripts
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/SKILL.md -o ~/.agents/skills/modeio-safety/SKILL.md
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/scripts/safety.py -o ~/.agents/skills/modeio-safety/scripts/safety.py
+mkdir -p "$ROOT/modeio-anonymization/scripts"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/SKILL.md -o "$ROOT/modeio-anonymization/SKILL.md"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/anonymize.py -o "$ROOT/modeio-anonymization/scripts/anonymize.py"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/detect_local.py -o "$ROOT/modeio-anonymization/scripts/detect_local.py"
+
+mkdir -p "$ROOT/modeio-safety/scripts"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/SKILL.md -o "$ROOT/modeio-safety/SKILL.md"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/scripts/safety.py -o "$ROOT/modeio-safety/scripts/safety.py"
 ```
 
-## 3) Verify in 30 seconds
+## 3) Install for Codex CLI (per skill)
+
+```bash
+ROOT=~/.agents/skills
+
+mkdir -p "$ROOT/modeio-anonymization/scripts"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/SKILL.md -o "$ROOT/modeio-anonymization/SKILL.md"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/anonymize.py -o "$ROOT/modeio-anonymization/scripts/anonymize.py"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/detect_local.py -o "$ROOT/modeio-anonymization/scripts/detect_local.py"
+
+mkdir -p "$ROOT/modeio-safety/scripts"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/SKILL.md -o "$ROOT/modeio-safety/SKILL.md"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/scripts/safety.py -o "$ROOT/modeio-safety/scripts/safety.py"
+```
+
+## 4) Install for OpenCode (per skill)
+
+```bash
+ROOT=~/.config/opencode/skills
+
+mkdir -p "$ROOT/modeio-anonymization/scripts"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/SKILL.md -o "$ROOT/modeio-anonymization/SKILL.md"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/anonymize.py -o "$ROOT/modeio-anonymization/scripts/anonymize.py"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/detect_local.py -o "$ROOT/modeio-anonymization/scripts/detect_local.py"
+
+mkdir -p "$ROOT/modeio-safety/scripts"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/SKILL.md -o "$ROOT/modeio-safety/SKILL.md"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/scripts/safety.py -o "$ROOT/modeio-safety/scripts/safety.py"
+```
+
+## 5) Install for Cursor (per skill)
+
+```bash
+ROOT=~/.cursor/skills
+
+mkdir -p "$ROOT/modeio-anonymization/scripts"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/SKILL.md -o "$ROOT/modeio-anonymization/SKILL.md"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/anonymize.py -o "$ROOT/modeio-anonymization/scripts/anonymize.py"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/detect_local.py -o "$ROOT/modeio-anonymization/scripts/detect_local.py"
+
+mkdir -p "$ROOT/modeio-safety/scripts"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/SKILL.md -o "$ROOT/modeio-safety/SKILL.md"
+curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/scripts/safety.py -o "$ROOT/modeio-safety/scripts/safety.py"
+```
+
+## 6) Verify in 30 seconds
 
 After installing, ask your agent:
 
@@ -125,7 +142,7 @@ If installation is correct, the agent should discover and invoke the skills auto
 
 Tip: if you get anonymized output and a structured safety risk response, you are fully set up.
 
-## 4) Install dependencies (for manual script execution)
+## 7) Install dependencies (for manual script execution)
 
 
 ```bash
