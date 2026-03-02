@@ -19,6 +19,7 @@ description: Runs safety checks for instruction risk including destructive opera
 - `-c, --context`: optional, execution context
 - `-t, --target`: optional, operation target such as file path, table name, or service name
 - Script calls the Cloudflare safety endpoint internally: `https://safety-cf.modeio.ai/api/cf/safety`.
+- Override endpoint via `SAFETY_API_URL` environment variable.
 
 ```bash
 python scripts/safety.py -i "Delete all log files"
@@ -30,6 +31,7 @@ python scripts/safety.py -i "$(cat instruction.txt)"
 
 ### Output
 
+- Successful checks return JSON on `stdout` and print `Status: success` to `stderr`.
 - `approved`: whether execution is recommended
 - `risk_level`: `low` / `medium` / `high` / `critical`
 - `risk_types`: categories of identified risk
@@ -37,6 +39,23 @@ python scripts/safety.py -i "$(cat instruction.txt)"
 - `recommendation`: suggested safer action
 - `is_destructive`: whether action is destructive
 - `is_reversible`: whether action is reversible
+
+```json
+{
+  "approved": false,
+  "risk_level": "critical",
+  "risk_types": ["data loss"],
+  "concerns": ["Irreversible destructive operation"],
+  "recommendation": "Use backup and staged rollback first",
+  "is_destructive": true,
+  "is_reversible": false
+}
+```
+
+Failure behavior:
+
+- HTTP/network failure: script exits non-zero and prints URL/status/exception details to `stderr`.
+- API payload with top-level `error`: script exits non-zero and prints the full response JSON to `stderr`.
 
 ---
 
@@ -48,4 +67,4 @@ python scripts/safety.py -i "$(cat instruction.txt)"
 ## Resources
 
 - `scripts/safety.py`: runs real-time safety checks via `https://safety-cf.modeio.ai/api/cf/safety`
-- Override endpoint via `SAFETY_API_URL` environment variable.
+- `SAFETY_API_URL`: optional environment override for custom endpoint routing.

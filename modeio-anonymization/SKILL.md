@@ -31,9 +31,25 @@ python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic
 
 ### Output
 
+- Successful responses include top-level `success: true` and a `data` object.
 - `data.anonymizedContent`: anonymized content string
 - `data.hasPII`: whether sensitive data was detected
-- Optional fields include mapping and analysis metadata
+- Optional `data` fields can include mapping and analysis metadata.
+
+```json
+{
+  "success": true,
+  "data": {
+    "anonymizedContent": "Name: [REDACTED_NAME_1]",
+    "hasPII": true
+  }
+}
+```
+
+Failure behavior:
+
+- HTTP/network failure: script exits non-zero and prints URL/status/exception details to `stderr`.
+- API semantic failure (`success: false`): script prints full response JSON to `stderr` and exits non-zero.
 
 ### Offline mode: `scripts/detect_local.py`
 
@@ -51,10 +67,31 @@ python scripts/detect_local.py --input "Name: Alice Wang, phone 415-555-1234" --
 
 ### Output
 
+- Default mode prints masked text to `stdout` and summary information to `stderr`.
+- `--json` prints full structured output.
 - `sanitizedText`: masked text
 - `items`: detected entities
 - `riskScore`: 0-100
 - `riskLevel`: `low` / `medium` / `high`
+
+```json
+{
+  "originalText": "Phone 13812345678 Email test@example.com",
+  "sanitizedText": "Phone [PHONE_1] Email [EMAIL_1]",
+  "items": [
+    {
+      "id": "1",
+      "type": "phone"
+    },
+    {
+      "id": "2",
+      "type": "email"
+    }
+  ],
+  "riskScore": 46,
+  "riskLevel": "medium"
+}
+```
 
 ---
 
