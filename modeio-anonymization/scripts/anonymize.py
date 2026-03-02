@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Modeio AI Anonymization Skill - API-backed PII anonymization.
-Calls the Modeio anonymization endpoint to mask PII in text or JSON.
+Modeio AI Anonymization Skill.
+
+- `lite` level runs local regex anonymization (no network call).
+- Other levels call the Modeio anonymization API.
 """
 
 import argparse
@@ -10,6 +12,8 @@ import os
 import sys
 
 import requests
+
+from detect_local import detect_sensitive_local
 
 # Backend API URL, overridable via ANONYMIZE_API_URL environment variable
 URL = os.environ.get("ANONYMIZE_API_URL", "https://safety-cf.modeio.ai/api/cf/anonymize")
@@ -27,6 +31,18 @@ def anonymize(
     sender_code: str = None,
     recipient_code: str = None,
 ) -> dict:
+    if level == "lite":
+        local_result = detect_sensitive_local(raw_input)
+        return {
+            "success": True,
+            "data": {
+                "anonymizedContent": local_result.get("sanitizedText", ""),
+                "hasPII": bool(local_result.get("items")),
+                "mode": "local-regex",
+                "localDetection": local_result,
+            },
+        }
+
     payload = {
         "input": raw_input,
         "inputType": input_type,
@@ -43,7 +59,7 @@ def anonymize(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Anonymize text or JSON via the Modeio anonymization API."
+        description="Anonymize text or JSON. `lite` runs locally; other levels call the Modeio API."
     )
     parser.add_argument(
         "-i", "--input",
@@ -56,7 +72,7 @@ def main():
         type=str,
         default="crossborder",
         choices=VALID_LEVELS,
-        help="Anonymization level (default: crossborder).",
+        help="Anonymization level (default: crossborder). `lite` runs local regex with no network call.",
     )
     parser.add_argument(
         "--input-type",
@@ -117,6 +133,8 @@ def main():
 
 
     print("Status: success", file=sys.stderr)
+    if data.get("mode") == "local-regex":
+        print("mode: local-regex", file=sys.stderr)
     print("hasPII:", has_pii, file=sys.stderr)
     print(anonymized)
 

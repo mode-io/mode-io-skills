@@ -1,6 +1,6 @@
 ---
 name: modeio-anonymization
-description: Runs PII anonymization checks for text or JSON. Supports server-side masking and offline regex detection. Use when asked to anonymize data, redact PII, mask sensitive information, detect personal data, check for sensitive content, scrub credentials, or run Modeio anonymization.
+description: Runs PII anonymization checks for text or JSON. Supports local regex masking in lite mode and server-side analysis in dynamic/strict/crossborder modes. Use when asked to anonymize data, redact PII, mask sensitive information, detect personal data, check for sensitive content, scrub credentials, or run Modeio anonymization.
 ---
 
 # Run anonymization checks for text and JSON
@@ -8,7 +8,8 @@ description: Runs PII anonymization checks for text or JSON. Supports server-sid
 ## Execution policy
 
 1. Default: run `scripts/anonymize.py`.
-2. Use `scripts/detect_local.py` only if the user explicitly asks for offline, no-network, or local-only detection.
+2. For offline/no-network requests, use `scripts/anonymize.py --level lite` (local regex mode).
+3. Use `scripts/detect_local.py` only when the user explicitly wants detailed local detection output (`items`, `riskScore`, `riskLevel`) or local JSON-first diagnostics.
 
 ## Script commands
 
@@ -19,7 +20,8 @@ description: Runs PII anonymization checks for text or JSON. Supports server-sid
 - `--input-type`: content type (`text`, `file`; default: `text`)
 - `--sender-code`: sender jurisdiction code, required for `crossborder` level (default: `CN SHA`)
 - `--recipient-code`: recipient jurisdiction code, required for `crossborder` level (default: `US NYC`)
-- Script calls `https://safety-cf.modeio.ai/api/cf/anonymize` by default. Override via `ANONYMIZE_API_URL` environment variable.
+- `--level lite` runs local regex anonymization (no network call).
+- `--level dynamic|strict|crossborder` calls `https://safety-cf.modeio.ai/api/cf/anonymize` by default. Override via `ANONYMIZE_API_URL` environment variable.
 
 ```bash
 python scripts/anonymize.py --input "Name: Jack, ID number: 110101199001011234"
@@ -27,6 +29,8 @@ python scripts/anonymize.py --input "Name: Jack, ID number: 110101199001011234"
 python scripts/anonymize.py --input "$(cat sensitive_data.json)"
 
 python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic
+
+python scripts/anonymize.py --input "Email: alice@example.com, Phone: 415-555-1234" --level lite
 ```
 
 ### Output
@@ -35,6 +39,7 @@ python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic
 - `data.anonymizedContent`: anonymized content string
 - `data.hasPII`: whether sensitive data was detected
 - Optional `data` fields can include mapping and analysis metadata.
+- For `lite`, output includes `data.mode: local-regex` and `data.localDetection` details.
 
 ```json
 {
@@ -48,8 +53,8 @@ python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic
 
 Failure behavior:
 
-- HTTP/network failure: script exits non-zero and prints URL/status/exception details to `stderr`.
-- API semantic failure (`success: false`): script prints full response JSON to `stderr` and exits non-zero.
+- For API-backed levels (`dynamic`/`strict`/`crossborder`): HTTP/network failure exits non-zero and prints URL/status/exception details to `stderr`.
+- API semantic failure (`success: false`) prints full response JSON to `stderr` and exits non-zero.
 
 ### Offline mode: `scripts/detect_local.py`
 
@@ -102,5 +107,5 @@ python scripts/detect_local.py --input "Name: Alice Wang, phone 415-555-1234" --
 
 ## Resources
 
-- `scripts/anonymize.py`: default script, calls `https://safety-cf.modeio.ai/api/cf/anonymize`
+- `scripts/anonymize.py`: default script (`lite` local regex; other levels call `https://safety-cf.modeio.ai/api/cf/anonymize`)
 - `scripts/detect_local.py`: offline regex detection

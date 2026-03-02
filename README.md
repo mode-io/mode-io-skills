@@ -25,15 +25,15 @@
 
 **Mode IO.AI** is your **dynamic privacy and compliance protector**. We provide privacy capabilities for HIPAA, GDPR, and similar compliance scenarios — helping you safely anonymize and redact personally identifiable information (PII) in data processing, cross-border transfers, and AI workflows.
 
-This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, Cursor, and other AI environments. Through standardized skill descriptions and scripts, AI assistants can automatically call Modeio APIs whenever anonymization, redaction, PII removal, or safety checks are needed.
+This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, Cursor, and other AI environments. Through standardized skill descriptions and scripts, AI assistants can run local regex masking (`lite`) or call Modeio APIs (`dynamic`/`strict`/`crossborder`) whenever anonymization, redaction, PII removal, or safety checks are needed.
 
 > [!NOTE]
-> Every operation performs a real API request (no caching), so results are auditable and traceable. Think of this repo as a lightweight privacy-and-safety layer your AI agent can use by default.
+> `modeio-anonymization` `lite` runs fully local regex masking with no network call. Other anonymization levels (`dynamic`/`strict`/`crossborder`) and all safety checks perform real API requests (no caching) for auditable and traceable output.
 
 ## ✨ Why teams like this
 
 - **Fast onboarding** — install only the skill you need
-- **Real checks, not mock logic** — each run calls live APIs for traceable output
+- **Flexible execution** — use local regex masking for `lite`, or live API checks for higher-assurance analysis
 - **Multi-agent friendly** — works across Claude Code, Codex CLI, OpenClaw, OpenCode, and Cursor
 
 # 🧰 Skills
@@ -52,7 +52,7 @@ Each level uses a **different strategy** (not additive layers):
 
 | Level | Strategy | What it does |
 |-------|----------|-------------|
-| `lite` | Local regex | Fast pattern-based redaction (emails, phones, SSNs, credit cards, API keys, etc.). No LLM call. |
+| `lite` | Local regex (no network) | Fast pattern-based redaction (emails, phones, SSNs, credit cards, API keys, etc.) executed locally. |
 | `dynamic` | LLM | Context-aware semantic anonymization. Detects direct + inferrable PII. |
 | `strict` | LLM + compliance | Same as `dynamic`, plus a parallel GDPR compliance analysis. |
 | `crossborder` | LLM + compliance + legal | Same as `strict`, plus a cross-border data transfer legal analysis. Requires sender/recipient jurisdiction codes. |
@@ -151,6 +151,9 @@ python modeio-anonymization/scripts/anonymize.py --input "$(cat sensitive_data.j
 
 # Anonymization with a specific level
 python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com" --level dynamic
+
+# Anonymization with local-only lite mode (no API call)
+python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com, Phone: 415-555-1234" --level lite
 
 # Anonymization (offline / local)
 python modeio-anonymization/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com"
