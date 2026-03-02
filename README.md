@@ -66,64 +66,34 @@ Install this skill:
 https://github.com/mode-io/mode-io-skills/tree/main/modeio-safety
 ```
 
+For CLI installs below, add `-g` for global (user-level) install.
+
 ## 2) Install for Claude Code (per skill)
 
 ```bash
-ROOT=~/.claude/skills
-
-mkdir -p "$ROOT/modeio-anonymization/scripts"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/SKILL.md -o "$ROOT/modeio-anonymization/SKILL.md"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/anonymize.py -o "$ROOT/modeio-anonymization/scripts/anonymize.py"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/detect_local.py -o "$ROOT/modeio-anonymization/scripts/detect_local.py"
-
-mkdir -p "$ROOT/modeio-safety/scripts"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/SKILL.md -o "$ROOT/modeio-safety/SKILL.md"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/scripts/safety.py -o "$ROOT/modeio-safety/scripts/safety.py"
+npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent claude-code --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-safety --agent claude-code --yes --copy
 ```
 
 ## 3) Install for Codex CLI (per skill)
 
 ```bash
-ROOT=~/.agents/skills
-
-mkdir -p "$ROOT/modeio-anonymization/scripts"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/SKILL.md -o "$ROOT/modeio-anonymization/SKILL.md"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/anonymize.py -o "$ROOT/modeio-anonymization/scripts/anonymize.py"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/detect_local.py -o "$ROOT/modeio-anonymization/scripts/detect_local.py"
-
-mkdir -p "$ROOT/modeio-safety/scripts"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/SKILL.md -o "$ROOT/modeio-safety/SKILL.md"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/scripts/safety.py -o "$ROOT/modeio-safety/scripts/safety.py"
+npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent codex --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-safety --agent codex --yes --copy
 ```
 
 ## 4) Install for OpenCode (per skill)
 
 ```bash
-ROOT=~/.config/opencode/skills
-
-mkdir -p "$ROOT/modeio-anonymization/scripts"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/SKILL.md -o "$ROOT/modeio-anonymization/SKILL.md"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/anonymize.py -o "$ROOT/modeio-anonymization/scripts/anonymize.py"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/detect_local.py -o "$ROOT/modeio-anonymization/scripts/detect_local.py"
-
-mkdir -p "$ROOT/modeio-safety/scripts"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/SKILL.md -o "$ROOT/modeio-safety/SKILL.md"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/scripts/safety.py -o "$ROOT/modeio-safety/scripts/safety.py"
+npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent opencode --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-safety --agent opencode --yes --copy
 ```
 
 ## 5) Install for Cursor (per skill)
 
 ```bash
-ROOT=~/.cursor/skills
-
-mkdir -p "$ROOT/modeio-anonymization/scripts"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/SKILL.md -o "$ROOT/modeio-anonymization/SKILL.md"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/anonymize.py -o "$ROOT/modeio-anonymization/scripts/anonymize.py"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-anonymization/scripts/detect_local.py -o "$ROOT/modeio-anonymization/scripts/detect_local.py"
-
-mkdir -p "$ROOT/modeio-safety/scripts"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/SKILL.md -o "$ROOT/modeio-safety/SKILL.md"
-curl -fsSL https://raw.githubusercontent.com/mode-io/mode-io-skills/main/modeio-safety/scripts/safety.py -o "$ROOT/modeio-safety/scripts/safety.py"
+npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent cursor --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-safety --agent cursor --yes --copy
 ```
 
 ## 6) Verify in 30 seconds
