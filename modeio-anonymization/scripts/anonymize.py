@@ -7,7 +7,7 @@ import sys
 import requests
 
 ####### Here you can create your own anonymization backend with model api.
-URL = "https://api.modeio.ai/api/detector/anonymize"
+URL = "https://safety-cf.modeio.ai/api/cf/anonymize"
 #######
 
 HEADERS = {
