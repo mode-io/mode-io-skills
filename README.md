@@ -16,7 +16,7 @@
   <img src='https://img.shields.io/badge/GitHub-Code-black?style=flat&logo=github&logoColor=white'></a>
   <img src='https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white'>
   <img src='https://img.shields.io/badge/API-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white'>
-  <a href="" target='_blank'>
+  <a href='https://github.com/mode-io/mode-io-skills' target='_blank' rel='noopener noreferrer'>
   <img src="https://visitor-badge.laobi.icu/badge?page_id=mode-io.mode-io-skills&left_color=gray&right_color=%2342b983">
   </a>
 </p>
@@ -138,8 +138,7 @@ Reuse one environment for all AI clients.
 <details>
 <summary><h1>🛠 Manual API Call (Advanced)</h1></summary>
 
-> [!WARNING]
-> This section is for manual operation only. In normal usage, install the skills and let the agent invoke them automatically.
+> **Warning:** This section is for manual operation only. In normal usage, install the skills and let the agent invoke them automatically.
 
 ## Run scripts manually
 
