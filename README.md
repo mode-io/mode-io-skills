@@ -29,6 +29,7 @@ This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claud
 
 > [!NOTE]
 > `modeio-anonymization` `lite` runs fully local regex masking with no network call. Other anonymization levels (`dynamic`/`strict`/`crossborder`) and all safety checks perform real API requests (no caching) for auditable and traceable output.
+> For `crossborder`, you must provide explicit `--sender-code` and `--recipient-code` each run.
 
 ## ✨ Why teams like this
 
@@ -145,15 +146,19 @@ Reuse one environment for all AI clients.
 From the repo root:
 
 ```bash
-# Anonymization (API-backed, default crossborder level)
-python modeio-anonymization/scripts/anonymize.py --input "Name: John Doe, SSN: 123-45-6789"
-python modeio-anonymization/scripts/anonymize.py --input "$(cat sensitive_data.json)"
+# Anonymization (API-backed crossborder with explicit jurisdiction codes)
+python modeio-anonymization/scripts/anonymize.py --input "Name: John Doe, SSN: 123-45-6789" --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
+python modeio-anonymization/scripts/anonymize.py --input "$(cat sensitive_data.json)" --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
 
 # Anonymization with a specific level
 python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com" --level dynamic
 
 # Anonymization with local-only lite mode (no API call)
 python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com, Phone: 415-555-1234" --level lite
+
+# Machine-readable output contracts
+python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com" --level dynamic --json
+python modeio-safety/scripts/safety.py -i "Delete all log files" --json
 
 # Anonymization (offline / local)
 python modeio-anonymization/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com"
@@ -162,6 +167,8 @@ python modeio-anonymization/scripts/detect_local.py --input "Phone 13812345678 E
 python modeio-safety/scripts/safety.py -i "Delete all log files"
 python modeio-safety/scripts/safety.py -i "Modify database permissions" -c "production" -t "/var/lib/mysql"
 ```
+
+> File-path input mode (`--input-type file`) is intentionally deferred for now and will be supported later. Use `--input "$(cat your_file.json)"` as the current workaround.
 
 For full details, see [modeio-anonymization/SKILL.md](modeio-anonymization/SKILL.md) and [modeio-safety/SKILL.md](modeio-safety/SKILL.md).
 
