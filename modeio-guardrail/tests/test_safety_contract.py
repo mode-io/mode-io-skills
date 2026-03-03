@@ -8,8 +8,8 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT_PATH = REPO_ROOT / "modeio-safety" / "scripts" / "safety.py"
-SCRIPTS_DIR = REPO_ROOT / "modeio-safety" / "scripts"
+SCRIPT_PATH = REPO_ROOT / "modeio-guardrail" / "scripts" / "safety.py"
+SCRIPTS_DIR = REPO_ROOT / "modeio-guardrail" / "scripts"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 import safety  # noqa: E402
@@ -30,7 +30,7 @@ class TestSafetyContract(unittest.TestCase):
     def test_success_envelope_shape(self):
         payload = safety._success_envelope({"approved": True})
         self.assertTrue(payload["success"])
-        self.assertEqual(payload["tool"], "modeio-safety")
+        self.assertEqual(payload["tool"], "modeio-guardrail")
         self.assertEqual(payload["mode"], "api")
         self.assertEqual(payload["data"]["approved"], True)
 
@@ -41,7 +41,7 @@ class TestSafetyContract(unittest.TestCase):
             status_code=503,
         )
         self.assertFalse(payload["success"])
-        self.assertEqual(payload["tool"], "modeio-safety")
+        self.assertEqual(payload["tool"], "modeio-guardrail")
         self.assertEqual(payload["mode"], "api")
         self.assertEqual(payload["error"]["type"], "network_error")
         self.assertEqual(payload["error"]["status_code"], 503)
@@ -63,7 +63,7 @@ class TestSafetyContract(unittest.TestCase):
 
         payload = json.loads(result.stdout)
         self.assertFalse(payload["success"])
-        self.assertEqual(payload["tool"], "modeio-safety")
+        self.assertEqual(payload["tool"], "modeio-guardrail")
         self.assertEqual(payload["error"]["type"], "network_error")
 
 

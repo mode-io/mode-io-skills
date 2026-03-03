@@ -28,7 +28,7 @@
 This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, Cursor, and other AI environments. Through standardized skill descriptions and scripts, AI assistants can run local regex masking (`lite`) or call Modeio APIs (`dynamic`/`strict`/`crossborder`) whenever anonymization, redaction, PII removal, or safety checks are needed.
 
 > [!NOTE]
-> `modeio-anonymization` `lite` runs fully local regex masking with no network call. Other anonymization levels (`dynamic`/`strict`/`crossborder`) and all safety checks perform real API requests (no caching) for auditable and traceable output.
+> `modeio-redact` `lite` runs fully local regex masking with no network call. Other anonymization levels (`dynamic`/`strict`/`crossborder`) and all safety checks perform real API requests (no caching) for auditable and traceable output.
 > For `crossborder`, you must provide explicit `--sender-code` and `--recipient-code` each run.
 
 ## ✨ Why teams like this
@@ -44,7 +44,7 @@ This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claud
 > *A developer pastes a customer record into a shared channel. The agent redacts locally in milliseconds.*
 
 ```bash
-python modeio-anonymization/scripts/anonymize.py \
+python modeio-redact/scripts/anonymize.py \
   --input "Name: John Doe, Email: johndoe@company.com, Phone: 415-555-1234, SSN: 123-45-6789" \
   --level lite
 ```
@@ -59,7 +59,7 @@ Name: [NAME_1], Email: [EMAIL_1], Phone: [PHONE_1], SSN: [SSN_1]
 ```json
 {
   "success": true,
-  "tool": "modeio-anonymization",
+  "tool": "modeio-redact",
   "mode": "local-regex",
   "level": "lite",
   "data": {
@@ -88,7 +88,7 @@ Name: [NAME_1], Email: [EMAIL_1], Phone: [PHONE_1], SSN: [SSN_1]
 > *An HR system exports employee data for a vendor. The agent catches PII that regex would miss — employee IDs, city names, state abbreviations.*
 
 ```bash
-python modeio-anonymization/scripts/anonymize.py \
+python modeio-redact/scripts/anonymize.py \
   --input "Please update the account for Alice Wang (alice.wang@techcorp.io). Her employee ID is E-20231542 and she can be reached at 650-234-5678. Ship the package to 1455 Market Street, San Francisco, CA." \
   --level dynamic
 ```
@@ -107,7 +107,7 @@ Ship the package to [REDACTED_STREET_ADDRESS_1], [REDACTED_CITY_1], [REDACTED_ST
 ```json
 {
   "success": true,
-  "tool": "modeio-anonymization",
+  "tool": "modeio-redact",
   "mode": "api",
   "level": "dynamic",
   "data": {
@@ -136,7 +136,7 @@ Ship the package to [REDACTED_STREET_ADDRESS_1], [REDACTED_CITY_1], [REDACTED_ST
 > *A company in Shanghai transfers a customer record to a US partner. The agent anonymizes **and** flags GDPR violations with cross-border legal guidance.*
 
 ```bash
-python modeio-anonymization/scripts/anonymize.py \
+python modeio-redact/scripts/anonymize.py \
   --input "Customer record: Name: 张伟, ID: 310101199001011234, Phone: 13812345678, Email: zhangwei@example.cn. Transfer this data to our US partner office in New York for account verification." \
   --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
 ```
@@ -156,7 +156,7 @@ Cross-border: CN SHA → US NYC triggers PIPL/CSL obligations
 ```json
 {
   "success": true,
-  "tool": "modeio-anonymization",
+  "tool": "modeio-redact",
   "mode": "api",
   "level": "crossborder",
   "data": {
@@ -194,7 +194,7 @@ Cross-border: CN SHA → US NYC triggers PIPL/CSL obligations
 > *An automated pipeline receives an instruction to wipe a production database. The agent blocks it.*
 
 ```bash
-python modeio-safety/scripts/safety.py \
+python modeio-guardrail/scripts/safety.py \
   -i "Drop all tables in the production database and rebuild from scratch" \
   -c "production" -t "postgres://prod-db:5432/main"
 ```
@@ -215,7 +215,7 @@ recommendation: Never execute DROP TABLE directly on production. Ensure backup
 ```json
 {
   "success": true,
-  "tool": "modeio-safety",
+  "tool": "modeio-guardrail",
   "mode": "api",
   "data": {
     "approved": false,
@@ -242,7 +242,7 @@ recommendation: Never execute DROP TABLE directly on production. Ensure backup
 > *A read-only monitoring command. The agent confirms it is low-risk.*
 
 ```bash
-python modeio-safety/scripts/safety.py \
+python modeio-guardrail/scripts/safety.py \
   -i "List all running containers and display their resource usage"
 ```
 
@@ -259,7 +259,7 @@ is_reversible: true
 ```json
 {
   "success": true,
-  "tool": "modeio-safety",
+  "tool": "modeio-guardrail",
   "mode": "api",
   "data": {
     "approved": true,
@@ -282,11 +282,11 @@ is_reversible: true
 
 # 🧰 Skills
 
-**`modeio-anonymization`** — Masks PII in text or JSON via the Modeio anonymization API. Also supports offline regex detection.
+**`modeio-redact`** — Masks PII in text or JSON via the Modeio anonymization API. Also supports offline regex detection.
 
 > Trigger phrases: *"anonymize", "redact PII", "mask sensitive data", "scrub credentials", "detect personal data"*
 
-**`modeio-safety`** — Evaluates instructions for destructive operations, prompt injection, irreversible actions, and compliance violations.
+**`modeio-guardrail`** — Evaluates instructions for destructive operations, prompt injection, irreversible actions, and compliance violations.
 
 > Trigger phrases: *"safety check", "risk assessment", "security audit", "destructive check", "instruction audit"*
 
@@ -321,7 +321,7 @@ Codes use the format `<ISO 3166-1 alpha-2> <IATA city code>`. Common examples:
 | `AU SYD` | Australia – Sydney |
 | `CA TOR` | Canada – Toronto |
 
-Any valid `<ISO2> <IATA>` pair is accepted. See [modeio-anonymization/SKILL.md](modeio-anonymization/SKILL.md) for the full list.
+Any valid `<ISO2> <IATA>` pair is accepted. See [modeio-redact/SKILL.md](modeio-redact/SKILL.md) for the full list.
 </details>
 
 # 🚀 Quick Start
@@ -337,14 +337,14 @@ Copy/paste one prompt into your OpenClaw agent:
 
 ```text
 Install this skill:
-https://github.com/mode-io/mode-io-skills/tree/main/modeio-anonymization
+https://github.com/mode-io/mode-io-skills/tree/main/modeio-redact
 ```
 
 or
 
 ```text
 Install this skill:
-https://github.com/mode-io/mode-io-skills/tree/main/modeio-safety
+https://github.com/mode-io/mode-io-skills/tree/main/modeio-guardrail
 ```
 
 For CLI installs below, add `-g` for global (user-level) install.
@@ -352,29 +352,29 @@ For CLI installs below, add `-g` for global (user-level) install.
 ## 2) Install for Claude Code
 
 ```bash
-npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent claude-code --yes --copy
-npx skills add mode-io/mode-io-skills --skill modeio-safety --agent claude-code --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-redact --agent claude-code --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent claude-code --yes --copy
 ```
 
 ## 3) Install for Codex CLI
 
 ```bash
-npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent codex --yes --copy
-npx skills add mode-io/mode-io-skills --skill modeio-safety --agent codex --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-redact --agent codex --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent codex --yes --copy
 ```
 
 ## 4) Install for OpenCode
 
 ```bash
-npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent opencode --yes --copy
-npx skills add mode-io/mode-io-skills --skill modeio-safety --agent opencode --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-redact --agent opencode --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent opencode --yes --copy
 ```
 
 ## 5) Install for Cursor
 
 ```bash
-npx skills add mode-io/mode-io-skills --skill modeio-anonymization --agent cursor --yes --copy
-npx skills add mode-io/mode-io-skills --skill modeio-safety --agent cursor --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-redact --agent cursor --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent cursor --yes --copy
 ```
 
 ## 6) Verify in 30 seconds ✅
@@ -431,31 +431,31 @@ From the repo root:
 
 ```bash
 # Default level is dynamic (LLM-powered, no jurisdiction codes needed)
-python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com"
+python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com"
 
 # Local-only lite mode — no network, runs in milliseconds
-python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com, Phone: 415-555-1234" --level lite
+python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com, Phone: 415-555-1234" --level lite
 
 # Crossborder — full compliance + legal analysis (requires jurisdiction codes)
-python modeio-anonymization/scripts/anonymize.py --input "Name: 张伟, ID: 310101199001011234" --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
+python modeio-redact/scripts/anonymize.py --input "Name: 张伟, ID: 310101199001011234" --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
 
 # Pipe file contents
-python modeio-anonymization/scripts/anonymize.py --input "$(cat sensitive_data.json)" --level dynamic
+python modeio-redact/scripts/anonymize.py --input "$(cat sensitive_data.json)" --level dynamic
 
 # Machine-readable JSON output (works with any level)
-python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com" --level dynamic --json
+python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com" --level dynamic --json
 
 # Safety checks
-python modeio-safety/scripts/safety.py -i "Delete all log files"
-python modeio-safety/scripts/safety.py -i "Modify database permissions" -c "production" -t "/var/lib/mysql" --json
+python modeio-guardrail/scripts/safety.py -i "Delete all log files"
+python modeio-guardrail/scripts/safety.py -i "Modify database permissions" -c "production" -t "/var/lib/mysql" --json
 
 # Offline local detection (detailed risk scoring)
-python modeio-anonymization/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json
+python modeio-redact/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json
 ```
 
 > File-path input mode (`--input-type file`) is intentionally deferred for now and will be supported later. Use `--input "$(cat your_file.json)"` as the current workaround.
 
-For full details, see [modeio-anonymization/SKILL.md](modeio-anonymization/SKILL.md) and [modeio-safety/SKILL.md](modeio-safety/SKILL.md).
+For full details, see [modeio-redact/SKILL.md](modeio-redact/SKILL.md) and [modeio-guardrail/SKILL.md](modeio-guardrail/SKILL.md).
 
 ## 🔗 Links
 

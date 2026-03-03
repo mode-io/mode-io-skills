@@ -24,7 +24,7 @@ HEADERS = {"Content-Type": "application/json"}
 
 VALID_LEVELS = ("lite", "dynamic", "strict", "crossborder")
 
-TOOL_NAME = "modeio-anonymization"
+TOOL_NAME = "modeio-redact"
 
 MAX_RETRIES = 2
 RETRY_BACKOFF = 1.0  # seconds; doubles each retry
