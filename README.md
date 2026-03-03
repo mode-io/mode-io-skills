@@ -37,6 +37,249 @@ This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claud
 - **Flexible execution** — use local regex masking for `lite`, or live API checks for higher-assurance analysis
 - **Multi-agent friendly** — works across Claude Code, Codex CLI, OpenClaw, OpenCode, and Cursor
 
+# 👀 See It In Action
+
+### Anonymization — `lite` (local, no network)
+
+> *A developer pastes a customer record into a shared channel. The agent redacts locally in milliseconds.*
+
+```bash
+python modeio-anonymization/scripts/anonymize.py \
+  --input "Name: John Doe, Email: johndoe@company.com, Phone: 415-555-1234, SSN: 123-45-6789" \
+  --level lite
+```
+
+```
+Name: [NAME_1], Email: [EMAIL_1], Phone: [PHONE_1], SSN: [SSN_1]
+```
+
+<details>
+<summary>JSON output (<code>--json</code>)</summary>
+
+```json
+{
+  "success": true,
+  "tool": "modeio-anonymization",
+  "mode": "local-regex",
+  "level": "lite",
+  "data": {
+    "anonymizedContent": "Name: [NAME_1], Email: [EMAIL_1], Phone: [PHONE_1], SSN: [SSN_1]",
+    "hasPII": true,
+    "localDetection": {
+      "items": [
+        { "type": "name",  "value": "John Doe",            "riskLevel": "low" },
+        { "type": "email", "value": "johndoe@company.com",  "riskLevel": "medium" },
+        { "type": "phone", "value": "415-555-1234",          "riskLevel": "medium" },
+        { "type": "ssn",   "value": "123-45-6789",           "riskLevel": "high" }
+      ],
+      "riskScore": 100,
+      "riskLevel": "high"
+    }
+  }
+}
+```
+
+</details>
+
+---
+
+### Anonymization — `dynamic` (LLM-powered)
+
+> *An HR system exports employee data for a vendor. The agent catches PII that regex would miss — employee IDs, city names, state abbreviations.*
+
+```bash
+python modeio-anonymization/scripts/anonymize.py \
+  --input "Please update the account for Alice Wang (alice.wang@techcorp.io). Her employee ID is E-20231542 and she can be reached at 650-234-5678. Ship the package to 1455 Market Street, San Francisco, CA." \
+  --level dynamic
+```
+
+```
+Please update the account for [REDACTED_NAME_1] ([REDACTED_EMAIL_1]).
+Her employee ID is [REDACTED_EMPLOYEE_ID_1] and she can be reached at [REDACTED_PHONE_NUMBER_1].
+Ship the package to [REDACTED_STREET_ADDRESS_1], [REDACTED_CITY_1], [REDACTED_STATE_1].
+```
+
+> `dynamic` catches **employee ID**, **city**, and **state** — things regex-based `lite` would miss. Privacy score: **75 → 100**.
+
+<details>
+<summary>JSON output (<code>--json</code>)</summary>
+
+```json
+{
+  "success": true,
+  "tool": "modeio-anonymization",
+  "mode": "api",
+  "level": "dynamic",
+  "data": {
+    "hasPII": true,
+    "anonymizedContent": "Please update the account for [REDACTED_NAME_1] ([REDACTED_EMAIL_1]). Her employee ID is [REDACTED_EMPLOYEE_ID_1] and she can be reached at [REDACTED_PHONE_NUMBER_1]. Ship the package to [REDACTED_STREET_ADDRESS_1], [REDACTED_CITY_1], [REDACTED_STATE_1].",
+    "mapping": [
+      { "original": "Alice Wang",           "anonymized": "[REDACTED_NAME_1]",           "type": "NAME" },
+      { "original": "alice.wang@techcorp.io","anonymized": "[REDACTED_EMAIL_1]",          "type": "EMAIL" },
+      { "original": "E-20231542",           "anonymized": "[REDACTED_EMPLOYEE_ID_1]",    "type": "EMPLOYEE_ID" },
+      { "original": "650-234-5678",         "anonymized": "[REDACTED_PHONE_NUMBER_1]",   "type": "PHONE_NUMBER" },
+      { "original": "1455 Market Street",   "anonymized": "[REDACTED_STREET_ADDRESS_1]", "type": "STREET_ADDRESS" },
+      { "original": "San Francisco",        "anonymized": "[REDACTED_CITY_1]",           "type": "CITY" },
+      { "original": "CA",                   "anonymized": "[REDACTED_STATE_1]",          "type": "STATE" }
+    ],
+    "privacyScore": { "before": 75, "after": 100 }
+  }
+}
+```
+
+</details>
+
+---
+
+### Anonymization — `crossborder` (compliance + legal analysis)
+
+> *A company in Shanghai transfers a customer record to a US partner. The agent anonymizes **and** flags GDPR violations with cross-border legal guidance.*
+
+```bash
+python modeio-anonymization/scripts/anonymize.py \
+  --input "Customer record: Name: 张伟, ID: 310101199001011234, Phone: 13812345678, Email: zhangwei@example.cn. Transfer this data to our US partner office in New York for account verification." \
+  --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
+```
+
+```
+Customer record: Name: [REDACTED_NAME_1], ID: [REDACTED_ID_NUMBER_1],
+Phone: [REDACTED_PHONE_NUMBER_1], Email: [REDACTED_EMAIL_1].
+Transfer this data to our US partner office in [REDACTED_LOCATION_1] for account verification.
+
+Compliance score: 30/100 — violated: Article 6, 13, 44, 25
+Cross-border: CN SHA → US NYC triggers PIPL/CSL obligations
+```
+
+<details>
+<summary>JSON output (<code>--json</code>)</summary>
+
+```json
+{
+  "success": true,
+  "tool": "modeio-anonymization",
+  "mode": "api",
+  "level": "crossborder",
+  "data": {
+    "hasPII": true,
+    "riskLevel": "High",
+    "anonymizedContent": "Customer record: Name: [REDACTED_NAME_1], ID: [REDACTED_ID_NUMBER_1], Phone: [REDACTED_PHONE_NUMBER_1], Email: [REDACTED_EMAIL_1]. Transfer this data to our US partner office in [REDACTED_LOCATION_1] for account verification.",
+    "mapping": [
+      { "original": "张伟",                "anonymized": "[REDACTED_NAME_1]",         "type": "NAME" },
+      { "original": "310101199001011234",  "anonymized": "[REDACTED_ID_NUMBER_1]",    "type": "ID_NUMBER" },
+      { "original": "13812345678",         "anonymized": "[REDACTED_PHONE_NUMBER_1]", "type": "PHONE_NUMBER" },
+      { "original": "zhangwei@example.cn", "anonymized": "[REDACTED_EMAIL_1]",        "type": "EMAIL" },
+      { "original": "New York",            "anonymized": "[REDACTED_LOCATION_1]",     "type": "LOCATION" }
+    ],
+    "privacyScore": { "before": 95, "after": 100 },
+    "complianceAnalysis": {
+      "overall_score": 30,
+      "violated_articles": [
+        { "article": "Article 6",  "description": "No legal basis for processing is identified." },
+        { "article": "Article 13", "description": "Data subjects not informed about the transfer." },
+        { "article": "Article 44", "description": "No safeguards for international data transfer." },
+        { "article": "Article 25", "description": "Data protection by design not evident." }
+      ]
+    },
+    "crossBorderAnalysis": "The transfer from CN SHA to US NYC triggers PIPL and CSL obligations. Required: CAC security assessment or Standard Contractual Clauses, recipient due diligence, data minimization, and data subject rights mechanisms."
+  }
+}
+```
+
+</details>
+
+---
+
+### Safety check — dangerous instruction
+
+> *An automated pipeline receives an instruction to wipe a production database. The agent blocks it.*
+
+```bash
+python modeio-safety/scripts/safety.py \
+  -i "Drop all tables in the production database and rebuild from scratch" \
+  -c "production" -t "postgres://prod-db:5432/main"
+```
+
+```
+approved: false
+risk_level: critical
+is_destructive: true
+is_reversible: false
+recommendation: Never execute DROP TABLE directly on production. Ensure backup
+  and recovery procedures are in place. Consider blue/green deployments or
+  schema migrations that preserve data.
+```
+
+<details>
+<summary>JSON output (<code>--json</code>)</summary>
+
+```json
+{
+  "success": true,
+  "tool": "modeio-safety",
+  "mode": "api",
+  "data": {
+    "approved": false,
+    "risk_level": "critical",
+    "risk_types": ["data loss", "denial-of-service", "system instability"],
+    "concerns": [
+      "Direct and complete data loss for all existing data in the production database.",
+      "Immediate and prolonged service outage for any applications relying on the database.",
+      "Potential for irreversible data loss if no recent, validated backups are available."
+    ],
+    "recommendation": "Never execute DROP TABLE directly on production without a comprehensive change management plan. Ensure robust backup and recovery procedures are in place. Consider blue/green deployments or schema migrations that preserve data.",
+    "is_destructive": true,
+    "is_reversible": false
+  }
+}
+```
+
+</details>
+
+---
+
+### Safety check — safe instruction
+
+> *A read-only monitoring command. The agent confirms it is low-risk.*
+
+```bash
+python modeio-safety/scripts/safety.py \
+  -i "List all running containers and display their resource usage"
+```
+
+```
+approved: true
+risk_level: low
+is_destructive: false
+is_reversible: true
+```
+
+<details>
+<summary>JSON output (<code>--json</code>)</summary>
+
+```json
+{
+  "success": true,
+  "tool": "modeio-safety",
+  "mode": "api",
+  "data": {
+    "approved": true,
+    "risk_level": "low",
+    "risk_types": ["Information Disclosure"],
+    "concerns": [
+      "Read-only monitoring operation. Does not modify the system or delete data.",
+      "Minor information disclosure risk if output is exposed to unauthorized individuals."
+    ],
+    "recommendation": "Ensure only authorized personnel have access to execute container listing commands. Implement proper access controls and secure logging.",
+    "is_destructive": false,
+    "is_reversible": true
+  }
+}
+```
+
+</details>
+
+---
+
 # 🧰 Skills
 
 **`modeio-anonymization`** — Masks PII in text or JSON via the Modeio anonymization API. Also supports offline regex detection.
@@ -142,12 +385,30 @@ After installing, ask your agent:
 Anonymize this text before sharing externally: "Name: John Doe, SSN: 123-45-6789"
 ```
 
+Expected output:
+
+```
+Name: [REDACTED_NAME_1], SSN: [REDACTED_SSN_1]
+```
+
 ```text
 Run a safety check on this instruction: "Delete all log files in production"
 ```
 
+Expected output:
+
+```json
+{
+  "approved": false,
+  "risk_level": "critical",
+  "is_destructive": true,
+  "is_reversible": false,
+  "recommendation": "..."
+}
+```
+
 > [!TIP]
-> If you get anonymized output and a structured safety risk response, you are fully set up.
+> If you see redacted placeholders and a structured risk response like above, you are fully set up.
 
 ## 7) Install dependencies (for manual script execution) 📦
 
@@ -169,26 +430,27 @@ Reuse one environment for all AI clients.
 From the repo root:
 
 ```bash
-# Anonymization (API-backed crossborder with explicit jurisdiction codes)
-python modeio-anonymization/scripts/anonymize.py --input "Name: John Doe, SSN: 123-45-6789" --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
-python modeio-anonymization/scripts/anonymize.py --input "$(cat sensitive_data.json)" --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
+# Default level is dynamic (LLM-powered, no jurisdiction codes needed)
+python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com"
 
-# Anonymization with a specific level
-python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com" --level dynamic
-
-# Anonymization with local-only lite mode (no API call)
+# Local-only lite mode — no network, runs in milliseconds
 python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com, Phone: 415-555-1234" --level lite
 
-# Machine-readable output contracts
+# Crossborder — full compliance + legal analysis (requires jurisdiction codes)
+python modeio-anonymization/scripts/anonymize.py --input "Name: 张伟, ID: 310101199001011234" --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
+
+# Pipe file contents
+python modeio-anonymization/scripts/anonymize.py --input "$(cat sensitive_data.json)" --level dynamic
+
+# Machine-readable JSON output (works with any level)
 python modeio-anonymization/scripts/anonymize.py --input "Email: alice@example.com" --level dynamic --json
-python modeio-safety/scripts/safety.py -i "Delete all log files" --json
 
-# Anonymization (offline / local)
-python modeio-anonymization/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com"
-
-# Safety check (API-backed)
+# Safety checks
 python modeio-safety/scripts/safety.py -i "Delete all log files"
-python modeio-safety/scripts/safety.py -i "Modify database permissions" -c "production" -t "/var/lib/mysql"
+python modeio-safety/scripts/safety.py -i "Modify database permissions" -c "production" -t "/var/lib/mysql" --json
+
+# Offline local detection (detailed risk scoring)
+python modeio-anonymization/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json
 ```
 
 > File-path input mode (`--input-type file`) is intentionally deferred for now and will be supported later. Use `--input "$(cat your_file.json)"` as the current workaround.
