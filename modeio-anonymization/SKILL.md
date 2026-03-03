@@ -16,7 +16,7 @@ description: Runs PII anonymization checks for text or JSON. Supports local rege
 ### Primary mode: `scripts/anonymize.py`
 
 - `-i, --input`: required, content to anonymize
-- `--level`: anonymization level (`lite`, `dynamic`, `strict`, `crossborder`; default: `crossborder`)
+- `--level`: anonymization level (`lite`, `dynamic`, `strict`, `crossborder`; default: `dynamic`)
 - `--sender-code`: sender jurisdiction code, required for `crossborder` level (example: `CN SHA`)
 - `--recipient-code`: recipient jurisdiction code, required for `crossborder` level (example: `US NYC`)
 - `--json`: output unified JSON contract for machine consumption
@@ -117,6 +117,37 @@ python scripts/detect_local.py --input "Name: Alice Wang, phone 415-555-1234" --
   "riskLevel": "medium"
 }
 ```
+
+---
+
+## Jurisdiction codes for `crossborder`
+
+`--sender-code` and `--recipient-code` use the format `<COUNTRY_ISO2> <CITY_CODE>`.
+
+| Code | Jurisdiction |
+|------|-------------|
+| `CN SHA` | China – Shanghai |
+| `CN BJS` | China – Beijing |
+| `CN GZH` | China – Guangzhou |
+| `CN SZX` | China – Shenzhen |
+| `US NYC` | United States – New York |
+| `US SFO` | United States – San Francisco |
+| `US LAX` | United States – Los Angeles |
+| `US CHI` | United States – Chicago |
+| `GB LON` | United Kingdom – London |
+| `DE BER` | Germany – Berlin |
+| `DE FRA` | Germany – Frankfurt |
+| `FR PAR` | France – Paris |
+| `JP TYO` | Japan – Tokyo |
+| `SG SIN` | Singapore |
+| `AU SYD` | Australia – Sydney |
+| `CA TOR` | Canada – Toronto |
+| `KR SEL` | South Korea – Seoul |
+| `IN BOM` | India – Mumbai |
+| `BR SAO` | Brazil – São Paulo |
+| `AE DXB` | UAE – Dubai |
+
+The country portion is the ISO 3166-1 alpha-2 code. The city portion is the IATA airport code. Any valid `<ISO2> <IATA>` pair is accepted by the API; the table above lists common combinations.
 
 ---
 

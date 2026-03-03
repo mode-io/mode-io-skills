@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from typing import Any, Dict
 
 import requests
@@ -25,10 +26,34 @@ VALID_LEVELS = ("lite", "dynamic", "strict", "crossborder")
 
 TOOL_NAME = "modeio-anonymization"
 
+MAX_RETRIES = 2
+RETRY_BACKOFF = 1.0  # seconds; doubles each retry
+
+
+def _post_with_retry(url, headers, json_payload, timeout=60):
+    """POST with simple exponential-backoff retry on transient failures."""
+    last_exc = None
+    for attempt in range(1 + MAX_RETRIES):
+        try:
+            resp = requests.post(url, headers=headers, json=json_payload, timeout=timeout)
+            if resp.status_code in (502, 503, 504) and attempt < MAX_RETRIES:
+                time.sleep(RETRY_BACKOFF * (2 ** attempt))
+                continue
+            resp.raise_for_status()
+            return resp
+        except (requests.ConnectionError, requests.Timeout) as e:
+            last_exc = e
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_BACKOFF * (2 ** attempt))
+                continue
+            raise
+    # Should not reach here, but raise last exception if it does
+    raise last_exc  # type: ignore[misc]
+
 
 def anonymize(
     raw_input: str,
-    level: str = "crossborder",
+    level: str = "dynamic",
     sender_code: str = None,
     recipient_code: str = None,
 ) -> dict:
@@ -53,8 +78,7 @@ def anonymize(
         payload["senderCode"] = sender_code
     if recipient_code:
         payload["recipientCode"] = recipient_code
-    resp = requests.post(URL, headers=HEADERS, json=payload, timeout=60)
-    resp.raise_for_status()
+    resp = _post_with_retry(URL, headers=HEADERS, json_payload=payload)
     return resp.json()
 
 
@@ -106,9 +130,9 @@ def main():
     parser.add_argument(
         "--level",
         type=str,
-        default="crossborder",
+        default="dynamic",
         choices=VALID_LEVELS,
-        help="Anonymization level (default: crossborder). `lite` runs local regex with no network call.",
+        help="Anonymization level (default: dynamic). `lite` runs local regex with no network call.",
     )
     parser.add_argument(
         "--sender-code",

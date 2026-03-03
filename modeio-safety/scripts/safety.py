@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from typing import Any, Dict
 
 import requests
@@ -17,6 +18,30 @@ import requests
 URL = os.environ.get("SAFETY_API_URL", "https://safety-cf.modeio.ai/api/cf/safety")
 
 TOOL_NAME = "modeio-safety"
+
+MAX_RETRIES = 2
+RETRY_BACKOFF = 1.0  # seconds; doubles each retry
+
+
+def _post_with_retry(url, json_payload, timeout=60):
+    """POST with simple exponential-backoff retry on transient failures."""
+    last_exc = None
+    for attempt in range(1 + MAX_RETRIES):
+        try:
+            resp = requests.post(url, json=json_payload, timeout=timeout)
+            if resp.status_code in (502, 503, 504) and attempt < MAX_RETRIES:
+                time.sleep(RETRY_BACKOFF * (2 ** attempt))
+                continue
+            resp.raise_for_status()
+            return resp
+        except (requests.ConnectionError, requests.Timeout) as e:
+            last_exc = e
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_BACKOFF * (2 ** attempt))
+                continue
+            raise
+    # Should not reach here, but raise last exception if it does
+    raise last_exc  # type: ignore[misc]
 
 
 def detect_safety(instruction: str, context: str = None, target: str = None) -> dict:
@@ -29,8 +54,7 @@ def detect_safety(instruction: str, context: str = None, target: str = None) -> 
         payload["context"] = context
     if target:
         payload["target"] = target
-    resp = requests.post(URL, json=payload, timeout=60)
-    resp.raise_for_status()
+    resp = _post_with_retry(URL, json_payload=payload)
     return resp.json()
 
 

@@ -58,6 +58,29 @@ Each level uses a **different strategy** (not additive layers):
 | `strict` | LLM + compliance | Same as `dynamic`, plus a parallel GDPR compliance analysis. |
 | `crossborder` | LLM + compliance + legal | Same as `strict`, plus a cross-border data transfer legal analysis. Requires sender/recipient jurisdiction codes. |
 
+> **Default level is `dynamic`.** Use `--level crossborder` with explicit `--sender-code` and `--recipient-code` when cross-border analysis is needed.
+
+<details>
+<summary>Jurisdiction code reference (click to expand)</summary>
+
+Codes use the format `<ISO 3166-1 alpha-2> <IATA city code>`. Common examples:
+
+| Code | Jurisdiction |
+|------|-------------|
+| `CN SHA` | China – Shanghai |
+| `CN BJS` | China – Beijing |
+| `US NYC` | United States – New York |
+| `US SFO` | United States – San Francisco |
+| `GB LON` | United Kingdom – London |
+| `DE FRA` | Germany – Frankfurt |
+| `JP TYO` | Japan – Tokyo |
+| `SG SIN` | Singapore |
+| `AU SYD` | Australia – Sydney |
+| `CA TOR` | Canada – Toronto |
+
+Any valid `<ISO2> <IATA>` pair is accepted. See [modeio-anonymization/SKILL.md](modeio-anonymization/SKILL.md) for the full list.
+</details>
+
 # 🚀 Quick Start
 
 > [!TIP]
