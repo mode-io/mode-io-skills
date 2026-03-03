@@ -41,7 +41,7 @@ This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claud
 
 ### Anonymization — `lite` (local, no network)
 
-> *Scenario: A developer pastes a customer record into a shared channel. The agent intercepts and redacts locally in milliseconds.*
+> *A developer pastes a customer record into a shared channel. The agent redacts locally in milliseconds.*
 
 ```bash
 python modeio-anonymization/scripts/anonymize.py \
@@ -49,14 +49,12 @@ python modeio-anonymization/scripts/anonymize.py \
   --level lite
 ```
 
-**Output:**
-
 ```
 Name: [NAME_1], Email: [EMAIL_1], Phone: [PHONE_1], SSN: [SSN_1]
 ```
 
 <details>
-<summary>Full JSON output (<code>--json</code>)</summary>
+<summary>JSON output (<code>--json</code>)</summary>
 
 ```json
 {
@@ -67,7 +65,6 @@ Name: [NAME_1], Email: [EMAIL_1], Phone: [PHONE_1], SSN: [SSN_1]
   "data": {
     "anonymizedContent": "Name: [NAME_1], Email: [EMAIL_1], Phone: [PHONE_1], SSN: [SSN_1]",
     "hasPII": true,
-    "mode": "local-regex",
     "localDetection": {
       "items": [
         { "type": "name",  "value": "John Doe",            "riskLevel": "low" },
@@ -88,15 +85,24 @@ Name: [NAME_1], Email: [EMAIL_1], Phone: [PHONE_1], SSN: [SSN_1]
 
 ### Anonymization — `dynamic` (LLM-powered)
 
-> *Scenario: An HR system exports employee data for an analytics vendor. The agent detects context-dependent PII that regex alone would miss — employee IDs, city names, state abbreviations.*
+> *An HR system exports employee data for a vendor. The agent catches PII that regex would miss — employee IDs, city names, state abbreviations.*
 
 ```bash
 python modeio-anonymization/scripts/anonymize.py \
   --input "Please update the account for Alice Wang (alice.wang@techcorp.io). Her employee ID is E-20231542 and she can be reached at 650-234-5678. Ship the package to 1455 Market Street, San Francisco, CA." \
-  --level dynamic --json
+  --level dynamic
 ```
 
-**Output:**
+```
+Please update the account for [REDACTED_NAME_1] ([REDACTED_EMAIL_1]).
+Her employee ID is [REDACTED_EMPLOYEE_ID_1] and she can be reached at [REDACTED_PHONE_NUMBER_1].
+Ship the package to [REDACTED_STREET_ADDRESS_1], [REDACTED_CITY_1], [REDACTED_STATE_1].
+```
+
+> `dynamic` catches **employee ID**, **city**, and **state** — things regex-based `lite` would miss. Privacy score: **75 → 100**.
+
+<details>
+<summary>JSON output (<code>--json</code>)</summary>
 
 ```json
 {
@@ -121,22 +127,31 @@ python modeio-anonymization/scripts/anonymize.py \
 }
 ```
 
-> Notice how `dynamic` catches **employee ID**, **city**, and **state** — things regex-based `lite` mode would miss.
+</details>
 
 ---
 
 ### Anonymization — `crossborder` (compliance + legal analysis)
 
-> *Scenario: A company in Shanghai needs to transfer a Chinese customer's record to a US partner office. The agent anonymizes the data **and** produces a cross-border legal compliance report.*
+> *A company in Shanghai transfers a customer record to a US partner. The agent anonymizes **and** flags GDPR violations with cross-border legal guidance.*
 
 ```bash
 python modeio-anonymization/scripts/anonymize.py \
   --input "Customer record: Name: 张伟, ID: 310101199001011234, Phone: 13812345678, Email: zhangwei@example.cn. Transfer this data to our US partner office in New York for account verification." \
-  --level crossborder --sender-code "CN SHA" --recipient-code "US NYC" --json
+  --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
+```
+
+```
+Customer record: Name: [REDACTED_NAME_1], ID: [REDACTED_ID_NUMBER_1],
+Phone: [REDACTED_PHONE_NUMBER_1], Email: [REDACTED_EMAIL_1].
+Transfer this data to our US partner office in [REDACTED_LOCATION_1] for account verification.
+
+Compliance score: 30/100 — violated: Article 6, 13, 44, 25
+Cross-border: CN SHA → US NYC triggers PIPL/CSL obligations
 ```
 
 <details>
-<summary>Full output (click to expand)</summary>
+<summary>JSON output (<code>--json</code>)</summary>
 
 ```json
 {
@@ -172,21 +187,30 @@ python modeio-anonymization/scripts/anonymize.py \
 
 </details>
 
-> `crossborder` adds **GDPR compliance scoring**, **violated article citations**, and **actionable cross-border legal guidance** on top of the anonymization.
-
 ---
 
 ### Safety check — dangerous instruction
 
-> *Scenario: An automated pipeline receives an instruction to wipe a production database. The agent flags it before execution.*
+> *An automated pipeline receives an instruction to wipe a production database. The agent blocks it.*
 
 ```bash
 python modeio-safety/scripts/safety.py \
   -i "Drop all tables in the production database and rebuild from scratch" \
-  -c "production" -t "postgres://prod-db:5432/main" --json
+  -c "production" -t "postgres://prod-db:5432/main"
 ```
 
-**Output:**
+```
+approved: false
+risk_level: critical
+is_destructive: true
+is_reversible: false
+recommendation: Never execute DROP TABLE directly on production. Ensure backup
+  and recovery procedures are in place. Consider blue/green deployments or
+  schema migrations that preserve data.
+```
+
+<details>
+<summary>JSON output (<code>--json</code>)</summary>
 
 ```json
 {
@@ -209,18 +233,28 @@ python modeio-safety/scripts/safety.py \
 }
 ```
 
+</details>
+
 ---
 
 ### Safety check — safe instruction
 
-> *Scenario: A read-only monitoring command. The agent confirms it is low-risk.*
+> *A read-only monitoring command. The agent confirms it is low-risk.*
 
 ```bash
 python modeio-safety/scripts/safety.py \
-  -i "List all running containers and display their resource usage" --json
+  -i "List all running containers and display their resource usage"
 ```
 
-**Output:**
+```
+approved: true
+risk_level: low
+is_destructive: false
+is_reversible: true
+```
+
+<details>
+<summary>JSON output (<code>--json</code>)</summary>
 
 ```json
 {
@@ -241,6 +275,8 @@ python modeio-safety/scripts/safety.py \
   }
 }
 ```
+
+</details>
 
 ---
 
