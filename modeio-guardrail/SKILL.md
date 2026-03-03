@@ -1,5 +1,5 @@
 ---
-name: modeio-safety
+name: modeio-guardrail
 description: Runs safety checks for instruction risk including destructive operations, prompt injection, irreversible actions, and compliance violations. Performs one real-time backend check per instruction. Use when asked for safety check, risk assessment, security audit, destructive check, instruction audit, or Modeio safety scan.
 ---
 
@@ -46,7 +46,7 @@ python scripts/safety.py -i "Delete all log files" --json
 `--json` output contract:
 
 - `success`: `true`
-- `tool`: `modeio-safety`
+- `tool`: `modeio-guardrail`
 - `mode`: `api`
 - `data`: full backend safety response
 
@@ -68,7 +68,7 @@ Failure behavior:
 - API payload with top-level `error`: script exits non-zero and prints the full response JSON to `stderr`.
 - With `--json`, failures are emitted as a unified JSON envelope:
   - `success: false`
-  - `tool: modeio-safety`
+  - `tool: modeio-guardrail`
   - `mode: api`
   - `error.type`: `validation_error` / `network_error` / `api_error`
   - `error.message`: failure description
@@ -77,7 +77,7 @@ Failure behavior:
 
 ## When NOT to use
 
-- For PII redaction or anonymization; use `modeio-anonymization` instead.
+- For PII redaction or anonymization; use `modeio-redact` instead.
 - For tasks with no executable instruction to evaluate.
 
 ## Resources

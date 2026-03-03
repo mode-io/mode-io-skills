@@ -9,8 +9,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT_PATH = REPO_ROOT / "modeio-anonymization" / "scripts" / "anonymize.py"
-SCRIPTS_DIR = REPO_ROOT / "modeio-anonymization" / "scripts"
+SCRIPT_PATH = REPO_ROOT / "modeio-redact" / "scripts" / "anonymize.py"
+SCRIPTS_DIR = REPO_ROOT / "modeio-redact" / "scripts"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 import anonymize  # noqa: E402
@@ -49,7 +49,7 @@ class TestAnonymizeContract(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         payload = json.loads(result.stdout)
         self.assertFalse(payload["success"])
-        self.assertEqual(payload["tool"], "modeio-anonymization")
+        self.assertEqual(payload["tool"], "modeio-redact")
         self.assertEqual(payload["level"], "crossborder")
         self.assertEqual(payload["error"]["type"], "validation_error")
 
@@ -65,7 +65,7 @@ class TestAnonymizeContract(unittest.TestCase):
         payload = json.loads(result.stdout)
 
         self.assertTrue(payload["success"])
-        self.assertEqual(payload["tool"], "modeio-anonymization")
+        self.assertEqual(payload["tool"], "modeio-redact")
         self.assertEqual(payload["mode"], "local-regex")
         self.assertEqual(payload["level"], "lite")
         self.assertIn("anonymizedContent", payload["data"])

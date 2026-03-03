@@ -1,5 +1,5 @@
 ---
-name: modeio-anonymization
+name: modeio-redact
 description: Runs PII anonymization checks for text or JSON. Supports local regex masking in lite mode and server-side analysis in dynamic/strict/crossborder modes. Use when asked to anonymize data, redact PII, mask sensitive information, detect personal data, check for sensitive content, scrub credentials, or run Modeio anonymization.
 ---
 
@@ -49,7 +49,7 @@ python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic -
 `--json` output contract:
 
 - `success`: `true`
-- `tool`: `modeio-anonymization`
+- `tool`: `modeio-redact`
 - `mode`: `local-regex` or `api`
 - `level`: chosen anonymization level
 - `data`: anonymization payload
@@ -70,7 +70,7 @@ Failure behavior:
 - API semantic failure (`success: false`) prints full response JSON to `stderr` and exits non-zero.
 - With `--json`, failures are emitted as a unified JSON envelope:
   - `success: false`
-  - `tool: modeio-anonymization`
+  - `tool: modeio-redact`
   - `mode`: `local-regex` or `api`
   - `level`: chosen anonymization level
   - `error.type`: `validation_error` / `network_error` / `api_error`
@@ -153,7 +153,7 @@ The country portion is the ISO 3166-1 alpha-2 code. The city portion is the IATA
 
 ## When NOT to use
 
-- For command safety or destructive-operation analysis; use `modeio-safety` instead.
+- For command safety or destructive-operation analysis; use `modeio-guardrail` instead.
 - For pure policy or legal discussion when no text needs anonymization.
 
 ## Resources

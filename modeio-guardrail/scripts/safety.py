@@ -17,7 +17,7 @@ import requests
 # Backend API URL, overridable via SAFETY_API_URL environment variable
 URL = os.environ.get("SAFETY_API_URL", "https://safety-cf.modeio.ai/api/cf/safety")
 
-TOOL_NAME = "modeio-safety"
+TOOL_NAME = "modeio-guardrail"
 
 MAX_RETRIES = 2
 RETRY_BACKOFF = 1.0  # seconds; doubles each retry
