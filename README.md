@@ -439,7 +439,11 @@ python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com, Pho
 # Crossborder — full compliance + legal analysis (requires jurisdiction codes)
 python modeio-redact/scripts/anonymize.py --input "Name: 张伟, ID: 310101199001011234" --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
 
-# Pipe file contents
+# File path input is auto-detected for .txt and .md
+python modeio-redact/scripts/anonymize.py --input ./sensitive_notes.txt --level dynamic
+python modeio-redact/scripts/anonymize.py --input ./handoff.md --level lite
+
+# For other formats (for example .json), pass the content string explicitly
 python modeio-redact/scripts/anonymize.py --input "$(cat sensitive_data.json)" --level dynamic
 
 # Machine-readable JSON output (works with any level)
@@ -453,7 +457,7 @@ python modeio-guardrail/scripts/safety.py -i "Modify database permissions" -c "p
 python modeio-redact/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json
 ```
 
-> File-path input mode (`--input-type file`) is intentionally deferred for now and will be supported later. Use `--input "$(cat your_file.json)"` as the current workaround.
+> `--input` auto-reads existing `.txt` and `.md` file paths. Other file types should be passed as content strings (for example: `--input "$(cat data.json)"`).
 
 For full details, see [modeio-redact/SKILL.md](modeio-redact/SKILL.md) and [modeio-guardrail/SKILL.md](modeio-guardrail/SKILL.md).
 
