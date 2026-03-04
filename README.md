@@ -465,6 +465,35 @@ python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com" --l
 python modeio-guardrail/scripts/safety.py -i "Delete all log files"
 python modeio-guardrail/scripts/safety.py -i "Modify database permissions" -c "production" -t "/var/lib/mysql" --json
 
+# Local prompt shield gateway (Codex/OpenCode)
+# Routes OpenAI-compatible chat completion calls through local shield/unshield
+# Optional but recommended for automatic protection.
+# Quickstart: modeio-redact/PROMPT_GATEWAY_QUICKSTART.md
+python modeio-redact/scripts/setup_prompt_gateway.py --client both
+
+# Shortcut
+make prompt-gateway-setup
+# (Windows users can run the direct python command above)
+
+# Optional: apply OpenCode baseURL config automatically (with backup)
+python modeio-redact/scripts/setup_prompt_gateway.py --client opencode --apply-opencode --create-opencode-config
+
+export MODEIO_GATEWAY_UPSTREAM_API_KEY="<your-upstream-key>"
+python modeio-redact/scripts/prompt_gateway.py \
+  --host 127.0.0.1 \
+  --port 8787 \
+  --upstream-url "https://api.openai.com/v1/chat/completions"
+
+# In your client, set base URL to: http://127.0.0.1:8787/v1
+
+# One-command uninstall (OpenCode rollback + gateway-local map cleanup)
+make prompt-gateway-uninstall
+# (Windows users can run setup_prompt_gateway.py --uninstall directly)
+
+# Run dedicated gateway contract tests only
+python -m unittest discover modeio-redact/tests -p "test_prompt_gateway*.py"
+python -m unittest modeio-redact.tests.test_setup_prompt_gateway
+
 # Offline local detection (detailed risk scoring)
 python modeio-redact/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json
 python modeio-redact/scripts/detect_local.py --input "Name: Alice Wang" --profile precision --json
