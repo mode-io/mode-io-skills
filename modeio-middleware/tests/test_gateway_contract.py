@@ -2,137 +2,21 @@
 
 import json
 import sys
-import threading
 import types
 import urllib.error
 import urllib.request
 import unittest
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "modeio-middleware" / "scripts"
+TESTS_DIR = REPO_ROOT / "modeio-middleware" / "tests"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
-import middleware_gateway as gateway  # noqa: E402
+sys.path.insert(0, str(TESTS_DIR))
 
+from helpers.gateway_harness import GatewayStub, UpstreamStub, completion_payload, responses_payload  # noqa: E402
 from modeio_middleware.plugins.base import MiddlewarePlugin  # noqa: E402
-
-
-def _completion_payload(content):
-    return {
-        "id": "chatcmpl-test",
-        "object": "chat.completion",
-        "created": 0,
-        "model": "test-model",
-        "choices": [
-            {
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": content,
-                },
-                "finish_reason": "stop",
-            }
-        ],
-    }
-
-
-class _UpstreamStub:
-    def __init__(self, response_factory, status=200):
-        self.response_factory = response_factory
-        self.status = status
-        self.requests = []
-        self._server = None
-        self._thread = None
-        self.base_url = ""
-
-    def start(self):
-        owner = self
-
-        class Handler(BaseHTTPRequestHandler):
-            protocol_version = "HTTP/1.1"
-
-            def do_POST(self):
-                content_length = int(self.headers.get("Content-Length", "0"))
-                body = self.rfile.read(content_length)
-                payload = json.loads(body.decode("utf-8")) if body else {}
-                owner.requests.append(
-                    {
-                        "path": self.path,
-                        "headers": dict(self.headers.items()),
-                        "body": payload,
-                    }
-                )
-                response_payload = owner.response_factory(payload)
-                response_body = json.dumps(response_payload).encode("utf-8")
-
-                self.send_response(owner.status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(response_body)))
-                self.end_headers()
-                self.wfile.write(response_body)
-
-            def log_message(self, _format, *_args):
-                return
-
-        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        host, port = self._server.server_address
-        self.base_url = f"http://{host}:{port}"
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-        self._thread.start()
-
-    def stop(self):
-        if self._server is not None:
-            self._server.shutdown()
-            self._server.server_close()
-        if self._thread is not None:
-            self._thread.join(timeout=2)
-
-
-class _GatewayStub:
-    def __init__(self, upstream_url, *, plugins=None, profiles=None):
-        self._server = None
-        self._thread = None
-        self.base_url = ""
-        self.config = gateway.GatewayRuntimeConfig(
-            upstream_url=upstream_url,
-            upstream_timeout_seconds=5,
-            upstream_api_key_env="MODEIO_GATEWAY_UPSTREAM_API_KEY",
-            default_profile="dev",
-            profiles=profiles
-            or {
-                "dev": {
-                    "on_plugin_error": "warn",
-                    "plugins": ["guardrail", "redact"],
-                }
-            },
-            plugins=plugins
-            or {
-                "guardrail": {
-                    "enabled": False,
-                    "module": "modeio_middleware.plugins.guardrail",
-                },
-                "redact": {
-                    "enabled": False,
-                    "module": "modeio_middleware.plugins.redact",
-                },
-            },
-        )
-
-    def start(self):
-        self._server = gateway.create_server("127.0.0.1", 0, self.config)
-        host, port = self._server.server_address
-        self.base_url = f"http://{host}:{port}"
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-        self._thread.start()
-
-    def stop(self):
-        if self._server is not None:
-            self._server.shutdown()
-            self._server.server_close()
-        if self._thread is not None:
-            self._thread.join(timeout=2)
 
 
 class _BlockerPlugin(MiddlewarePlugin):
@@ -149,11 +33,11 @@ def _register_blocker_plugin_module(module_name: str):
 
 
 class TestGatewayContract(unittest.TestCase):
-    def _start_pair(self, response_factory, *, status=200, plugins=None, profiles=None):
-        upstream = _UpstreamStub(response_factory=response_factory, status=status)
+    def _start_pair(self, response_factory, *, status=200, stream_factory=None, plugins=None, profiles=None):
+        upstream = UpstreamStub(response_factory=response_factory, status=status, stream_factory=stream_factory)
         upstream.start()
-        gateway_stub = _GatewayStub(
-            upstream_url=f"{upstream.base_url}/v1/chat/completions",
+        gateway_stub = GatewayStub(
+            upstream_base_url=upstream.base_url,
             plugins=plugins,
             profiles=profiles,
         )
@@ -166,12 +50,12 @@ class TestGatewayContract(unittest.TestCase):
             body = json.loads(response.read().decode("utf-8"))
             return response.status, response.headers, body
 
-    def _post_gateway(self, gateway_url, payload, headers=None):
+    def _post_json(self, gateway_url, path, payload, headers=None):
         request_headers = {"Content-Type": "application/json"}
         if headers:
             request_headers.update(headers)
         request = urllib.request.Request(
-            f"{gateway_url}/v1/chat/completions",
+            f"{gateway_url}{path}",
             data=json.dumps(payload).encode("utf-8"),
             headers=request_headers,
             method="POST",
@@ -187,8 +71,26 @@ class TestGatewayContract(unittest.TestCase):
             finally:
                 error.close()
 
+    def _post_stream(self, gateway_url, path, payload):
+        request = urllib.request.Request(
+            f"{gateway_url}{path}",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                body = response.read().decode("utf-8", errors="replace")
+                return response.status, response.headers, body
+        except urllib.error.HTTPError as error:
+            try:
+                body = error.read().decode("utf-8", errors="replace")
+                return error.code, error.headers, body
+            finally:
+                error.close()
+
     def test_healthz_reports_ready(self):
-        upstream, gateway_stub = self._start_pair(lambda _payload: _completion_payload("ok"))
+        upstream, gateway_stub = self._start_pair(lambda _path, _payload: completion_payload("ok"))
         try:
             status, _headers, payload = self._http_get_json(f"{gateway_stub.base_url}/healthz")
             self.assertEqual(status, 200)
@@ -198,29 +100,14 @@ class TestGatewayContract(unittest.TestCase):
             gateway_stub.stop()
             upstream.stop()
 
-    def test_rejects_stream_true(self):
-        upstream, gateway_stub = self._start_pair(lambda _payload: _completion_payload("ok"))
+    def test_chat_modeio_metadata_not_forwarded_to_upstream(self):
+        upstream, gateway_stub = self._start_pair(
+            lambda _path, payload: completion_payload(payload["messages"][0]["content"])
+        )
         try:
-            status, headers, payload = self._post_gateway(
+            status, _headers, _payload = self._post_json(
                 gateway_stub.base_url,
-                {
-                    "model": "gpt-test",
-                    "messages": [{"role": "user", "content": "hello"}],
-                    "stream": True,
-                },
-            )
-            self.assertEqual(status, 400)
-            self.assertEqual(payload["error"]["code"], "MODEIO_UNSUPPORTED_STREAMING")
-            self.assertEqual(headers["x-modeio-upstream-called"], "false")
-        finally:
-            gateway_stub.stop()
-            upstream.stop()
-
-    def test_modeio_metadata_not_forwarded_to_upstream(self):
-        upstream, gateway_stub = self._start_pair(lambda payload: _completion_payload(payload["messages"][0]["content"]))
-        try:
-            status, _headers, _payload = self._post_gateway(
-                gateway_stub.base_url,
+                "/v1/chat/completions",
                 {
                     "model": "gpt-test",
                     "messages": [{"role": "user", "content": "hello"}],
@@ -234,7 +121,90 @@ class TestGatewayContract(unittest.TestCase):
             gateway_stub.stop()
             upstream.stop()
 
-    def test_redact_plugin_shields_and_restores(self):
+    def test_responses_modeio_metadata_not_forwarded_to_upstream(self):
+        upstream, gateway_stub = self._start_pair(
+            lambda _path, payload: responses_payload(str(payload.get("input", "")))
+        )
+        try:
+            status, _headers, payload = self._post_json(
+                gateway_stub.base_url,
+                "/v1/responses",
+                {
+                    "model": "gpt-test",
+                    "input": "hello from responses",
+                    "modeio": {"profile": "dev"},
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertIn("output_text", payload)
+            upstream_payload = upstream.requests[-1]["body"]
+            self.assertNotIn("modeio", upstream_payload)
+        finally:
+            gateway_stub.stop()
+            upstream.stop()
+
+    def test_chat_stream_is_passed_through(self):
+        def stream_factory(_path, payload):
+            content = payload["messages"][0]["content"]
+            return [
+                {"choices": [{"delta": {"content": f"Echo: {content}"}}]},
+                "[DONE]",
+            ]
+
+        upstream, gateway_stub = self._start_pair(
+            lambda _path, _payload: completion_payload("unused"),
+            stream_factory=stream_factory,
+        )
+        try:
+            status, headers, body = self._post_stream(
+                gateway_stub.base_url,
+                "/v1/chat/completions",
+                {
+                    "model": "gpt-test",
+                    "messages": [{"role": "user", "content": "hello stream"}],
+                    "stream": True,
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(headers["x-modeio-upstream-called"], "true")
+            self.assertEqual(headers["x-modeio-streaming"], "true")
+            self.assertIn("Echo: hello stream", body)
+            self.assertIn("[DONE]", body)
+        finally:
+            gateway_stub.stop()
+            upstream.stop()
+
+    def test_responses_stream_is_passed_through(self):
+        def stream_factory(_path, _payload):
+            return [
+                {"type": "response.output_text.delta", "delta": "hello"},
+                {"type": "response.completed"},
+                "[DONE]",
+            ]
+
+        upstream, gateway_stub = self._start_pair(
+            lambda _path, _payload: responses_payload("unused"),
+            stream_factory=stream_factory,
+        )
+        try:
+            status, headers, body = self._post_stream(
+                gateway_stub.base_url,
+                "/v1/responses",
+                {
+                    "model": "gpt-test",
+                    "input": "hello response stream",
+                    "stream": True,
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(headers["x-modeio-streaming"], "true")
+            self.assertIn("response.output_text.delta", body)
+            self.assertIn("[DONE]", body)
+        finally:
+            gateway_stub.stop()
+            upstream.stop()
+
+    def test_redact_plugin_shields_and_restores_non_stream_chat(self):
         plugins = {
             "guardrail": {
                 "enabled": False,
@@ -252,14 +222,15 @@ class TestGatewayContract(unittest.TestCase):
             }
         }
 
-        def echo_user_content(payload):
+        def echo_user_content(_path, payload):
             content = payload["messages"][0]["content"]
-            return _completion_payload(f"Echo: {content}")
+            return completion_payload(f"Echo: {content}")
 
         upstream, gateway_stub = self._start_pair(echo_user_content, plugins=plugins, profiles=profiles)
         try:
-            status, headers, payload = self._post_gateway(
+            status, headers, payload = self._post_json(
                 gateway_stub.base_url,
+                "/v1/chat/completions",
                 {
                     "model": "gpt-test",
                     "messages": [
@@ -283,6 +254,55 @@ class TestGatewayContract(unittest.TestCase):
             gateway_stub.stop()
             upstream.stop()
 
+    def test_redact_plugin_restores_streamed_chat_content(self):
+        plugins = {
+            "guardrail": {
+                "enabled": False,
+                "module": "modeio_middleware.plugins.guardrail",
+            },
+            "redact": {
+                "enabled": True,
+                "module": "modeio_middleware.plugins.redact",
+            },
+        }
+        profiles = {
+            "dev": {
+                "on_plugin_error": "warn",
+                "plugins": ["redact"],
+            }
+        }
+
+        def stream_factory(_path, payload):
+            content = payload["messages"][0]["content"]
+            return [
+                {"choices": [{"delta": {"content": f"Echo: {content}"}}]},
+                "[DONE]",
+            ]
+
+        upstream, gateway_stub = self._start_pair(
+            lambda _path, _payload: completion_payload("unused"),
+            stream_factory=stream_factory,
+            plugins=plugins,
+            profiles=profiles,
+        )
+        try:
+            status, _headers, body = self._post_stream(
+                gateway_stub.base_url,
+                "/v1/chat/completions",
+                {
+                    "model": "gpt-test",
+                    "messages": [{"role": "user", "content": "email alice@example.com"}],
+                    "stream": True,
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertNotIn("__MIO_EMAIL_", body)
+            self.assertIn("alice@example.com", body)
+            self.assertNotIn("alice@example.com", json.dumps(upstream.requests[-1]["body"]))
+        finally:
+            gateway_stub.stop()
+            upstream.stop()
+
     def test_blocking_plugin_blocks_before_upstream_call(self):
         module_name = "modeio_middleware.tests.plugins.blocker"
         _register_blocker_plugin_module(module_name)
@@ -301,13 +321,14 @@ class TestGatewayContract(unittest.TestCase):
         }
 
         upstream, gateway_stub = self._start_pair(
-            lambda payload: _completion_payload(payload["messages"][0]["content"]),
+            lambda _path, payload: completion_payload(payload["messages"][0]["content"]),
             plugins=plugins,
             profiles=profiles,
         )
         try:
-            status, headers, payload = self._post_gateway(
+            status, headers, payload = self._post_json(
                 gateway_stub.base_url,
+                "/v1/chat/completions",
                 {
                     "model": "gpt-test",
                     "messages": [{"role": "user", "content": "hello"}],

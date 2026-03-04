@@ -36,6 +36,16 @@ class HookPipelineResult:
     block_message: str = ""
 
 
+@dataclass
+class StreamEventPipelineResult:
+    event: Dict[str, Any]
+    actions: List[str] = field(default_factory=list)
+    findings: List[Dict[str, Any]] = field(default_factory=list)
+    degraded: List[str] = field(default_factory=list)
+    blocked: bool = False
+    block_message: str = ""
+
+
 def _coerce_findings(raw: Any) -> List[Dict[str, Any]]:
     if raw is None:
         return []
@@ -46,6 +56,13 @@ def _coerce_findings(raw: Any) -> List[Dict[str, Any]]:
         if isinstance(finding, dict):
             findings.append(finding)
     return findings
+
+
+def _normalize_header_map(raw: Dict[str, Any]) -> Dict[str, str]:
+    normalized_headers: Dict[str, str] = {}
+    for key, value in raw.items():
+        normalized_headers[str(key)] = str(value)
+    return normalized_headers
 
 
 class PluginManager:
@@ -174,13 +191,38 @@ class PluginManager:
 
         return normalized
 
+    def _normalize_stream_hook_result(self, payload: Any) -> Dict[str, Any]:
+        if payload is None:
+            return {"action": HOOK_ACTION_ALLOW, "findings": []}
+        if not isinstance(payload, dict):
+            raise ValueError("plugin stream hook result must be an object")
+
+        action = str(payload.get("action", HOOK_ACTION_ALLOW)).strip().lower()
+        if action not in VALID_HOOK_ACTIONS:
+            raise ValueError(f"unsupported plugin action '{action}'")
+
+        message = payload.get("message")
+        if message is not None and not isinstance(message, str):
+            raise ValueError("field 'message' must be a string")
+
+        normalized: Dict[str, Any] = {
+            "action": action,
+            "findings": _coerce_findings(payload.get("findings")),
+            "message": message,
+        }
+
+        if "event" in payload:
+            normalized["event"] = payload["event"]
+
+        return normalized
+
     def _handle_plugin_error(
         self,
         *,
         plugin_name: str,
         error: Exception,
         on_plugin_error: str,
-        result: HookPipelineResult,
+        result: Any,
     ) -> None:
         reason = f"plugin_error:{plugin_name}"
         result.degraded.append(reason)
@@ -202,11 +244,67 @@ class PluginManager:
             }
         )
 
+    def _apply_stream_lifecycle_hook(
+        self,
+        active_plugins: Iterable[ActivePlugin],
+        *,
+        request_id: str,
+        endpoint_kind: str,
+        profile: str,
+        request_context: Dict[str, Any],
+        response_context: Optional[Dict[str, Any]],
+        shared_state: Dict[str, Any],
+        on_plugin_error: str,
+        hook_name: str,
+        blocked_message_suffix: str,
+    ) -> HookPipelineResult:
+        result = HookPipelineResult(body={}, headers={})
+
+        for active in reversed(list(active_plugins)):
+            plugin_state = shared_state.setdefault(active.name, {})
+            hook_input = {
+                "request_id": request_id,
+                "endpoint_kind": endpoint_kind,
+                "profile": profile,
+                "request_context": request_context,
+                "plugin_config": active.config,
+                "state": shared_state,
+                "plugin_state": plugin_state,
+            }
+            if response_context is not None:
+                hook_input["response_context"] = response_context
+
+            try:
+                payload = getattr(active.instance, hook_name)(hook_input)
+                normalized = self._normalize_stream_hook_result(payload)
+            except Exception as error:
+                self._handle_plugin_error(
+                    plugin_name=active.name,
+                    error=error,
+                    on_plugin_error=on_plugin_error,
+                    result=result,
+                )
+                if result.blocked:
+                    return result
+                continue
+
+            action = normalized["action"]
+            result.actions.append(f"{active.name}:{action}")
+            result.findings.extend(normalized["findings"])
+
+            if action == HOOK_ACTION_BLOCK:
+                result.blocked = True
+                result.block_message = normalized.get("message") or f"plugin '{active.name}' blocked {blocked_message_suffix}"
+                return result
+
+        return result
+
     def apply_pre_request(
         self,
         active_plugins: Iterable[ActivePlugin],
         *,
         request_id: str,
+        endpoint_kind: str,
         profile: str,
         request_body: Dict[str, Any],
         request_headers: Dict[str, str],
@@ -220,6 +318,7 @@ class PluginManager:
             plugin_state = shared_state.setdefault(active.name, {})
             hook_input = {
                 "request_id": request_id,
+                "endpoint_kind": endpoint_kind,
                 "profile": profile,
                 "request_body": result.body,
                 "request_headers": result.headers,
@@ -264,10 +363,7 @@ class PluginManager:
                             "MODEIO_PLUGIN_ERROR",
                             f"plugin '{active.name}' returned invalid request_headers",
                         )
-                    normalized_headers: Dict[str, str] = {}
-                    for key, value in normalized["request_headers"].items():
-                        normalized_headers[str(key)] = str(value)
-                    result.headers.update(normalized_headers)
+                    result.headers.update(_normalize_header_map(normalized["request_headers"]))
 
             if action == HOOK_ACTION_BLOCK:
                 result.blocked = True
@@ -281,6 +377,7 @@ class PluginManager:
         active_plugins: Iterable[ActivePlugin],
         *,
         request_id: str,
+        endpoint_kind: str,
         profile: str,
         request_context: Dict[str, Any],
         response_body: Dict[str, Any],
@@ -294,6 +391,7 @@ class PluginManager:
             plugin_state = shared_state.setdefault(active.name, {})
             hook_input = {
                 "request_id": request_id,
+                "endpoint_kind": endpoint_kind,
                 "profile": profile,
                 "request_context": request_context,
                 "response_body": result.body,
@@ -338,10 +436,7 @@ class PluginManager:
                             "MODEIO_PLUGIN_ERROR",
                             f"plugin '{active.name}' returned invalid response_headers",
                         )
-                    normalized_headers: Dict[str, str] = {}
-                    for key, value in normalized["response_headers"].items():
-                        normalized_headers[str(key)] = str(value)
-                    result.headers.update(normalized_headers)
+                    result.headers.update(_normalize_header_map(normalized["response_headers"]))
 
             if action == HOOK_ACTION_BLOCK:
                 result.blocked = True
@@ -349,3 +444,113 @@ class PluginManager:
                 return result
 
         return result
+
+    def apply_post_stream_start(
+        self,
+        active_plugins: Iterable[ActivePlugin],
+        *,
+        request_id: str,
+        endpoint_kind: str,
+        profile: str,
+        request_context: Dict[str, Any],
+        response_context: Dict[str, Any],
+        shared_state: Dict[str, Any],
+        on_plugin_error: str,
+    ) -> HookPipelineResult:
+        return self._apply_stream_lifecycle_hook(
+            active_plugins,
+            request_id=request_id,
+            endpoint_kind=endpoint_kind,
+            profile=profile,
+            request_context=request_context,
+            response_context=response_context,
+            shared_state=shared_state,
+            on_plugin_error=on_plugin_error,
+            hook_name="post_stream_start",
+            blocked_message_suffix="stream",
+        )
+
+    def apply_post_stream_event(
+        self,
+        active_plugins: Iterable[ActivePlugin],
+        *,
+        request_id: str,
+        endpoint_kind: str,
+        profile: str,
+        request_context: Dict[str, Any],
+        event: Dict[str, Any],
+        shared_state: Dict[str, Any],
+        on_plugin_error: str,
+    ) -> StreamEventPipelineResult:
+        result = StreamEventPipelineResult(event=copy.deepcopy(event))
+
+        for active in reversed(list(active_plugins)):
+            plugin_state = shared_state.setdefault(active.name, {})
+            hook_input = {
+                "request_id": request_id,
+                "endpoint_kind": endpoint_kind,
+                "profile": profile,
+                "request_context": request_context,
+                "event": result.event,
+                "plugin_config": active.config,
+                "state": shared_state,
+                "plugin_state": plugin_state,
+            }
+
+            try:
+                payload = active.instance.post_stream_event(hook_input)
+                normalized = self._normalize_stream_hook_result(payload)
+            except Exception as error:
+                self._handle_plugin_error(
+                    plugin_name=active.name,
+                    error=error,
+                    on_plugin_error=on_plugin_error,
+                    result=result,
+                )
+                if result.blocked:
+                    return result
+                continue
+
+            action = normalized["action"]
+            result.actions.append(f"{active.name}:{action}")
+            result.findings.extend(normalized["findings"])
+
+            if action == HOOK_ACTION_MODIFY and "event" in normalized:
+                if not isinstance(normalized["event"], dict):
+                    raise MiddlewareError(
+                        500,
+                        "MODEIO_PLUGIN_ERROR",
+                        f"plugin '{active.name}' returned invalid stream event",
+                    )
+                result.event = normalized["event"]
+
+            if action == HOOK_ACTION_BLOCK:
+                result.blocked = True
+                result.block_message = normalized.get("message") or f"plugin '{active.name}' blocked stream event"
+                return result
+
+        return result
+
+    def apply_post_stream_end(
+        self,
+        active_plugins: Iterable[ActivePlugin],
+        *,
+        request_id: str,
+        endpoint_kind: str,
+        profile: str,
+        request_context: Dict[str, Any],
+        shared_state: Dict[str, Any],
+        on_plugin_error: str,
+    ) -> HookPipelineResult:
+        return self._apply_stream_lifecycle_hook(
+            active_plugins,
+            request_id=request_id,
+            endpoint_kind=endpoint_kind,
+            profile=profile,
+            request_context=request_context,
+            response_context=None,
+            shared_state=shared_state,
+            on_plugin_error=on_plugin_error,
+            hook_name="post_stream_end",
+            blocked_message_suffix="stream end",
+        )

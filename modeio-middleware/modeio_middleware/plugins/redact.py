@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict
 
 CURRENT_FILE = Path(__file__).resolve()
 REPO_ROOT = CURRENT_FILE.parents[3]
@@ -14,100 +13,8 @@ REDACT_PACKAGE_ROOT = REPO_ROOT / "modeio-redact"
 if str(REDACT_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(REDACT_PACKAGE_ROOT))
 
-from modeio_redact.detection.detect_local import detect_sensitive_local
-
 from modeio_middleware.plugins.base import MiddlewarePlugin
-
-TEXT_PART_TYPES = {"text", "input_text", "output_text"}
-
-
-def _normalize_entity_type(raw: str) -> str:
-    cleaned = "".join(char if char.isalnum() else "_" for char in (raw or "").upper())
-    while "__" in cleaned:
-        cleaned = cleaned.replace("__", "_")
-    cleaned = cleaned.strip("_")
-    return cleaned or "UNKNOWN"
-
-
-def _make_token(request_id: str, entity_type: str, index: int, original: str) -> str:
-    digest_source = f"{request_id}|{entity_type}|{index}|{original}".encode("utf-8")
-    signature = hashlib.sha256(digest_source).hexdigest()[:10].upper()
-    return f"__MIO_{entity_type}_{index}_{signature}__"
-
-
-def _replace_tokens(text: str, entries: Sequence[Dict[str, str]]) -> Tuple[str, int]:
-    restored = text
-    replaced = 0
-    ordered = sorted(entries, key=lambda item: len(item["placeholder"]), reverse=True)
-    for item in ordered:
-        placeholder = item.get("placeholder", "")
-        original = item.get("original", "")
-        if not placeholder:
-            continue
-        count = restored.count(placeholder)
-        if count <= 0:
-            continue
-        restored = restored.replace(placeholder, original)
-        replaced += count
-    return restored, replaced
-
-
-def _shield_text(
-    text: str,
-    *,
-    request_id: str,
-    entries_by_identity: Dict[Tuple[str, str], str],
-    entries: List[Dict[str, str]],
-    counters: Dict[str, int],
-) -> Tuple[str, int]:
-    detection = detect_sensitive_local(text)
-    sanitized = detection.get("sanitizedText", text)
-    if not isinstance(sanitized, str):
-        raise ValueError("redact plugin detector returned non-string sanitizedText")
-
-    items = detection.get("items", [])
-    if not isinstance(items, list):
-        return sanitized, 0
-
-    placeholder_to_token: Dict[str, str] = {}
-    replaced_occurrences = 0
-
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        source_placeholder = item.get("maskedValue")
-        original = item.get("value")
-        if not isinstance(source_placeholder, str) or not source_placeholder:
-            continue
-        if not isinstance(original, str) or not original:
-            continue
-
-        entity_type = _normalize_entity_type(str(item.get("type", "UNKNOWN")))
-        identity_key = (entity_type, original)
-        token = entries_by_identity.get(identity_key)
-        if token is None:
-            index = counters.get(entity_type, 0) + 1
-            counters[entity_type] = index
-            token = _make_token(request_id, entity_type, index, original)
-            entries_by_identity[identity_key] = token
-            entries.append(
-                {
-                    "placeholder": token,
-                    "original": original,
-                    "type": entity_type,
-                }
-            )
-        placeholder_to_token[source_placeholder] = token
-
-    for source_placeholder in sorted(placeholder_to_token.keys(), key=len, reverse=True):
-        token = placeholder_to_token[source_placeholder]
-        count = sanitized.count(source_placeholder)
-        if count <= 0:
-            continue
-        sanitized = sanitized.replace(source_placeholder, token)
-        replaced_occurrences += count
-
-    return sanitized, replaced_occurrences
+from modeio_middleware.plugins.redact_utils import restore_tokens_deep, shield_request_body
 
 
 class Plugin(MiddlewarePlugin):
@@ -116,53 +23,14 @@ class Plugin(MiddlewarePlugin):
 
     def pre_request(self, hook_input: Dict[str, Any]) -> Dict[str, Any]:
         request_id = hook_input["request_id"]
-        request_body = copy.deepcopy(hook_input["request_body"])
-        messages = request_body.get("messages")
-        if not isinstance(messages, list):
-            return {"action": "allow"}
+        endpoint_kind = hook_input.get("endpoint_kind", "chat_completions")
+        request_body = hook_input["request_body"]
 
-        entries_by_identity: Dict[Tuple[str, str], str] = {}
-        entries: List[Dict[str, str]] = []
-        counters: Dict[str, int] = {}
-        redaction_count = 0
-
-        for index, message in enumerate(messages):
-            if not isinstance(message, dict):
-                raise ValueError(f"messages[{index}] must be an object")
-            content = message.get("content")
-
-            if isinstance(content, str):
-                sanitized, replaced = _shield_text(
-                    content,
-                    request_id=request_id,
-                    entries_by_identity=entries_by_identity,
-                    entries=entries,
-                    counters=counters,
-                )
-                message["content"] = sanitized
-                redaction_count += replaced
-                continue
-
-            if not isinstance(content, list):
-                continue
-
-            for part_index, part in enumerate(content):
-                if not isinstance(part, dict):
-                    raise ValueError(f"messages[{index}].content[{part_index}] must be an object")
-                if part.get("type") not in TEXT_PART_TYPES:
-                    continue
-                part_text = part.get("text")
-                if not isinstance(part_text, str):
-                    raise ValueError(f"messages[{index}].content[{part_index}].text must be string")
-                sanitized, replaced = _shield_text(
-                    part_text,
-                    request_id=request_id,
-                    entries_by_identity=entries_by_identity,
-                    entries=entries,
-                    counters=counters,
-                )
-                part["text"] = sanitized
-                redaction_count += replaced
+        updated_body, redaction_count, entries = shield_request_body(
+            endpoint_kind,
+            request_body,
+            request_id=request_id,
+        )
 
         plugin_state = hook_input.get("plugin_state")
         if isinstance(plugin_state, dict):
@@ -181,7 +49,7 @@ class Plugin(MiddlewarePlugin):
         }
         return {
             "action": "modify",
-            "request_body": request_body,
+            "request_body": updated_body,
             "findings": [finding],
             "message": "sensitive text shielded before provider call",
         }
@@ -196,39 +64,7 @@ class Plugin(MiddlewarePlugin):
             return {"action": "allow"}
 
         payload = copy.deepcopy(hook_input["response_body"])
-        choices = payload.get("choices")
-        if not isinstance(choices, list):
-            return {"action": "allow"}
-
-        replaced_total = 0
-        for index, choice in enumerate(choices):
-            if not isinstance(choice, dict):
-                raise ValueError(f"choices[{index}] must be an object")
-            message = choice.get("message")
-            if not isinstance(message, dict):
-                continue
-            content = message.get("content")
-
-            if isinstance(content, str):
-                restored, replaced = _replace_tokens(content, entries)
-                message["content"] = restored
-                replaced_total += replaced
-                continue
-
-            if not isinstance(content, list):
-                continue
-
-            for part_index, part in enumerate(content):
-                if not isinstance(part, dict):
-                    raise ValueError(f"choices[{index}].message.content[{part_index}] must be an object")
-                if part.get("type") not in TEXT_PART_TYPES:
-                    continue
-                part_text = part.get("text")
-                if not isinstance(part_text, str):
-                    raise ValueError(f"choices[{index}].message.content[{part_index}].text must be string")
-                restored, replaced = _replace_tokens(part_text, entries)
-                part["text"] = restored
-                replaced_total += replaced
+        restored_payload, replaced_total = restore_tokens_deep(payload, entries)
 
         if replaced_total <= 0:
             return {"action": "allow"}
@@ -242,7 +78,48 @@ class Plugin(MiddlewarePlugin):
         }
         return {
             "action": "modify",
-            "response_body": payload,
+            "response_body": restored_payload,
             "findings": [finding],
             "message": "shielded values restored in downstream response",
+        }
+
+    def post_stream_event(self, hook_input: Dict[str, Any]) -> Dict[str, Any]:
+        plugin_state = hook_input.get("plugin_state")
+        if not isinstance(plugin_state, dict):
+            return {"action": "allow", "event": hook_input.get("event")}
+
+        entries = plugin_state.get("entries", [])
+        if not isinstance(entries, list) or not entries:
+            return {"action": "allow", "event": hook_input.get("event")}
+
+        event = hook_input.get("event")
+        if not isinstance(event, dict):
+            raise ValueError("stream event must be an object")
+
+        if event.get("data_type") != "json":
+            return {"action": "allow", "event": event}
+
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            return {"action": "allow", "event": event}
+
+        restored_payload, replaced_total = restore_tokens_deep(payload, entries)
+        if replaced_total <= 0:
+            return {"action": "allow", "event": event}
+
+        updated_event = dict(event)
+        updated_event["payload"] = restored_payload
+
+        finding = {
+            "class": "pii_restore_stream",
+            "severity": "low",
+            "confidence": 0.8,
+            "reason": "redact plugin restored shielded values in streamed response events",
+            "evidence": [f"restore_count={replaced_total}"],
+        }
+        return {
+            "action": "modify",
+            "event": updated_event,
+            "findings": [finding],
+            "message": "shielded values restored in stream events",
         }

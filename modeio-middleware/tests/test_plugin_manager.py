@@ -10,6 +10,7 @@ SCRIPTS_DIR = REPO_ROOT / "modeio-middleware" / "scripts"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+from modeio_middleware.core.contracts import ENDPOINT_CHAT_COMPLETIONS  # noqa: E402
 from modeio_middleware.core.plugin_manager import PluginManager  # noqa: E402
 from modeio_middleware.plugins.base import MiddlewarePlugin  # noqa: E402
 
@@ -32,6 +33,13 @@ class _ModifyPlugin(MiddlewarePlugin):
         body = dict(hook_input["response_body"])
         body["tag"] = "done"
         return {"action": "modify", "response_body": body}
+
+    def post_stream_event(self, hook_input):
+        event = dict(hook_input["event"])
+        payload = dict(event.get("payload") or {})
+        payload["tag"] = "stream"
+        event["payload"] = payload
+        return {"action": "modify", "event": event}
 
 
 class _ErrorPlugin(MiddlewarePlugin):
@@ -85,6 +93,7 @@ class TestPluginManager(unittest.TestCase):
         result = manager.apply_pre_request(
             active,
             request_id="req1",
+            endpoint_kind=ENDPOINT_CHAT_COMPLETIONS,
             profile="dev",
             request_body={"model": "gpt-test", "messages": [{"role": "user", "content": "hello"}]},
             request_headers={},
@@ -111,6 +120,7 @@ class TestPluginManager(unittest.TestCase):
         result = manager.apply_pre_request(
             active,
             request_id="req1",
+            endpoint_kind=ENDPOINT_CHAT_COMPLETIONS,
             profile="prod",
             request_body={"model": "gpt-test", "messages": [{"role": "user", "content": "hello"}]},
             request_headers={},
@@ -136,6 +146,7 @@ class TestPluginManager(unittest.TestCase):
         result = manager.apply_pre_request(
             active,
             request_id="req1",
+            endpoint_kind=ENDPOINT_CHAT_COMPLETIONS,
             profile="dev",
             request_body={"model": "gpt-test", "messages": [{"role": "user", "content": "hello"}]},
             request_headers={},
@@ -160,6 +171,7 @@ class TestPluginManager(unittest.TestCase):
         result = manager.apply_post_response(
             active,
             request_id="req1",
+            endpoint_kind=ENDPOINT_CHAT_COMPLETIONS,
             profile="dev",
             request_context={},
             response_body={"id": "resp"},
@@ -169,6 +181,32 @@ class TestPluginManager(unittest.TestCase):
         )
         self.assertFalse(result.blocked)
         self.assertEqual(result.body["tag"], "done")
+        self.assertIn("modify:modify", result.actions)
+
+    def test_apply_post_stream_event_modify(self):
+        manager = PluginManager(
+            {
+                "modify": {
+                    "enabled": True,
+                    "module": "modeio_middleware.tests.plugins.modify",
+                }
+            }
+        )
+        active = manager.resolve_active_plugins(["modify"], {})
+
+        result = manager.apply_post_stream_event(
+            active,
+            request_id="req1",
+            endpoint_kind=ENDPOINT_CHAT_COMPLETIONS,
+            profile="dev",
+            request_context={},
+            event={"data_type": "json", "payload": {"id": "evt1"}},
+            shared_state={},
+            on_plugin_error="warn",
+        )
+
+        self.assertFalse(result.blocked)
+        self.assertEqual(result.event["payload"]["tag"], "stream")
         self.assertIn("modify:modify", result.actions)
 
 

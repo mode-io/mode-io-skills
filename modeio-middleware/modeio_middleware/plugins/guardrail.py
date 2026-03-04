@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
+from modeio_middleware.core.contracts import ENDPOINT_CHAT_COMPLETIONS, ENDPOINT_RESPONSES
 from modeio_middleware.plugins.base import MiddlewarePlugin
 
 CURRENT_FILE = Path(__file__).resolve()
@@ -43,6 +44,48 @@ def _collect_message_texts(messages: Any) -> List[str]:
     return segments
 
 
+def _collect_content_value_texts(value: Any) -> List[str]:
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+
+    if isinstance(value, list):
+        segments: List[str] = []
+        for item in value:
+            segments.extend(_collect_content_value_texts(item))
+        return segments
+
+    if not isinstance(value, dict):
+        return []
+
+    content = value.get("content")
+    if content is not None:
+        return _collect_content_value_texts(content)
+
+    segments: List[str] = []
+    for key in ("text", "input_text", "instructions"):
+        candidate = value.get(key)
+        if isinstance(candidate, str) and candidate.strip():
+            segments.append(candidate)
+    return segments
+
+
+def _collect_request_texts(endpoint_kind: str, request_body: Dict[str, Any]) -> List[str]:
+    if endpoint_kind == ENDPOINT_CHAT_COMPLETIONS:
+        return _collect_message_texts(request_body.get("messages"))
+
+    if endpoint_kind == ENDPOINT_RESPONSES:
+        segments: List[str] = []
+        input_value = request_body.get("input")
+        if input_value is not None:
+            segments.extend(_collect_content_value_texts(input_value))
+        instructions = request_body.get("instructions")
+        if isinstance(instructions, str) and instructions.strip():
+            segments.append(instructions)
+        return segments
+
+    return []
+
+
 def _normalize_risk_level(raw: Any) -> str:
     value = str(raw or "").strip().lower()
     if not value:
@@ -57,10 +100,11 @@ class Plugin(MiddlewarePlugin):
     def pre_request(self, hook_input: Dict[str, Any]) -> Dict[str, Any]:
         from modeio_guardrail.cli import safety as guardrail_safety
 
+        endpoint_kind = hook_input.get("endpoint_kind", ENDPOINT_CHAT_COMPLETIONS)
         request_body = hook_input["request_body"]
         plugin_config = hook_input.get("plugin_config", {})
 
-        segments = _collect_message_texts(request_body.get("messages"))
+        segments = _collect_request_texts(endpoint_kind, request_body)
         if not segments:
             return {"action": "allow"}
 

@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:8787/v1"
-DEFAULT_UPSTREAM_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_UPSTREAM_CHAT_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_UPSTREAM_RESPONSES_URL = "https://api.openai.com/v1/responses"
 
 
 class SetupError(RuntimeError):
@@ -347,7 +348,9 @@ def _build_start_command(gateway_base_url: str) -> str:
 
     return (
         "python modeio-middleware/scripts/middleware_gateway.py "
-        f"--host {host} --port {port} --upstream-url \"{DEFAULT_UPSTREAM_URL}\""
+        f"--host {host} --port {port} "
+        f"--upstream-chat-url \"{DEFAULT_UPSTREAM_CHAT_URL}\" "
+        f"--upstream-responses-url \"{DEFAULT_UPSTREAM_RESPONSES_URL}\""
     )
 
 
