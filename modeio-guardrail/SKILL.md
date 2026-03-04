@@ -150,6 +150,8 @@ Safety verification failures must never be silently ignored.
 
 ## Resources
 
-- `scripts/safety.py`: CLI client with retry logic, envelope formatting, and error handling
+- `modeio_guardrail/cli/safety.py`: modular safety client implementation (importable core)
+- `scripts/safety.py`: compatibility wrapper entrypoint for CLI usage
 - `prompts/static_repo_scan.md`: prompt contract for static skill-repo risk scanning
 - `SAFETY_API_URL`: optional environment override for custom endpoint routing
+- `ARCHITECTURE.md`: package boundaries and compatibility notes
