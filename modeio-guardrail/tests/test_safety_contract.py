@@ -8,7 +8,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "modeio-guardrail" / "scripts" / "safety.py"
@@ -16,6 +16,22 @@ SCRIPTS_DIR = REPO_ROOT / "modeio-guardrail" / "scripts"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 import safety  # noqa: E402
+
+
+class _DummyResponse:
+    def __init__(self, *, status_code=200, payload=None, raise_error=None):
+        self.status_code = status_code
+        self._payload = {} if payload is None else payload
+        self._raise_error = raise_error
+
+    def raise_for_status(self):
+        if self._raise_error is not None:
+            raise self._raise_error
+
+    def json(self):
+        if isinstance(self._payload, Exception):
+            raise self._payload
+        return self._payload
 
 
 class TestSafetyContract(unittest.TestCase):
@@ -81,6 +97,64 @@ class TestSafetyContract(unittest.TestCase):
         self.assertEqual(payload["tool"], "modeio-guardrail")
         self.assertEqual(payload["error"]["type"], "network_error")
 
+    def test_post_with_retry_retries_503_then_succeeds(self):
+        first = _DummyResponse(status_code=503)
+        second = _DummyResponse(status_code=200)
+        with patch("safety.requests.post", side_effect=[first, second]) as mock_post:
+            with patch("safety.time.sleep") as mock_sleep:
+                result = safety._post_with_retry("https://example.com", json_payload={"instruction": "x"})
+
+        self.assertIs(result, second)
+        self.assertEqual(mock_post.call_count, 2)
+        mock_sleep.assert_called_once_with(1.0)
+
+    def test_post_with_retry_retries_connection_error_then_succeeds(self):
+        conn_error = safety.requests.ConnectionError("connection failed")
+        ok = _DummyResponse(status_code=200)
+
+        with patch("safety.requests.post", side_effect=[conn_error, ok]) as mock_post:
+            with patch("safety.time.sleep") as mock_sleep:
+                result = safety._post_with_retry("https://example.com", json_payload={"instruction": "x"})
+
+        self.assertIs(result, ok)
+        self.assertEqual(mock_post.call_count, 2)
+        mock_sleep.assert_called_once_with(1.0)
+
+    def test_post_with_retry_timeout_exhausted_raises(self):
+        timeout_error = safety.requests.Timeout("timed out")
+        with patch("safety.requests.post", side_effect=[timeout_error, timeout_error, timeout_error]) as mock_post:
+            with patch("safety.time.sleep") as mock_sleep:
+                with self.assertRaises(safety.requests.Timeout):
+                    safety._post_with_retry("https://example.com", json_payload={"instruction": "x"})
+
+        self.assertEqual(mock_post.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2)
+        mock_sleep.assert_has_calls([call(1.0), call(2.0)])
+
+    def test_detect_safety_passes_context_and_target(self):
+        response = _DummyResponse(payload={"approved": True})
+        with patch("safety._post_with_retry", return_value=response) as mock_post:
+            payload = safety.detect_safety("DROP TABLE users", context="production", target="db.users")
+
+        self.assertTrue(payload["approved"])
+        mock_post.assert_called_once_with(
+            safety.URL,
+            json_payload={
+                "instruction": "DROP TABLE users",
+                "context": "production",
+                "target": "db.users",
+            },
+        )
+
+    def test_detect_safety_omits_empty_optional_fields(self):
+        response = _DummyResponse(payload={"approved": True})
+        with patch("safety._post_with_retry", return_value=response) as mock_post:
+            payload = safety.detect_safety("ls -la")
+
+        self.assertTrue(payload["approved"])
+        kwargs = mock_post.call_args.kwargs
+        self.assertEqual(kwargs["json_payload"], {"instruction": "ls -la"})
+
     def test_main_json_http_error_is_classified_as_api_error(self):
         http_error = safety.requests.HTTPError("upstream 503")
         response = safety.requests.Response()
@@ -124,6 +198,41 @@ class TestSafetyContract(unittest.TestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(payload["data"]["approved"], False)
         self.assertEqual(payload["data"]["risk_level"], "medium")
+
+    def test_main_json_backend_error_field_is_api_error(self):
+        with patch(
+            "safety.detect_safety",
+            return_value={"error": "blocked by policy", "approved": False, "risk_level": "high"},
+        ):
+            code, stdout, _ = self._run_main(["--input", "rm -rf /", "--json"])
+
+        self.assertEqual(code, 1)
+        payload = json.loads(stdout)
+        self.assertEqual(payload["error"]["type"], "api_error")
+        self.assertEqual(payload["error"]["details"]["risk_level"], "high")
+
+    def test_main_non_json_success_prints_status_and_payload(self):
+        with patch(
+            "safety.detect_safety",
+            return_value={"approved": True, "risk_level": "low", "recommendation": "ok"},
+        ):
+            code, stdout, stderr = self._run_main(["--input", "ls"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("Status: success", stderr)
+        self.assertIn('"approved": true', stdout)
+
+    def test_main_non_json_api_error_prints_error_and_details(self):
+        with patch(
+            "safety.detect_safety",
+            return_value={"error": "blocked", "approved": False, "risk_level": "critical"},
+        ):
+            code, stdout, stderr = self._run_main(["--input", "DROP TABLE users"])
+
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn("Error: blocked", stderr)
+        self.assertIn('"risk_level": "critical"', stderr)
 
 
 if __name__ == "__main__":
