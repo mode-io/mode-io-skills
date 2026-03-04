@@ -16,6 +16,20 @@ SCRIPTS_DIR = REPO_ROOT / "modeio-redact" / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 import anonymize  # noqa: E402
 
+try:  # noqa: E402
+    from docx import Document
+
+    HAS_DOCX = True
+except ModuleNotFoundError:  # pragma: no cover
+    HAS_DOCX = False
+
+try:  # noqa: E402
+    import fitz
+
+    HAS_FITZ = True
+except ModuleNotFoundError:  # pragma: no cover
+    HAS_FITZ = False
+
 
 class TestAnonymizeContract(unittest.TestCase):
     def _run_cli(self, args, env=None):
@@ -193,9 +207,101 @@ class TestAnonymizeContract(unittest.TestCase):
             self.assertNotIn("modeio-redact-map-id", output_content)
             self.assertTrue(Path(payload["data"]["mapRef"]["sidecarPath"]).exists())
 
+    @unittest.skipUnless(HAS_DOCX, "python-docx is required")
+    def test_docx_file_path_is_auto_resolved_and_redacted(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "incident.docx"
+            document = Document()
+            document.add_paragraph("Email: alice@example.com")
+            document.save(str(file_path))
+
+            result = self._run_cli(
+                [
+                    "--input",
+                    str(file_path),
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env={"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")},
+            )
+
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["success"])
+            output_path = Path(payload["data"]["outputPath"])
+            self.assertEqual(output_path.name, "incident.redacted.docx")
+            self.assertTrue(output_path.exists())
+
+            redacted_doc = Document(str(output_path))
+            redacted_text = "\n".join(paragraph.text for paragraph in redacted_doc.paragraphs)
+            self.assertIn("[EMAIL_1]", redacted_text)
+            self.assertTrue(Path(payload["data"]["mapRef"]["sidecarPath"]).exists())
+
+    @unittest.skipUnless(HAS_FITZ, "PyMuPDF is required")
+    def test_pdf_file_path_is_auto_resolved_and_redacted(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "incident.pdf"
+            document = fitz.open()
+            page = document.new_page()
+            page.insert_text((72, 72), "Email: alice@example.com")
+            document.save(str(file_path))
+            document.close()
+
+            result = self._run_cli(
+                [
+                    "--input",
+                    str(file_path),
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env={"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")},
+            )
+
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["success"])
+            output_path = Path(payload["data"]["outputPath"])
+            self.assertEqual(output_path.name, "incident.redacted.pdf")
+            self.assertTrue(output_path.exists())
+
+            redacted_document = fitz.open(str(output_path))
+            try:
+                extracted_text = "\n".join(page.get_text("text") for page in redacted_document)
+            finally:
+                redacted_document.close()
+            self.assertNotIn("alice@example.com", extracted_text)
+            self.assertTrue(Path(payload["data"]["mapRef"]["sidecarPath"]).exists())
+
+    @unittest.skipUnless(HAS_FITZ, "PyMuPDF is required")
+    def test_pdf_dynamic_level_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "incident.pdf"
+            document = fitz.open()
+            page = document.new_page()
+            page.insert_text((72, 72), "Email: alice@example.com")
+            document.save(str(file_path))
+            document.close()
+
+            result = self._run_cli(
+                [
+                    "--input",
+                    str(file_path),
+                    "--level",
+                    "dynamic",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["success"])
+            self.assertEqual(payload["error"]["type"], "validation_error")
+
     def test_unsupported_file_extension_returns_json_validation_error(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".pdf", encoding="utf-8", delete=False) as input_file:
-            input_file.write("Fake PDF payload")
+        with tempfile.NamedTemporaryFile("w", suffix=".bin", encoding="utf-8", delete=False) as input_file:
+            input_file.write("Unsupported payload")
             file_path = input_file.name
 
         try:

@@ -1,0 +1,337 @@
+#!/usr/bin/env python3
+"""File handler implementations for text, DOCX, and PDF workflows."""
+
+from __future__ import annotations
+
+import shutil
+import tempfile
+from pathlib import Path
+from typing import Dict, Iterable, List, Sequence, Tuple
+
+from modeio_redact.workflow.file_types import (
+    HANDLER_DOCX,
+    HANDLER_PDF,
+    HANDLER_TEXT,
+    handler_key_for_extension,
+    normalize_extension,
+)
+
+
+def uses_text_handler(extension: str) -> bool:
+    return handler_key_for_extension(extension) == HANDLER_TEXT
+
+
+def validate_non_text_output_extension(input_extension: str, output_path: Path) -> None:
+    normalized = normalize_extension(input_extension)
+    if uses_text_handler(normalized):
+        return
+    output_extension = normalize_extension(output_path.suffix)
+    if output_extension != normalized:
+        raise ValueError(
+            f"Output extension must remain '{normalized}' for {normalized} file input."
+        )
+
+
+def read_input_file(path: Path, extension: str) -> str:
+    handler_key = handler_key_for_extension(extension)
+    if handler_key == HANDLER_TEXT:
+        return _read_utf8_text(path)
+    if handler_key == HANDLER_DOCX:
+        return _read_docx_text(path)
+    if handler_key == HANDLER_PDF:
+        return _read_pdf_text(path)
+    raise ValueError(f"Unsupported file handler for extension '{extension}'.")
+
+
+def write_non_text_anonymized_file(
+    input_path: Path,
+    output_path: Path,
+    extension: str,
+    mapping_entries: Sequence[Dict[str, str]],
+) -> None:
+    handler_key = handler_key_for_extension(extension)
+    if handler_key == HANDLER_DOCX:
+        _write_docx_with_replacements(
+            input_path=input_path,
+            output_path=output_path,
+            replacements=_build_replacements(mapping_entries, deanonymize=False),
+        )
+        return
+    if handler_key == HANDLER_PDF:
+        _write_pdf_with_redactions(
+            input_path=input_path,
+            output_path=output_path,
+            targets=_build_pdf_redaction_targets(mapping_entries),
+        )
+        return
+    raise ValueError(f"Unsupported non-text anonymization handler for extension '{extension}'.")
+
+
+def write_non_text_deanonymized_file(
+    input_path: Path,
+    output_path: Path,
+    extension: str,
+    mapping_entries: Sequence[Dict[str, str]],
+) -> None:
+    handler_key = handler_key_for_extension(extension)
+    if handler_key == HANDLER_DOCX:
+        _write_docx_with_replacements(
+            input_path=input_path,
+            output_path=output_path,
+            replacements=_build_replacements(mapping_entries, deanonymize=True),
+        )
+        return
+    if handler_key == HANDLER_PDF:
+        raise ValueError("De-anonymization is not supported for '.pdf' files.")
+    raise ValueError(f"Unsupported non-text de-anonymization handler for extension '{extension}'.")
+
+
+def _read_utf8_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Input file must be UTF-8 encoded.") from exc
+    except OSError as exc:
+        raise ValueError(f"Failed to read input file: {exc}") from exc
+
+
+def _import_docx_document_class():
+    try:
+        from docx import Document
+    except ModuleNotFoundError as exc:
+        raise ValueError(
+            "python-docx package is required for '.docx' support. Install dependencies from requirements.txt."
+        ) from exc
+    return Document
+
+
+def _import_fitz_module():
+    try:
+        import fitz
+    except ModuleNotFoundError as exc:
+        raise ValueError(
+            "PyMuPDF package is required for '.pdf' support. Install dependencies from requirements.txt."
+        ) from exc
+    return fitz
+
+
+def _iter_table_paragraphs(tables) -> Iterable:
+    for table in tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    yield paragraph
+                yield from _iter_table_paragraphs(cell.tables)
+
+
+def _iter_docx_paragraphs(document) -> Iterable:
+    for paragraph in document.paragraphs:
+        yield paragraph
+    yield from _iter_table_paragraphs(document.tables)
+
+    for section in document.sections:
+        header = section.header
+        footer = section.footer
+        for paragraph in header.paragraphs:
+            yield paragraph
+        yield from _iter_table_paragraphs(header.tables)
+        for paragraph in footer.paragraphs:
+            yield paragraph
+        yield from _iter_table_paragraphs(footer.tables)
+
+
+def _read_docx_text(path: Path) -> str:
+    document_class = _import_docx_document_class()
+    try:
+        document = document_class(str(path))
+    except Exception as exc:  # pragma: no cover - library-specific error hierarchy
+        raise ValueError(f"Failed to read DOCX file: {exc}") from exc
+
+    lines: List[str] = []
+    for paragraph in _iter_docx_paragraphs(document):
+        text = paragraph.text
+        if text:
+            lines.append(text)
+    return "\n".join(lines).strip()
+
+
+def _build_replacements(
+    mapping_entries: Sequence[Dict[str, str]],
+    deanonymize: bool,
+) -> List[Tuple[str, str]]:
+    replacements: List[Tuple[str, str]] = []
+    seen = set()
+    for entry in mapping_entries:
+        source_key = "placeholder" if deanonymize else "original"
+        target_key = "original" if deanonymize else "placeholder"
+        source = entry.get(source_key)
+        target = entry.get(target_key)
+        if not isinstance(source, str) or not isinstance(target, str):
+            continue
+        source = source.strip()
+        if not source:
+            continue
+        dedupe_key = (source, target)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        replacements.append((source, target))
+    replacements.sort(key=lambda pair: len(pair[0]), reverse=True)
+    return replacements
+
+
+def _apply_replacements_to_paragraph(paragraph, replacements: Sequence[Tuple[str, str]]) -> None:
+    if not replacements:
+        return
+
+    if paragraph.runs:
+        for run in paragraph.runs:
+            updated = run.text
+            for source, target in replacements:
+                if source in updated:
+                    updated = updated.replace(source, target)
+            run.text = updated
+
+        current_text = paragraph.text
+        normalized_text = current_text
+        for source, target in replacements:
+            if source in normalized_text:
+                normalized_text = normalized_text.replace(source, target)
+
+        if normalized_text != current_text:
+            paragraph.runs[0].text = normalized_text
+            for run in paragraph.runs[1:]:
+                run.text = ""
+        return
+
+    normalized_text = paragraph.text
+    for source, target in replacements:
+        if source in normalized_text:
+            normalized_text = normalized_text.replace(source, target)
+    paragraph.text = normalized_text
+
+
+def _write_docx_with_replacements(
+    input_path: Path,
+    output_path: Path,
+    replacements: Sequence[Tuple[str, str]],
+) -> None:
+    document_class = _import_docx_document_class()
+    try:
+        document = document_class(str(input_path))
+    except Exception as exc:  # pragma: no cover - library-specific error hierarchy
+        raise ValueError(f"Failed to read DOCX file: {exc}") from exc
+
+    for paragraph in _iter_docx_paragraphs(document):
+        _apply_replacements_to_paragraph(paragraph, replacements)
+
+    try:
+        document.save(str(output_path))
+    except OSError as exc:
+        raise ValueError(f"Failed to write DOCX file: {exc}") from exc
+
+
+def _read_pdf_text(path: Path) -> str:
+    fitz = _import_fitz_module()
+    try:
+        document = fitz.open(str(path))
+    except Exception as exc:  # pragma: no cover - library-specific error hierarchy
+        raise ValueError(f"Failed to read PDF file: {exc}") from exc
+
+    page_texts: List[str] = []
+    has_text_layer = False
+    try:
+        for page in document:
+            words = page.get_text("words")
+            if words:
+                has_text_layer = True
+            page_text = page.get_text("text") or ""
+            if page_text:
+                page_texts.append(page_text.rstrip("\n"))
+    finally:
+        document.close()
+
+    if not has_text_layer:
+        raise ValueError("PDF input must contain an extractable text layer (image-only PDFs are not supported).")
+
+    return "\n\n".join(page_texts).strip()
+
+
+def _build_pdf_redaction_targets(mapping_entries: Sequence[Dict[str, str]]) -> List[str]:
+    targets: List[str] = []
+    seen = set()
+    for entry in mapping_entries:
+        value = entry.get("original")
+        if not isinstance(value, str):
+            continue
+        value = value.strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        targets.append(value)
+    targets.sort(key=len, reverse=True)
+    return targets
+
+
+def _copy_binary_file(input_path: Path, output_path: Path) -> None:
+    if input_path.resolve() == output_path.resolve():
+        return
+    shutil.copyfile(str(input_path), str(output_path))
+
+
+def _write_pdf_with_redactions(
+    input_path: Path,
+    output_path: Path,
+    targets: Sequence[str],
+) -> None:
+    fitz = _import_fitz_module()
+
+    if not targets:
+        _copy_binary_file(input_path, output_path)
+        return
+
+    try:
+        document = fitz.open(str(input_path))
+    except Exception as exc:  # pragma: no cover - library-specific error hierarchy
+        raise ValueError(f"Failed to read PDF file: {exc}") from exc
+
+    has_text_layer = False
+    try:
+        for page in document:
+            words = page.get_text("words")
+            if words:
+                has_text_layer = True
+            for target in targets:
+                rects = page.search_for(target)
+                for rect in rects:
+                    page.add_redact_annot(rect, fill=(0, 0, 0))
+            page.apply_redactions()
+
+        if not has_text_layer:
+            raise ValueError(
+                "PDF input must contain an extractable text layer (image-only PDFs are not supported)."
+            )
+
+        save_path = output_path
+        if input_path.resolve() == output_path.resolve():
+            with tempfile.NamedTemporaryFile(
+                suffix=".pdf",
+                dir=str(output_path.parent),
+                delete=False,
+            ) as temp_file:
+                save_path = Path(temp_file.name)
+            save_path.unlink(missing_ok=True)
+
+        document.save(str(save_path), garbage=4, clean=True, deflate=True)
+    except OSError as exc:
+        raise ValueError(f"Failed to write PDF file: {exc}") from exc
+    finally:
+        document.close()
+
+    if input_path.resolve() == output_path.resolve():
+        temp_path = Path(str(save_path))
+        try:
+            temp_path.replace(output_path)
+        except OSError as exc:
+            temp_path.unlink(missing_ok=True)
+            raise ValueError(f"Failed to finalize in-place PDF write: {exc}") from exc

@@ -3,7 +3,8 @@ name: modeio-redact
 description: >-
   Runs PII anonymization and local de-anonymization for text/JSON strings and
   supported file-path input (`.txt`, `.md`, `.markdown`, `.csv`, `.tsv`,
-  `.json`, `.jsonl`, `.yaml`, `.yml`, `.xml`, `.html`, `.htm`, `.rst`, `.log`).
+  `.json`, `.jsonl`, `.yaml`, `.yml`, `.xml`, `.html`, `.htm`, `.rst`, `.log`,
+  `.docx`, `.pdf`).
   Supports local regex masking in lite mode,
   server-side AI analysis in dynamic/strict/crossborder modes, local placeholder
   restore with saved map files, and optional git pre-commit staged-diff scanning
@@ -14,7 +15,7 @@ description: >-
   LLMs or third-party APIs.
 ---
 
-# Run anonymization checks for text, JSON, and supported text-like files
+# Run anonymization checks for text, JSON, and supported files
 
 Protect sensitive data by anonymizing PII before it leaves the local environment.
 Supports round-trip workflows: anonymize content, use sanitized content externally,
@@ -75,13 +76,16 @@ Input behavior:
 - Non-file strings are treated as literal input.
 - `lite` runs local regex anonymization only.
 - `dynamic|strict|crossborder` call backend API.
+- `.pdf` anonymization is supported in `lite` only (text-layer PDFs only).
 
 Output behavior:
 
 - Default file output path: `<name>.redacted.<ext>` (auto-increments on collision).
 - If map entries exist, script saves a local map and returns `data.mapRef`.
 - For `.txt`/`.md`/`.markdown` output, script embeds `modeio-redact-map-id` marker.
-- For other supported file types, script preserves syntax and uses sidecar-only map linkage.
+- `.docx` keeps document structure and uses sidecar-only map linkage.
+- `.pdf` applies true PDF redaction (remove text layer content + black fill) and uses sidecar-only map linkage.
+- Other supported text-like file types preserve syntax and use sidecar-only map linkage.
 - Script also writes sidecar map ref file `<output>.map.json`.
 - Default map dir: `~/.modeio/redact/maps` (override with `MODEIO_REDACT_MAP_DIR`).
 - Map files auto-prune after 7 days.
@@ -99,6 +103,10 @@ python scripts/anonymize.py --input ./incident-notes.txt --level lite --json
 
 python scripts/anonymize.py --input ./handoff.md --level dynamic --json
 
+python scripts/anonymize.py --input ./incident.docx --level lite --json
+
+python scripts/anonymize.py --input ./incident.pdf --level lite --json
+
 python scripts/anonymize.py --input ./incident-notes.txt --level lite --in-place --json
 
 python scripts/anonymize.py --input "Email: alice@example.com" --output ./redacted-output.txt --json
@@ -113,10 +121,11 @@ python scripts/anonymize.py --input "Email: alice@example.com" --output ./redact
 - `--in-place`: overwrite input file in place (file-path input only)
 - `--json`: output unified JSON envelope
 - No network call is made.
+- File de-anonymization supports text-like formats and `.docx`; `.pdf` is anonymize-only.
 
 Map resolution order when `--map` is omitted:
 
-1. Embedded map marker in file input
+1. Embedded map marker in `.txt`/`.md`/`.markdown` file input
 2. Sidecar map file `<input>.map.json`
 3. Latest local map (literal text input only)
 

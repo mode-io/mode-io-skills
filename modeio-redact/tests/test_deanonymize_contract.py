@@ -12,6 +12,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ANONYMIZE_SCRIPT = REPO_ROOT / "modeio-redact" / "scripts" / "anonymize.py"
 DEANONYMIZE_SCRIPT = REPO_ROOT / "modeio-redact" / "scripts" / "deanonymize.py"
 
+try:  # noqa: E402
+    from docx import Document
+
+    HAS_DOCX = True
+except ModuleNotFoundError:  # pragma: no cover
+    HAS_DOCX = False
+
+try:  # noqa: E402
+    import fitz
+
+    HAS_FITZ = True
+except ModuleNotFoundError:  # pragma: no cover
+    HAS_FITZ = False
+
 
 class TestDeanonymizeContract(unittest.TestCase):
     def _run_cli(self, script_path, args, env=None):
@@ -243,7 +257,50 @@ class TestDeanonymizeContract(unittest.TestCase):
             self.assertTrue(payload["success"])
             self.assertEqual(payload["data"]["deanonymizedContent"], '{"value":"alice@example.com"}')
 
-    def test_deanonymize_rejects_unsupported_file_input_type(self):
+    @unittest.skipUnless(HAS_DOCX, "python-docx is required")
+    def test_deanonymize_accepts_docx_file_input(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            map_path = Path(tmpdir) / "map.json"
+            map_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": "1",
+                        "mapId": "docx-map",
+                        "entries": [
+                            {"placeholder": "[EMAIL_1]", "original": "alice@example.com", "type": "email"}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            input_path = Path(tmpdir) / "anonymized.docx"
+            document = Document()
+            document.add_paragraph("Email: [EMAIL_1]")
+            document.save(str(input_path))
+
+            result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(input_path),
+                    "--map",
+                    str(map_path),
+                    "--json",
+                ],
+            )
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+
+            self.assertTrue(payload["success"])
+            self.assertIn("alice@example.com", payload["data"]["deanonymizedContent"])
+            output_path = Path(payload["data"]["outputPath"])
+            restored = Document(str(output_path))
+            restored_text = "\n".join(paragraph.text for paragraph in restored.paragraphs)
+            self.assertIn("alice@example.com", restored_text)
+
+    @unittest.skipUnless(HAS_FITZ, "PyMuPDF is required")
+    def test_deanonymize_rejects_pdf_file_input_type(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             map_path = Path(tmpdir) / "map.json"
             map_path.write_text(
@@ -260,7 +317,11 @@ class TestDeanonymizeContract(unittest.TestCase):
             )
 
             input_path = Path(tmpdir) / "anonymized.pdf"
-            input_path.write_text("[EMAIL_1]", encoding="utf-8")
+            document = fitz.open()
+            page = document.new_page()
+            page.insert_text((72, 72), "Email: [EMAIL_1]")
+            document.save(str(input_path))
+            document.close()
 
             result = self._run_cli(
                 DEANONYMIZE_SCRIPT,
@@ -318,6 +379,50 @@ class TestDeanonymizeContract(unittest.TestCase):
             self.assertTrue(restore_payload["success"])
             self.assertEqual(restore_payload["data"]["linkageSource"], "sidecar")
             self.assertEqual(restore_payload["data"]["deanonymizedContent"], original_text)
+
+    @unittest.skipUnless(HAS_DOCX, "python-docx is required")
+    def test_docx_file_input_auto_resolves_map_from_sidecar(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "incident.docx"
+            document = Document()
+            document.add_paragraph("Email: alice@example.com")
+            document.save(str(input_path))
+
+            env = {"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")}
+            anon_result = self._run_cli(
+                ANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(input_path),
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(anon_result.returncode, 0)
+            anon_payload = json.loads(anon_result.stdout)
+            redacted_path = Path(anon_payload["data"]["outputPath"])
+            self.assertEqual(redacted_path.suffix.lower(), ".docx")
+
+            restore_result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(redacted_path),
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(restore_result.returncode, 0)
+            restore_payload = json.loads(restore_result.stdout)
+
+            self.assertTrue(restore_payload["success"])
+            self.assertEqual(restore_payload["data"]["linkageSource"], "sidecar")
+            restored_path = Path(restore_payload["data"]["outputPath"])
+            restored_doc = Document(str(restored_path))
+            restored_text = "\n".join(paragraph.text for paragraph in restored_doc.paragraphs)
+            self.assertIn("alice@example.com", restored_text)
 
     def test_file_input_auto_resolves_map_from_embedded_marker(self):
         original_text = "Email: alice@example.com"

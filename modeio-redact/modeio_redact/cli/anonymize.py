@@ -36,15 +36,25 @@ except ModuleNotFoundError:
     requests = _RequestsShim()
 
 from modeio_redact.detection.detect_local import detect_sensitive_local
+from modeio_redact.workflow.file_handlers import (
+    uses_text_handler,
+    validate_non_text_output_extension,
+    write_non_text_anonymized_file,
+)
 from modeio_redact.workflow.file_workflow import (
     embed_map_marker,
     resolve_output_path,
     write_output_file,
     write_sidecar_map,
 )
+from modeio_redact.workflow.file_types import (
+    is_level_supported_for_extension,
+    supported_levels_for_extension,
+)
 from modeio_redact.workflow.input_source import (
     SUPPORTED_FILE_EXTENSIONS,
     resolve_input_source,
+    resolve_input_source_context,
     resolve_input_source_details,
 )
 from modeio_redact.workflow.map_store import MapStoreError, normalize_mapping_entries, save_map
@@ -177,8 +187,10 @@ def _maybe_save_map(
     level: str,
     mode: str,
     data: Dict[str, Any],
+    entries: Optional[list] = None,
 ) -> Optional[Dict[str, Any]]:
-    entries = normalize_mapping_entries(data)
+    if entries is None:
+        entries = normalize_mapping_entries(data)
     if not entries:
         return None
 
@@ -251,7 +263,11 @@ def main():
     mode = "local-regex" if args.level == "lite" else "api"
 
     try:
-        raw_input, input_type, input_path = resolve_input_source_details(args.input)
+        input_source = resolve_input_source_context(args.input)
+        raw_input = input_source.content
+        input_type = input_source.input_type
+        input_path = input_source.input_path
+        input_extension = input_source.extension
     except ValueError as exc:
         if args.json:
             print(json.dumps(
@@ -265,6 +281,26 @@ def main():
             ))
         else:
             print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+    if input_extension and not is_level_supported_for_extension(input_extension, args.level):
+        supported_levels = ", ".join(supported_levels_for_extension(input_extension))
+        message = (
+            f"Anonymization level '{args.level}' is not supported for '{input_extension}' files. "
+            f"Supported levels: {supported_levels}."
+        )
+        if args.json:
+            print(json.dumps(
+                _error_envelope(
+                    level=args.level,
+                    mode=mode,
+                    error_type="validation_error",
+                    message=message,
+                ),
+                ensure_ascii=False,
+            ))
+        else:
+            print(f"Error: {message}", file=sys.stderr)
         sys.exit(2)
 
     if args.level == "crossborder":
@@ -341,9 +377,17 @@ def main():
     if input_path:
         data["inputPath"] = input_path
 
+    entries = normalize_mapping_entries(data)
+
     map_ref = None
     try:
-        map_ref = _maybe_save_map(raw_input=raw_input, level=args.level, mode=mode, data=data)
+        map_ref = _maybe_save_map(
+            raw_input=raw_input,
+            level=args.level,
+            mode=mode,
+            data=data,
+            entries=entries,
+        )
     except MapStoreError as error:
         _append_warning(
             data,
@@ -365,20 +409,25 @@ def main():
             output_tag="redacted",
         )
 
-        output_content = anonymized
-        if map_ref:
-            normalized_suffix = ""
-            if resolved_output_path is not None:
-                normalized_suffix = resolved_output_path.suffix.lower()
-
-            output_content = embed_map_marker(
-                content=output_content,
-                map_id=map_ref["mapId"],
-                suffix=normalized_suffix,
-            )
-
         if resolved_output_path is not None:
-            write_output_file(resolved_output_path, output_content)
+            if input_path and input_extension and not uses_text_handler(input_extension):
+                validate_non_text_output_extension(input_extension, resolved_output_path)
+                write_non_text_anonymized_file(
+                    input_path=Path(input_path).expanduser(),
+                    output_path=resolved_output_path,
+                    extension=input_extension,
+                    mapping_entries=entries,
+                )
+            else:
+                output_content = anonymized
+                if map_ref:
+                    normalized_suffix = resolved_output_path.suffix.lower()
+                    output_content = embed_map_marker(
+                        content=output_content,
+                        map_id=map_ref["mapId"],
+                        suffix=normalized_suffix,
+                    )
+                write_output_file(resolved_output_path, output_content)
             output_path = str(resolved_output_path)
 
         if output_path:

@@ -1,28 +1,45 @@
 #!/usr/bin/env python3
-"""
-Shared --input resolver for modeio-redact modules.
-"""
+"""Shared --input resolver for modeio-redact modules."""
 
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, Tuple
 
+from modeio_redact.workflow.file_handlers import read_input_file
 from modeio_redact.workflow.file_types import (
     SUPPORTED_FILE_EXTENSIONS,
+    handler_key_for_extension,
     is_supported_extension,
     supported_extensions_for_display,
 )
 
 
+@dataclass(frozen=True)
+class InputSourceContext:
+    content: str
+    input_type: str
+    input_path: Optional[str]
+    extension: Optional[str]
+    handler_key: Optional[str]
+
+
 def resolve_input_source(input_value: str) -> Tuple[str, str]:
     """Resolve --input as literal text or supported file path."""
-    content, input_type, _ = resolve_input_source_details(input_value)
-    return content, input_type
+    source = resolve_input_source_context(input_value)
+    return source.content, source.input_type
 
 
 def resolve_input_source_details(input_value: str) -> Tuple[str, str, Optional[str]]:
     """Resolve --input and preserve source path when input is a file."""
+    source = resolve_input_source_context(input_value)
+    return source.content, source.input_type, source.input_path
+
+
+def resolve_input_source_context(input_value: str) -> InputSourceContext:
+    """Resolve --input into normalized content plus file metadata context."""
     raw_value = (input_value or "").strip()
     if not raw_value:
         raise ValueError("--input must not be empty.")
@@ -37,17 +54,22 @@ def resolve_input_source_details(input_value: str) -> Tuple[str, str, Optional[s
                 f"Supported file types: {allowed}."
             )
 
-        try:
-            with open(expanded_path, "r", encoding="utf-8") as input_file:
-                content = input_file.read()
-        except UnicodeDecodeError as exc:
-            raise ValueError("Input file must be UTF-8 encoded.") from exc
-        except OSError as exc:
-            raise ValueError(f"Failed to read input file: {exc}") from exc
-
+        content = read_input_file(Path(expanded_path), extension)
         if not content.strip():
             raise ValueError("Input file must not be empty.")
 
-        return content, "file", expanded_path
+        return InputSourceContext(
+            content=content,
+            input_type="file",
+            input_path=expanded_path,
+            extension=extension,
+            handler_key=handler_key_for_extension(extension),
+        )
 
-    return raw_value, "text", None
+    return InputSourceContext(
+        content=raw_value,
+        input_type="text",
+        input_path=None,
+        extension=None,
+        handler_key=None,
+    )
