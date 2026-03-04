@@ -1,0 +1,36 @@
+{
+  "version": "0.1",
+  "profiles": {
+    "dev": {
+      "on_plugin_error": "fail_open",
+      "plugins": [
+        "guardrail",
+        "redact"
+      ]
+    },
+    "staging": {
+      "on_plugin_error": "warn",
+      "plugins": [
+        "guardrail",
+        "redact"
+      ]
+    },
+    "prod": {
+      "on_plugin_error": "fail_safe",
+      "plugins": [
+        "guardrail",
+        "redact"
+      ]
+    }
+  },
+  "plugins": {
+    "guardrail": {
+      "enabled": false,
+      "module": "modeio_middleware.plugins.guardrail"
+    },
+    "redact": {
+      "enabled": false,
+      "module": "modeio_middleware.plugins.redact"
+    }
+  }
+}
