@@ -128,7 +128,9 @@ class TestAnonymizeContract(unittest.TestCase):
         self.assertFalse(payload["success"])
         self.assertEqual(payload["mode"], "api")
         self.assertEqual(payload["level"], "dynamic")
-        self.assertEqual(payload["error"]["type"], "network_error")
+        self.assertIn(payload["error"]["type"], ("network_error", "dependency_error"))
+        if payload["error"]["type"] == "dependency_error":
+            self.assertIn("requests package is required", payload["error"]["message"])
 
     def test_txt_file_path_is_auto_resolved_and_redacted(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -158,6 +160,15 @@ class TestAnonymizeContract(unittest.TestCase):
             self.assertEqual(output_path.name, "incident.redacted.txt")
             self.assertIn("modeio-redact-map-id", output_path.read_text(encoding="utf-8"))
             self.assertTrue(Path(payload["data"]["mapRef"]["sidecarPath"]).exists())
+            self.assertIn("applyReport", payload["data"])
+            self.assertEqual(
+                payload["data"]["applyReport"]["expectedCount"],
+                payload["data"]["applyReport"]["appliedCount"],
+            )
+            self.assertIn("verificationReport", payload["data"])
+            self.assertTrue(payload["data"]["verificationReport"]["skipped"])
+            self.assertEqual(payload["data"]["assurancePolicy"]["level"], "best_effort")
+            self.assertTrue(payload["data"]["assurancePolicy"]["failOnCoverageMismatch"])
 
     def test_markdown_file_path_is_auto_resolved_and_redacted(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -237,6 +248,9 @@ class TestAnonymizeContract(unittest.TestCase):
             redacted_text = "\n".join(paragraph.text for paragraph in redacted_doc.paragraphs)
             self.assertIn("[EMAIL_1]", redacted_text)
             self.assertTrue(Path(payload["data"]["mapRef"]["sidecarPath"]).exists())
+            self.assertEqual(payload["data"]["assurancePolicy"]["level"], "verified")
+            self.assertFalse(payload["data"]["verificationReport"]["skipped"])
+            self.assertTrue(payload["data"]["verificationReport"]["passed"])
 
     @unittest.skipUnless(HAS_FITZ, "PyMuPDF is required")
     def test_pdf_file_path_is_auto_resolved_and_redacted(self):
@@ -273,6 +287,48 @@ class TestAnonymizeContract(unittest.TestCase):
                 redacted_document.close()
             self.assertNotIn("alice@example.com", extracted_text)
             self.assertTrue(Path(payload["data"]["mapRef"]["sidecarPath"]).exists())
+            self.assertEqual(payload["data"]["assurancePolicy"]["level"], "verified")
+            self.assertFalse(payload["data"]["verificationReport"]["skipped"])
+            self.assertTrue(payload["data"]["verificationReport"]["passed"])
+
+    def test_default_coverage_enforcement_exposes_assurance_and_apply_report(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "incident.txt"
+            file_path.write_text("Email: alice@example.com", encoding="utf-8")
+
+            result = self._run_cli(
+                [
+                    "--input",
+                    str(file_path),
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env={"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")},
+            )
+
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["success"])
+            self.assertTrue(payload["data"]["assurancePolicy"]["failOnCoverageMismatch"])
+            self.assertGreater(payload["data"]["applyReport"]["expectedCount"], 0)
+            self.assertEqual(
+                payload["data"]["applyReport"]["expectedCount"],
+                payload["data"]["applyReport"]["appliedCount"],
+            )
+
+    def test_removed_strict_coverage_flag_is_rejected(self):
+        result = self._run_cli(
+            [
+                "--input",
+                "Email: alice@example.com",
+                "--level",
+                "lite",
+                "--strict-coverage",
+            ]
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unrecognized arguments: --strict-coverage", result.stderr)
 
     @unittest.skipUnless(HAS_FITZ, "PyMuPDF is required")
     def test_pdf_dynamic_level_is_rejected(self):

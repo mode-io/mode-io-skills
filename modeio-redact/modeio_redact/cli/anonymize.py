@@ -11,14 +11,19 @@ import json
 import os
 import sys
 import time
-from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
+REQUESTS_AVAILABLE = True
 try:
     import requests
 except ModuleNotFoundError:
+    REQUESTS_AVAILABLE = False
+
     class _RequestsShim:
         class RequestException(Exception):
+            pass
+
+        class MissingDependencyError(RequestException):
             pass
 
         class ConnectionError(RequestException):
@@ -29,23 +34,20 @@ except ModuleNotFoundError:
 
         @staticmethod
         def post(*_args, **_kwargs):
-            raise _RequestsShim.RequestException(
-                "requests package is required for api-backed anonymization levels"
+            raise _RequestsShim.MissingDependencyError(
+                "requests package is required for api-backed anonymization levels. "
+                "Install dependencies from requirements.txt."
             )
 
     requests = _RequestsShim()
 
-from modeio_redact.detection.detect_local import detect_sensitive_local
-from modeio_redact.workflow.file_handlers import (
-    uses_text_handler,
-    validate_non_text_output_extension,
-    write_non_text_anonymized_file,
+from modeio_redact.core.errors import PipelineError
+from modeio_redact.core.pipeline import (
+    RedactionProviderPipeline,
 )
-from modeio_redact.workflow.file_workflow import (
-    embed_map_marker,
-    resolve_output_path,
-    write_output_file,
-    write_sidecar_map,
+from modeio_redact.cli.anonymize_output import (
+    append_warning as _append_warning,
+    run_file_pipeline as _run_file_pipeline,
 )
 from modeio_redact.workflow.file_types import (
     is_level_supported_for_extension,
@@ -55,7 +57,6 @@ from modeio_redact.workflow.input_source import (
     SUPPORTED_FILE_EXTENSIONS,
     resolve_input_source,
     resolve_input_source_context,
-    resolve_input_source_details,
 )
 from modeio_redact.workflow.map_store import MapStoreError, normalize_mapping_entries, save_map
 
@@ -70,6 +71,23 @@ TOOL_NAME = "modeio-redact"
 
 MAX_RETRIES = 2
 RETRY_BACKOFF = 1.0  # seconds; doubles each retry
+
+
+class RequestFailure(RuntimeError):
+    def __init__(
+        self,
+        *,
+        error_type: str,
+        message: str,
+        status_code: Optional[int] = None,
+        dependency_error: bool = False,
+        cause: Optional[Exception] = None,
+    ):
+        super().__init__(message)
+        self.error_type = error_type
+        self.status_code = status_code
+        self.dependency_error = dependency_error
+        self.cause = cause
 
 
 def _post_with_retry(url, headers, json_payload, timeout=60):
@@ -93,6 +111,71 @@ def _post_with_retry(url, headers, json_payload, timeout=60):
     raise last_exc  # type: ignore[misc]
 
 
+def _is_requests_dependency_error(error: Exception) -> bool:
+    if REQUESTS_AVAILABLE:
+        return False
+    missing_dependency_type = getattr(requests, "MissingDependencyError", None)
+    if missing_dependency_type is not None and isinstance(error, missing_dependency_type):
+        return True
+    return "requests package is required" in str(error).lower()
+
+
+def _validate_level_support_or_raise(level: str, input_extension: Optional[str]) -> None:
+    if input_extension and not is_level_supported_for_extension(input_extension, level):
+        supported_levels = ", ".join(supported_levels_for_extension(input_extension))
+        raise ValueError(
+            f"Anonymization level '{level}' is not supported for '{input_extension}' files. "
+            f"Supported levels: {supported_levels}."
+        )
+
+
+def _resolve_crossborder_codes_or_raise(
+    level: str,
+    sender_code: Optional[str],
+    recipient_code: Optional[str],
+) -> Tuple[Optional[str], Optional[str]]:
+    if level != "crossborder":
+        return None, None
+
+    sender = (sender_code or "").strip()
+    recipient = (recipient_code or "").strip()
+    if not sender or not recipient:
+        raise ValueError("--sender-code and --recipient-code are required when --level is crossborder.")
+
+    return sender, recipient
+
+
+def _run_anonymize_or_raise(
+    *,
+    raw_input: str,
+    level: str,
+    sender_code: Optional[str],
+    recipient_code: Optional[str],
+    input_type: str,
+) -> Dict[str, Any]:
+    try:
+        return anonymize(
+            raw_input,
+            level=level,
+            sender_code=sender_code,
+            recipient_code=recipient_code,
+            input_type=input_type,
+        )
+    except requests.RequestException as error:
+        dependency_error = _is_requests_dependency_error(error)
+        response = getattr(error, "response", None)
+        status_code = getattr(response, "status_code", None)
+        error_type = "dependency_error" if dependency_error else "network_error"
+        message = str(error) if dependency_error else f"anonymization request failed: {type(error).__name__}"
+        raise RequestFailure(
+            error_type=error_type,
+            message=message,
+            status_code=status_code,
+            dependency_error=dependency_error,
+            cause=error,
+        ) from error
+
+
 def anonymize(
     raw_input: str,
     level: str = "dynamic",
@@ -100,18 +183,33 @@ def anonymize(
     recipient_code: str = None,
     input_type: str = "text",
 ) -> dict:
-    if level == "lite":
-        local_result = detect_sensitive_local(raw_input)
-        return {
-            "success": True,
-            "data": {
-                "anonymizedContent": local_result.get("sanitizedText", ""),
-                "hasPII": bool(local_result.get("items")),
-                "mode": "local-regex",
-                "localDetection": local_result,
-            },
-        }
+    provider_pipeline = RedactionProviderPipeline(api_anonymize_callable=_anonymize_via_api_provider)
+    provider_result = provider_pipeline.run(
+        content=raw_input,
+        level=level,
+        input_type=input_type,
+        sender_code=sender_code,
+        recipient_code=recipient_code,
+    )
 
+    if level != "lite":
+        raw_payload = provider_result.raw_payload
+        if isinstance(raw_payload, dict) and raw_payload.get("success") is False:
+            return raw_payload
+
+    return {
+        "success": True,
+        "data": _provider_result_to_data(provider_result=provider_result, level=level),
+    }
+
+
+def _anonymize_via_api_provider(
+    raw_input: str,
+    level: str = "dynamic",
+    sender_code: str = None,
+    recipient_code: str = None,
+    input_type: str = "text",
+) -> Dict[str, Any]:
     payload = {
         "input": raw_input,
         "inputType": input_type,
@@ -123,6 +221,41 @@ def anonymize(
         payload["recipientCode"] = recipient_code
     resp = _post_with_retry(URL, headers=HEADERS, json_payload=payload)
     return resp.json()
+
+
+def _provider_result_to_data(provider_result, level: str) -> Dict[str, Any]:
+    data: Dict[str, Any] = {
+        "anonymizedContent": provider_result.anonymized_content,
+        "hasPII": provider_result.has_pii,
+    }
+
+    raw_payload = provider_result.raw_payload
+    if level == "lite":
+        data["mode"] = "local-regex"
+        if isinstance(raw_payload, dict):
+            local_detection = raw_payload.get("localDetection")
+            if isinstance(local_detection, dict):
+                data["localDetection"] = local_detection
+    elif isinstance(raw_payload, dict):
+        raw_data = raw_payload.get("data")
+        if isinstance(raw_data, dict):
+            for key, value in raw_data.items():
+                if key in ("anonymizedContent", "hasPII"):
+                    continue
+                data[key] = value
+
+    if "mapping" not in data and provider_result.items:
+        data["mapping"] = [
+            {
+                "anonymized": item.placeholder,
+                "original": item.original,
+                "type": item.entity_type,
+            }
+            for item in provider_result.items
+            if item.placeholder and item.original
+        ]
+
+    return data
 
 
 def _success_envelope(level: str, mode: str, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -158,28 +291,6 @@ def _error_envelope(
         "level": level,
         "error": error,
     }
-
-
-def _append_warning(data: Dict[str, Any], code: str, message: str) -> None:
-    warnings = data.get("warnings")
-    if not isinstance(warnings, list):
-        warnings = []
-        data["warnings"] = warnings
-    warnings.append({"code": code, "message": message})
-
-
-def _persist_output_file(
-    input_path: Optional[str],
-    output_arg: Optional[str],
-    in_place: bool,
-    output_tag: str,
-) -> Optional[Path]:
-    return resolve_output_path(
-        input_path=input_path,
-        output_path=output_arg,
-        in_place=in_place,
-        output_tag=output_tag,
-    )
 
 
 def _maybe_save_map(
@@ -283,75 +394,57 @@ def main():
             print(f"Error: {exc}", file=sys.stderr)
         sys.exit(2)
 
-    if input_extension and not is_level_supported_for_extension(input_extension, args.level):
-        supported_levels = ", ".join(supported_levels_for_extension(input_extension))
-        message = (
-            f"Anonymization level '{args.level}' is not supported for '{input_extension}' files. "
-            f"Supported levels: {supported_levels}."
+    try:
+        _validate_level_support_or_raise(args.level, input_extension)
+        sender_code, recipient_code = _resolve_crossborder_codes_or_raise(
+            args.level,
+            args.sender_code,
+            args.recipient_code,
         )
+    except ValueError as error:
         if args.json:
             print(json.dumps(
                 _error_envelope(
                     level=args.level,
                     mode=mode,
                     error_type="validation_error",
-                    message=message,
+                    message=str(error),
                 ),
                 ensure_ascii=False,
             ))
         else:
-            print(f"Error: {message}", file=sys.stderr)
+            print(f"Error: {error}", file=sys.stderr)
         sys.exit(2)
 
-    if args.level == "crossborder":
-        sender_code = (args.sender_code or "").strip()
-        recipient_code = (args.recipient_code or "").strip()
-        if not sender_code or not recipient_code:
-            msg = "--sender-code and --recipient-code are required when --level is crossborder."
-            if args.json:
-                print(json.dumps(
-                    _error_envelope(
-                        level=args.level,
-                        mode="api",
-                        error_type="validation_error",
-                        message=msg,
-                    ),
-                    ensure_ascii=False,
-                ))
-            else:
-                print(f"Error: {msg}", file=sys.stderr)
-            sys.exit(2)
-    else:
-        sender_code = None
-        recipient_code = None
-
     try:
-        result = anonymize(
-            raw_input,
+        result = _run_anonymize_or_raise(
+            raw_input=raw_input,
             level=args.level,
             sender_code=sender_code,
             recipient_code=recipient_code,
             input_type=input_type,
         )
-    except requests.RequestException as e:
-        response = getattr(e, "response", None)
-        status_code = getattr(response, "status_code", None)
+    except RequestFailure as error:
         if args.json:
             print(json.dumps(
                 _error_envelope(
                     level=args.level,
                     mode=mode,
-                    error_type="network_error",
-                    message=f"anonymization request failed: {type(e).__name__}",
-                    status_code=status_code,
+                    error_type=error.error_type,
+                    message=str(error),
+                    status_code=error.status_code,
                 ),
                 ensure_ascii=False,
             ))
         else:
-            print(f"Error: anonymization request failed. url={URL}", file=sys.stderr)
-            if status_code is not None:
-                print(f"Error: status_code={status_code}", file=sys.stderr)
-            print(f"Error: exception={type(e).__name__}: {e}", file=sys.stderr)
+            if error.dependency_error:
+                print(f"Error: {error}", file=sys.stderr)
+            else:
+                print(f"Error: anonymization request failed. url={URL}", file=sys.stderr)
+            if error.status_code is not None:
+                print(f"Error: status_code={error.status_code}", file=sys.stderr)
+            if error.cause is not None:
+                print(f"Error: exception={type(error.cause).__name__}: {error.cause}", file=sys.stderr)
         sys.exit(1)
 
     if not result.get("success"):
@@ -402,49 +495,25 @@ def main():
         data["anonymizedContent"] = anonymized
 
     try:
-        resolved_output_path = _persist_output_file(
+        output_path, sidecar_path, _ = _run_file_pipeline(
+            input_source=input_source,
             input_path=input_path,
+            input_extension=input_extension,
             output_arg=args.output,
             in_place=args.in_place,
-            output_tag="redacted",
+            anonymized_content=anonymized,
+            entries=entries,
+            map_ref=map_ref,
+            data=data,
         )
-
-        if resolved_output_path is not None:
-            if input_path and input_extension and not uses_text_handler(input_extension):
-                validate_non_text_output_extension(input_extension, resolved_output_path)
-                write_non_text_anonymized_file(
-                    input_path=Path(input_path).expanduser(),
-                    output_path=resolved_output_path,
-                    extension=input_extension,
-                    mapping_entries=entries,
-                )
-            else:
-                output_content = anonymized
-                if map_ref:
-                    normalized_suffix = resolved_output_path.suffix.lower()
-                    output_content = embed_map_marker(
-                        content=output_content,
-                        map_id=map_ref["mapId"],
-                        suffix=normalized_suffix,
-                    )
-                write_output_file(resolved_output_path, output_content)
-            output_path = str(resolved_output_path)
-
-        if output_path:
-            data["outputPath"] = output_path
-            if map_ref:
-                sidecar_path = write_sidecar_map(
-                    content_path=Path(output_path).expanduser(),
-                    map_ref=map_ref,
-                )
-                map_ref["sidecarPath"] = str(sidecar_path)
-    except ValueError as error:
+    except (ValueError, PipelineError) as error:
+        error_type = "assurance_error" if isinstance(error, PipelineError) else "validation_error"
         if args.json:
             print(json.dumps(
                 _error_envelope(
                     level=args.level,
                     mode=mode,
-                    error_type="validation_error",
+                    error_type=error_type,
                     message=str(error),
                 ),
                 ensure_ascii=False,

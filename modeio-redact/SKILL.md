@@ -85,8 +85,11 @@ Output behavior:
 - For `.txt`/`.md`/`.markdown` output, script embeds `modeio-redact-map-id` marker.
 - `.docx` keeps document structure and uses sidecar-only map linkage.
 - `.pdf` applies true PDF redaction (remove text layer content + black fill) and uses sidecar-only map linkage.
+- All file outputs run fail-closed coverage checks by default.
+- `.docx` and `.pdf` additionally run residual leak verification by default.
 - Other supported text-like file types preserve syntax and use sidecar-only map linkage.
 - Script also writes sidecar map ref file `<output>.map.json`.
+- File output JSON includes `data.applyReport`, `data.verificationReport`, and `data.assurancePolicy`.
 - Default map dir: `~/.modeio/redact/maps` (override with `MODEIO_REDACT_MAP_DIR`).
 - Map files auto-prune after 7 days.
 
@@ -116,7 +119,6 @@ python scripts/anonymize.py --input "Email: alice@example.com" --output ./redact
 
 - `-i, --input`: required, anonymized text or supported file path
 - `--map`: optional map ID or map file path
-- `--allow-hash-mismatch`: continue when input hash mismatches map hash
 - `--output`: write restored content to explicit output file
 - `--in-place`: overwrite input file in place (file-path input only)
 - `--json`: output unified JSON envelope
@@ -201,6 +203,12 @@ python -m unittest discover tests -p "test_prompt_gateway*.py"
 
 # Setup helper tests
 python -m unittest tests.test_setup_prompt_gateway
+
+# Extensive anonymize/deanonymize smoke matrix
+python -m unittest discover tests -p "test_smoke_matrix_extensive.py"
+
+# Optional API smoke (requires network + backend availability)
+MODEIO_REDACT_RUN_API_SMOKE=1 python -m unittest discover tests -p "test_smoke_matrix_extensive.py"
 ```
 
 ### Setup helper: `scripts/setup_prompt_gateway.py`
@@ -480,7 +488,7 @@ Exit code conventions:
 - On API/network errors for non-lite levels, offer retry with `--level lite`.
 - On `map_error`, verify map ID/path and local map TTL window.
 - On `io_error`, verify output directory exists and is writable.
-- On hash mismatch, ask user before applying `--allow-hash-mismatch`.
+- On hash mismatch, restore proceeds and emits `input_hash_mismatch` warning.
 - Never claim anonymization succeeded when command exits non-zero.
 
 ---

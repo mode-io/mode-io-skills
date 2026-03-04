@@ -61,6 +61,21 @@ def _error_envelope(error_type: str, message: str, details: Dict[str, Any] = Non
     return payload
 
 
+def _emit_error_and_exit(
+    *,
+    json_mode: bool,
+    error_type: str,
+    message: str,
+    exit_code: int,
+    details: Dict[str, Any] = None,
+) -> None:
+    if json_mode:
+        print(json.dumps(_error_envelope(error_type, message, details), ensure_ascii=False))
+    else:
+        print(f"Error: {message}", file=sys.stderr)
+    sys.exit(exit_code)
+
+
 def _apply_mapping(text: str, entries: List[Dict[str, str]]) -> Dict[str, Any]:
     restored = text
     replacements_by_type: Dict[str, int] = {}
@@ -90,7 +105,6 @@ def _apply_mapping(text: str, entries: List[Dict[str, str]]) -> Dict[str, Any]:
 def _deanonymize_with_record(
     raw_input: str,
     map_ref: str = None,
-    allow_hash_mismatch: bool = False,
     linkage_source: str = "explicit-map",
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     record, path = load_map(map_ref)
@@ -100,17 +114,12 @@ def _deanonymize_with_record(
     warnings = []
     expected_hash = record.get("anonymizedHash", "")
     if expected_hash and expected_hash != hash_text(raw_input):
-        if allow_hash_mismatch:
-            warnings.append(
-                {
-                    "code": "input_hash_mismatch",
-                    "message": "input content hash does not match map anonymizedHash; override enabled, replacements applied",
-                }
-            )
-        else:
-            raise MapStoreError(
-                "input content hash does not match map anonymizedHash; use --allow-hash-mismatch to override"
-            )
+        warnings.append(
+            {
+                "code": "input_hash_mismatch",
+                "message": "input content hash does not match map anonymizedHash; replacements applied",
+            }
+        )
 
     payload = {
         "deanonymizedContent": replacement_result["deanonymizedContent"],
@@ -132,13 +141,11 @@ def _deanonymize_with_record(
 def deanonymize(
     raw_input: str,
     map_ref: str = None,
-    allow_hash_mismatch: bool = False,
     linkage_source: str = "explicit-map",
 ) -> Dict[str, Any]:
     payload, _ = _deanonymize_with_record(
         raw_input=raw_input,
         map_ref=map_ref,
-        allow_hash_mismatch=allow_hash_mismatch,
         linkage_source=linkage_source,
     )
     return payload
@@ -231,11 +238,6 @@ def main() -> None:
         help="Map ID or map file path. Auto-resolved for file input when possible.",
     )
     parser.add_argument(
-        "--allow-hash-mismatch",
-        action="store_true",
-        help="Allow restore to continue when anonymized hash does not match map metadata.",
-    )
-    parser.add_argument(
         "--output",
         type=str,
         default=None,
@@ -260,20 +262,21 @@ def main() -> None:
         input_path = input_source.input_path
         input_extension = input_source.extension
     except ValueError as error:
-        message = str(error)
-        if args.json:
-            print(json.dumps(_error_envelope("validation_error", message), ensure_ascii=False))
-        else:
-            print(f"Error: {message}", file=sys.stderr)
-        sys.exit(2)
+        _emit_error_and_exit(
+            json_mode=args.json,
+            error_type="validation_error",
+            message=str(error),
+            exit_code=2,
+        )
 
     if input_extension and not supports_deanonymize_for_extension(input_extension):
         message = f"De-anonymization is not supported for '{input_extension}' files."
-        if args.json:
-            print(json.dumps(_error_envelope("validation_error", message), ensure_ascii=False))
-        else:
-            print(f"Error: {message}", file=sys.stderr)
-        sys.exit(2)
+        _emit_error_and_exit(
+            json_mode=args.json,
+            error_type="validation_error",
+            message=message,
+            exit_code=2,
+        )
 
     map_ref = None
     linkage_source = "latest-fallback"
@@ -285,11 +288,12 @@ def main() -> None:
             input_content=raw_input,
         )
     except MapStoreError as error:
-        if args.json:
-            print(json.dumps(_error_envelope("map_error", str(error)), ensure_ascii=False))
-        else:
-            print(f"Error: {error}", file=sys.stderr)
-        sys.exit(1)
+        _emit_error_and_exit(
+            json_mode=args.json,
+            error_type="map_error",
+            message=str(error),
+            exit_code=1,
+        )
 
     sanitized_input = strip_embedded_map_marker(raw_input)
 
@@ -297,21 +301,22 @@ def main() -> None:
         result, map_record = _deanonymize_with_record(
             raw_input=sanitized_input,
             map_ref=map_ref,
-            allow_hash_mismatch=args.allow_hash_mismatch,
             linkage_source=linkage_source,
         )
     except MapStoreError as error:
-        if args.json:
-            print(json.dumps(_error_envelope("map_error", str(error)), ensure_ascii=False))
-        else:
-            print(f"Error: {error}", file=sys.stderr)
-        sys.exit(1)
+        _emit_error_and_exit(
+            json_mode=args.json,
+            error_type="map_error",
+            message=str(error),
+            exit_code=1,
+        )
     except Exception as error:
-        if args.json:
-            print(json.dumps(_error_envelope("runtime_error", str(error)), ensure_ascii=False))
-        else:
-            print(f"Error: {error}", file=sys.stderr)
-        sys.exit(1)
+        _emit_error_and_exit(
+            json_mode=args.json,
+            error_type="runtime_error",
+            message=str(error),
+            exit_code=1,
+        )
 
     output_path = None
     try:
@@ -327,17 +332,19 @@ def main() -> None:
         if output_path:
             result["outputPath"] = output_path
     except ValueError as error:
-        if args.json:
-            print(json.dumps(_error_envelope("validation_error", str(error)), ensure_ascii=False))
-        else:
-            print(f"Error: {error}", file=sys.stderr)
-        sys.exit(2)
+        _emit_error_and_exit(
+            json_mode=args.json,
+            error_type="validation_error",
+            message=str(error),
+            exit_code=2,
+        )
     except OSError as error:
-        if args.json:
-            print(json.dumps(_error_envelope("io_error", f"failed to write output file: {error}"), ensure_ascii=False))
-        else:
-            print(f"Error: failed to write output file: {error}", file=sys.stderr)
-        sys.exit(1)
+        _emit_error_and_exit(
+            json_mode=args.json,
+            error_type="io_error",
+            message=f"failed to write output file: {error}",
+            exit_code=1,
+        )
 
     if args.json:
         print(json.dumps(_success_envelope(result), ensure_ascii=False))
