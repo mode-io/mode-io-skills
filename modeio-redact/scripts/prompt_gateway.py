@@ -514,8 +514,9 @@ def _forward_upstream(
 
     if response.status_code >= 400:
         retryable = response.status_code >= 500
+        status = response.status_code if response.status_code < 500 else 502
         raise GatewayError(
-            502,
+            status,
             "MODEIO_UPSTREAM_ERROR",
             f"upstream returned status {response.status_code}",
             retryable=retryable,
@@ -660,12 +661,12 @@ def build_handler(config: GatewayConfig, *, hmac_secret: bytes):
                 map_ref = _persist_map_if_available(shield_result)
                 upstream_payload = shield_result.payload
 
+                upstream_called = True
                 upstream_response = _forward_upstream(
                     config,
                     payload=upstream_payload,
                     incoming_headers=dict(self.headers.items()),
                 )
-                upstream_called = True
 
                 try:
                     response_payload, _ = _unshield_chat_response(upstream_response, shield_result.entries)

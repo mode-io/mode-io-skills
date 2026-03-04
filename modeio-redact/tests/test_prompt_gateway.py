@@ -453,7 +453,25 @@ class TestPromptGateway(unittest.TestCase):
             self.assertEqual(status, 502)
             self.assertEqual(payload["error"]["code"], "MODEIO_UPSTREAM_ERROR")
             self.assertTrue(payload["error"]["retryable"])
-            self.assertEqual(headers["x-modeio-upstream-called"], "false")
+            self.assertEqual(headers["x-modeio-upstream-called"], "true")
+        finally:
+            gateway.stop()
+            upstream.stop()
+
+    def test_returns_upstream_4xx_status_and_marks_not_retryable(self):
+        upstream, gateway = self._start_pair(lambda _payload: {"error": "unauthorized"}, status=401)
+        try:
+            status, headers, payload = self._post_gateway(
+                gateway.base_url,
+                {
+                    "model": "gpt-test",
+                    "messages": [{"role": "user", "content": "hello"}],
+                },
+            )
+            self.assertEqual(status, 401)
+            self.assertEqual(payload["error"]["code"], "MODEIO_UPSTREAM_ERROR")
+            self.assertFalse(payload["error"]["retryable"])
+            self.assertEqual(headers["x-modeio-upstream-called"], "true")
         finally:
             gateway.stop()
             upstream.stop()
@@ -471,7 +489,7 @@ class TestPromptGateway(unittest.TestCase):
             self.assertEqual(status, 502)
             self.assertEqual(payload["error"]["code"], "MODEIO_UPSTREAM_INVALID_JSON")
             self.assertFalse(payload["error"]["retryable"])
-            self.assertEqual(headers["x-modeio-upstream-called"], "false")
+            self.assertEqual(headers["x-modeio-upstream-called"], "true")
         finally:
             gateway.stop()
             upstream.stop()
