@@ -1,20 +1,19 @@
 ---
 name: modeio-middleware
 description: >-
-  Runs a local request/response middleware gateway for OpenAI-compatible chat
-  completions. Designed for Codex CLI and OpenCode routing where prompts pass
-  through middleware before provider calls and responses pass through middleware
-  before returning to users. Core is plugin-driven and decoupled; guardrail and
-  redact integration are optional plugins.
+  Runs a local OpenAI-compatible middleware gateway for Codex/OpenCode routing.
+  Supports `/v1/chat/completions` and `/v1/responses`, including streaming pass-through,
+  with plugin-based pre-request and post-response/post-stream hooks.
 ---
 
 # Run middleware gateway for Codex/OpenCode
 
-Use this skill when you want pre-request and post-response control in one local gateway.
+Use this skill when you need runtime request/response control in a local proxy.
 
 ## Core routes
 
-- `POST /v1/chat/completions` (v1 non-streaming only)
+- `POST /v1/chat/completions`
+- `POST /v1/responses`
 - `GET /healthz`
 
 ## Scripts
@@ -27,7 +26,8 @@ Starts gateway runtime.
 python modeio-middleware/scripts/middleware_gateway.py \
   --host 127.0.0.1 \
   --port 8787 \
-  --upstream-url "https://api.openai.com/v1/chat/completions"
+  --upstream-chat-url "https://api.openai.com/v1/chat/completions" \
+  --upstream-responses-url "https://api.openai.com/v1/responses"
 ```
 
 ### `scripts/setup_middleware_gateway.py`
@@ -53,6 +53,7 @@ python modeio-middleware/scripts/setup_middleware_gateway.py \
 - Core middleware is generic; plugin chain is config-driven (`config/default.json`).
 - Default plugin definitions include `guardrail` and `redact`, both disabled by default.
 - Profile policy controls plugin-error behavior (`fail_open`, `warn`, `fail_safe`).
+- Stream pipeline supports `post_stream_start`, `post_stream_event`, and `post_stream_end` hooks.
 
 ## Contract highlights
 
@@ -64,7 +65,8 @@ python modeio-middleware/scripts/setup_middleware_gateway.py \
   - `x-modeio-post-actions`
   - `x-modeio-degraded`
   - `x-modeio-upstream-called`
-
+- Streaming responses also include:
+  - `x-modeio-streaming: true`
 - Middleware extension field: top-level `modeio` object in request body.
 - `modeio` metadata is stripped before upstream forwarding.
 
