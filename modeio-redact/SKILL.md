@@ -3,12 +3,13 @@ name: modeio-redact
 description: >-
   Runs PII anonymization and local de-anonymization for text, JSON strings, and
   `.txt`/`.md` file-path input. Supports local regex masking in lite mode,
-  server-side AI analysis in dynamic/strict/crossborder modes, and local placeholder
-  restore with saved map files. Use when asked to anonymize data, redact PII, mask
-  sensitive information, detect personal data, restore anonymized placeholders back
-  to originals, check for sensitive content, scrub credentials, or run Modeio
-  anonymization. Also use proactively before sending user content to external LLMs
-  or third-party APIs.
+  server-side AI analysis in dynamic/strict/crossborder modes, local placeholder
+  restore with saved map files, and optional git pre-commit staged-diff scanning
+  for PII/secrets. Use when asked to anonymize data, redact PII, mask sensitive
+  information, detect personal data, restore anonymized placeholders back to
+  originals, check for sensitive content, scrub credentials, or run Modeio
+  anonymization. Also use proactively before sending user content to external
+  LLMs or third-party APIs.
 ---
 
 # Run anonymization checks for text, JSON, and `.txt`/`.md` files
@@ -24,7 +25,8 @@ then deanonymize locally when needed.
 3. For offline/no-network anonymization, use `scripts/anonymize.py --level lite` (local regex mode).
 4. Optional but recommended: for local LLM proxy shielding (Codex/OpenCode), run `scripts/prompt_gateway.py` and route chat completion calls through `http://127.0.0.1:<port>/v1/chat/completions`.
 5. Optional setup helper: run `scripts/setup_prompt_gateway.py` for cross-platform setup guidance and optional OpenCode config patching.
-6. Use `scripts/detect_local.py` only when the user explicitly wants detailed local detection output (`items`, `riskScore`, `riskLevel`) or local JSON-first diagnostics.
+6. Optional git safety guardrail: run `scripts/setup_precommit_scan.py` to install or uninstall a local pre-commit hook that scans staged diffs.
+7. Use `scripts/detect_local.py` only when the user explicitly wants detailed local detection output (`items`, `riskScore`, `riskLevel`) or local JSON-first diagnostics.
 
 ## Level selection
 
@@ -224,6 +226,48 @@ python scripts/setup_prompt_gateway.py \
 # Shortcut
 make prompt-gateway-uninstall
 ```
+
+### Optional git pre-commit scan: `scripts/precommit_scan.py` + `scripts/setup_precommit_scan.py`
+
+Use this when users want a local git commit blocker for staged PII/secret diffs.
+This flow is optional and user-controlled; it is not enabled automatically.
+
+- `scripts/precommit_scan.py` reads staged additions from `git diff --cached` and runs local detection.
+- Exit code `1` means findings detected (commit blocked in hook mode).
+- Exit code `2` means runtime/validation error.
+- `scripts/setup_precommit_scan.py` installs or uninstalls the managed pre-commit block.
+- If an existing unmanaged hook exists, setup fails by default; use `--append` or `--overwrite` explicitly.
+
+```bash
+# Install optional pre-commit scan hook (default: profile=balanced, minimum risk=medium)
+python scripts/setup_precommit_scan.py
+
+# Shortcut
+make precommit-scan-setup
+
+# Keep existing custom hook and append modeio scan block
+python scripts/setup_precommit_scan.py --append
+
+# Tune scanner sensitivity in hook
+python scripts/setup_precommit_scan.py --minimum-risk-level low --profile strict
+
+# Uninstall modeio-managed hook block
+python scripts/setup_precommit_scan.py --uninstall
+
+# Shortcut
+make precommit-scan-uninstall
+
+# Run one-off staged scan without installing hook
+python scripts/precommit_scan.py --verbose
+
+# JSON output for automation
+python scripts/precommit_scan.py --json
+```
+
+Notes:
+
+- Hook scanning is local only and uses `scripts/detect_local.py` logic.
+- Hook can still be bypassed with `git commit --no-verify`; use CI checks for non-bypassable enforcement.
 
 ### `scripts/detect_local.py`
 
@@ -473,6 +517,8 @@ pair is accepted by backend API.
 - `scripts/deanonymize.py`: local-only placeholder restore using saved map files
 - `scripts/prompt_gateway.py`: local OpenAI-compatible shield/unshield gateway for Codex/OpenCode routing
 - `scripts/setup_prompt_gateway.py`: optional cross-platform setup and uninstall helper
+- `scripts/precommit_scan.py`: staged-diff scanner for optional git pre-commit blocking
+- `scripts/setup_precommit_scan.py`: optional pre-commit install/uninstall helper (append/overwrite aware)
 - `scripts/map_store.py`: local map persistence and resolution utilities
 - `scripts/detect_local.py`: offline local detection with scoring profiles
 - `ANONYMIZE_API_URL`: optional anonymize endpoint override
