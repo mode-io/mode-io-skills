@@ -21,8 +21,10 @@ then deanonymize locally when needed.
 
 1. Default: run `scripts/anonymize.py` with `--json` for structured output.
 2. For de-anonymization, run `scripts/deanonymize.py` (local only, no backend call).
-3. For offline or no-network anonymization, use `scripts/anonymize.py --level lite`.
-4. Use `scripts/detect_local.py` only when the user explicitly wants full local diagnostics.
+3. For offline/no-network anonymization, use `scripts/anonymize.py --level lite` (local regex mode).
+4. Optional but recommended: for local LLM proxy shielding (Codex/OpenCode), run `scripts/prompt_gateway.py` and route chat completion calls through `http://127.0.0.1:<port>/v1/chat/completions`.
+5. Optional setup helper: run `scripts/setup_prompt_gateway.py` for cross-platform setup guidance and optional OpenCode config patching.
+6. Use `scripts/detect_local.py` only when the user explicitly wants detailed local detection output (`items`, `riskScore`, `riskLevel`) or local JSON-first diagnostics.
 
 ## Level selection
 
@@ -123,6 +125,104 @@ python scripts/deanonymize.py --input "Email: [EMAIL_1]" --map 20260304T050000Z-
 python scripts/deanonymize.py --input ./anonymized_notes.redacted.txt --json
 
 python scripts/deanonymize.py --input ./anonymized_notes.redacted.txt --in-place --json
+```
+
+### Prompt shield gateway: `scripts/prompt_gateway.py`
+
+Use this when Codex CLI or OpenCode should send LLM requests through a local shield/unshield proxy.
+This mode is optional (manual anonymize/deanonymize still works), but recommended for automatic request-level protection.
+
+Quickstart: `PROMPT_GATEWAY_QUICKSTART.md`.
+
+- Endpoint contract:
+  - `GET /healthz`
+  - `POST /v1/chat/completions` (OpenAI-compatible payload, `stream=false` only)
+- Request extension:
+  - Optional `modeio` object in request body:
+    - `policy`: must be `strict` in v1
+    - `allow_degraded_unshield`: boolean, default `true`
+- Shield behavior:
+  - Detects and replaces sensitive spans in text message content before upstream forwarding
+  - Uses signed placeholders (`__MIO_*__`) and local map persistence for request linkage
+- Unshield behavior:
+  - Restores signed placeholders in upstream response message text before returning to client
+  - If response shape is not restorable and `allow_degraded_unshield=true`, returns degraded safe output with header `x-modeio-degraded: unshield_failed`
+
+Key headers returned on responses:
+
+- `x-modeio-contract-version`
+- `x-modeio-request-id`
+- `x-modeio-shielded`
+- `x-modeio-redaction-count`
+- `x-modeio-degraded`
+- `x-modeio-upstream-called`
+
+```bash
+# Optional one-time setup helper
+python scripts/setup_prompt_gateway.py --client both
+
+# Start local gateway (OpenAI-compatible upstream by default)
+python scripts/prompt_gateway.py \
+  --host 127.0.0.1 \
+  --port 8787 \
+  --upstream-url "https://api.openai.com/v1/chat/completions"
+
+# Set upstream key used when incoming requests do not provide Authorization
+export MODEIO_GATEWAY_UPSTREAM_API_KEY="<your-upstream-key>"
+
+# Health check
+curl -s http://127.0.0.1:8787/healthz
+
+# Example proxied call
+curl -s http://127.0.0.1:8787/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model":"gpt-4o-mini",
+    "messages":[{"role":"user","content":"Email alice@example.com about invoice 42."}],
+    "modeio":{"policy":"strict","allow_degraded_unshield":true}
+  }'
+
+# Dedicated prompt-gateway tests only
+python -m unittest discover tests -p "test_prompt_gateway*.py"
+
+# Setup helper tests
+python -m unittest tests.test_setup_prompt_gateway
+```
+
+### Setup helper: `scripts/setup_prompt_gateway.py`
+
+Use this optional script to reduce onboarding friction across macOS/Linux/Windows.
+
+- Prints OS-aware Codex `OPENAI_BASE_URL` command.
+- Can apply OpenCode `provider.openai.options.baseURL` update (with backup).
+- Optionally checks local gateway health endpoint.
+- Supports human-readable and `--json` machine-readable reports.
+
+```bash
+# Guidance only (no file edits)
+python scripts/setup_prompt_gateway.py --client both
+
+# Shortcut
+make prompt-gateway-setup
+
+# Apply OpenCode baseURL patch with backup and create config if missing
+python scripts/setup_prompt_gateway.py \
+  --client opencode \
+  --apply-opencode \
+  --create-opencode-config
+
+# JSON output for automation
+python scripts/setup_prompt_gateway.py --client both --json
+
+# One-command uninstall (OpenCode rollback + gateway-local map cleanup)
+python scripts/setup_prompt_gateway.py \
+  --client both \
+  --uninstall \
+  --apply-opencode \
+  --cleanup-maps
+
+# Shortcut
+make prompt-gateway-uninstall
 ```
 
 ### `scripts/detect_local.py`
@@ -369,9 +469,12 @@ pair is accepted by backend API.
 
 ## Resources
 
-- `scripts/anonymize.py`: primary anonymization CLI (`lite` local, others API-backed)
-- `scripts/deanonymize.py`: local placeholder restore with map resolution
-- `scripts/map_store.py`: map persistence, permissions, and TTL pruning
+- `scripts/anonymize.py`: default script (`lite` local regex; other levels call `https://safety-cf.modeio.ai/api/cf/anonymize`)
+- `scripts/deanonymize.py`: local-only placeholder restore using saved map files
+- `scripts/prompt_gateway.py`: local OpenAI-compatible shield/unshield gateway for Codex/OpenCode routing
+- `scripts/setup_prompt_gateway.py`: optional cross-platform setup and uninstall helper
+- `scripts/map_store.py`: local map persistence and resolution utilities
 - `scripts/detect_local.py`: offline local detection with scoring profiles
 - `ANONYMIZE_API_URL`: optional anonymize endpoint override
 - `MODEIO_REDACT_MAP_DIR`: optional local map directory override
+- `.txt`/`.md` file paths are auto-detected through `--input`.
