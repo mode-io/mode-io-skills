@@ -490,9 +490,33 @@ python modeio-redact/scripts/prompt_gateway.py \
 make prompt-gateway-uninstall
 # (Windows users can run setup_prompt_gateway.py --uninstall directly)
 
+# Optional local git pre-commit staged-diff scanner (agent-agnostic)
+# Install modeio-managed pre-commit hook (default: balanced + medium risk gate)
+python modeio-redact/scripts/setup_precommit_scan.py
+
+# Shortcut
+make precommit-scan-setup
+
+# Keep existing custom pre-commit logic and append modeio scanner block
+python modeio-redact/scripts/setup_precommit_scan.py --append
+
+# One-off staged scan without installing a hook
+python modeio-redact/scripts/precommit_scan.py --verbose
+
+# Uninstall modeio-managed pre-commit scanner block
+python modeio-redact/scripts/setup_precommit_scan.py --uninstall
+
+# Shortcut
+make precommit-scan-uninstall
+
 # Run dedicated gateway contract tests only
 python -m unittest discover modeio-redact/tests -p "test_prompt_gateway*.py"
 python -m unittest modeio-redact.tests.test_setup_prompt_gateway
+
+# Run dedicated pre-commit scanner tests
+python -m unittest modeio-redact.tests.test_precommit_scan
+python -m unittest modeio-redact.tests.test_setup_precommit_scan
+python -m unittest modeio-redact.tests.test_precommit_cli_integration
 
 # Offline local detection (detailed risk scoring)
 python modeio-redact/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json
