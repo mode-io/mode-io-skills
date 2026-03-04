@@ -290,6 +290,10 @@ is_reversible: true
 
 > Trigger phrases: *"safety check", "risk assessment", "security audit", "destructive check", "instruction audit", "scan this skill repo", "is this skill dangerous"*
 
+**`modeio-middleware`** — Runs a local OpenAI-compatible request/response middleware gateway for Codex/OpenCode routing. Supports plugin-driven pre-request and post-response controls, with optional guardrail/redact adapters.
+
+> Trigger phrases: *"middleware gateway", "route provider through local proxy", "pre request hook", "post response hook", "OpenCode baseURL middleware", "Codex OPENAI_BASE_URL"*
+
 Static scan contract: [`modeio-guardrail/prompts/static_repo_scan.md`](modeio-guardrail/prompts/static_repo_scan.md)
 
 ## 🔬 Anonymization Levels
@@ -349,6 +353,13 @@ Install this skill:
 https://github.com/mode-io/mode-io-skills/tree/main/modeio-guardrail
 ```
 
+or
+
+```text
+Install this skill:
+https://github.com/mode-io/mode-io-skills/tree/main/modeio-middleware
+```
+
 For CLI installs below, add `-g` for global (user-level) install.
 
 ## 2) Install for Claude Code
@@ -356,6 +367,7 @@ For CLI installs below, add `-g` for global (user-level) install.
 ```bash
 npx skills add mode-io/mode-io-skills --skill modeio-redact --agent claude-code --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent claude-code --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent claude-code --yes --copy
 ```
 
 ## 3) Install for Codex CLI
@@ -363,6 +375,7 @@ npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent claude-co
 ```bash
 npx skills add mode-io/mode-io-skills --skill modeio-redact --agent codex --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent codex --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent codex --yes --copy
 ```
 
 ## 4) Install for OpenCode
@@ -370,6 +383,7 @@ npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent codex --y
 ```bash
 npx skills add mode-io/mode-io-skills --skill modeio-redact --agent opencode --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent opencode --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent opencode --yes --copy
 ```
 
 ## 5) Install for Cursor
@@ -377,6 +391,7 @@ npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent opencode 
 ```bash
 npx skills add mode-io/mode-io-skills --skill modeio-redact --agent cursor --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent cursor --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent cursor --yes --copy
 ```
 
 ## 6) Verify in 30 seconds ✅
@@ -420,6 +435,19 @@ Verdict: ALLOW|WARN|BLOCK|UNVERIFIED
 Risk Score: <0-100>
 Top Findings:
 - file:line + exact snippet + fix
+```
+
+```text
+Set up local middleware routing for Codex and OpenCode so every request/response passes through policy hooks.
+```
+
+Expected output (shape):
+
+```text
+Gateway: http://127.0.0.1:8787/v1
+Codex set command: export OPENAI_BASE_URL=...
+OpenCode config: changed=true backup=...
+Health: healthy
 ```
 
 > [!TIP]
@@ -483,6 +511,14 @@ python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com" --l
 # Safety checks
 python modeio-guardrail/scripts/safety.py -i "Delete all log files"
 python modeio-guardrail/scripts/safety.py -i "Modify database permissions" -c "production" -t "/var/lib/mysql" --json
+
+# Generic middleware gateway (Codex/OpenCode)
+python modeio-middleware/scripts/setup_middleware_gateway.py --client both --health-check
+python modeio-middleware/scripts/middleware_gateway.py --host 127.0.0.1 --port 8787 --upstream-url "https://api.openai.com/v1/chat/completions"
+# Quickstart: modeio-middleware/QUICKSTART.md
+
+# Middleware one-command uninstall (prints Codex unset and optional OpenCode rollback)
+python modeio-middleware/scripts/setup_middleware_gateway.py --client both --uninstall --apply-opencode
 
 # Local prompt shield gateway (Codex/OpenCode)
 # Routes OpenAI-compatible chat completion calls through local shield/unshield
@@ -550,7 +586,7 @@ python modeio-redact/scripts/detect_local.py --input "Email: alice@example.com" 
 > `.pdf` requires a text layer, is supported only with `--level lite`, and is anonymize-only.
 > For file workflows, anonymize/deanonymize now write output files by default unless you use explicit `--output` or `--in-place`.
 
-For full details, see [modeio-redact/SKILL.md](modeio-redact/SKILL.md) and [modeio-guardrail/SKILL.md](modeio-guardrail/SKILL.md).
+For full details, see [modeio-redact/SKILL.md](modeio-redact/SKILL.md), [modeio-guardrail/SKILL.md](modeio-guardrail/SKILL.md), and [modeio-middleware/SKILL.md](modeio-middleware/SKILL.md).
 
 ## 🔗 Links
 
