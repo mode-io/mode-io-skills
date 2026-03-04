@@ -165,7 +165,7 @@ def _persist_output_file(
 
 
 def main() -> None:
-    supported = "/".join(SUPPORTED_FILE_EXTENSIONS)
+    supported = ", ".join(SUPPORTED_FILE_EXTENSIONS)
     parser = argparse.ArgumentParser(
         description=(
             "Restore placeholders with local map file. "

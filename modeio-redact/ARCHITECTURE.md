@@ -18,6 +18,7 @@ modeio-redact/
     detection/
       detect_local.py
     workflow/
+      file_types.py
       input_source.py
       file_workflow.py
       map_store.py
@@ -44,6 +45,10 @@ modeio-redact/
 - Gateway (`modeio_redact/gateway/prompt_gateway.py`) depends on local detection and local map store only.
 - Pre-commit scanner (`modeio_redact/precommit/scan.py`) depends on local detection only.
 - File/map helpers live under `modeio_redact/workflow/` and are shared by anonymize/deanonymize and gateway mapping.
+- File type support is registry-driven via `workflow/file_types.py`:
+  - `input_source.py` uses the registry to validate readable file extensions.
+  - `file_workflow.py` uses registry marker policies (`hash`, `html_comment`, `none`) to decide inline marker behavior.
+  - Most structured types use sidecar-only map linkage to avoid mutating file syntax.
 
 ## Regression Checklist
 

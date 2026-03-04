@@ -208,7 +208,7 @@ class TestDeanonymizeContract(unittest.TestCase):
             self.assertTrue(payload["success"])
             self.assertEqual(payload["data"]["deanonymizedContent"], "Call 415-555-1234")
 
-    def test_deanonymize_rejects_unsupported_file_input_type(self):
+    def test_deanonymize_accepts_json_file_input(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             map_path = Path(tmpdir) / "map.json"
             map_path.write_text(
@@ -237,11 +237,87 @@ class TestDeanonymizeContract(unittest.TestCase):
                     "--json",
                 ],
             )
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+
+            self.assertTrue(payload["success"])
+            self.assertEqual(payload["data"]["deanonymizedContent"], '{"value":"alice@example.com"}')
+
+    def test_deanonymize_rejects_unsupported_file_input_type(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            map_path = Path(tmpdir) / "map.json"
+            map_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": "1",
+                        "mapId": "json-map",
+                        "entries": [
+                            {"placeholder": "[EMAIL_1]", "original": "alice@example.com", "type": "email"}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            input_path = Path(tmpdir) / "anonymized.pdf"
+            input_path.write_text("[EMAIL_1]", encoding="utf-8")
+
+            result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(input_path),
+                    "--map",
+                    str(map_path),
+                    "--json",
+                ],
+            )
             self.assertEqual(result.returncode, 2)
             payload = json.loads(result.stdout)
 
             self.assertFalse(payload["success"])
             self.assertEqual(payload["error"]["type"], "validation_error")
+
+    def test_json_file_input_auto_resolves_map_from_sidecar(self):
+        original_text = '{"email":"alice@example.com"}'
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "incident.json"
+            input_path.write_text(original_text, encoding="utf-8")
+            env = {"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")}
+
+            anon_result = self._run_cli(
+                ANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(input_path),
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(anon_result.returncode, 0)
+            anon_payload = json.loads(anon_result.stdout)
+            redacted_path = Path(anon_payload["data"]["outputPath"])
+            redacted_content = redacted_path.read_text(encoding="utf-8")
+            self.assertNotIn("modeio-redact-map-id", redacted_content)
+            self.assertTrue(Path(anon_payload["data"]["mapRef"]["sidecarPath"]).exists())
+
+            restore_result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(redacted_path),
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(restore_result.returncode, 0)
+            restore_payload = json.loads(restore_result.stdout)
+
+            self.assertTrue(restore_payload["success"])
+            self.assertEqual(restore_payload["data"]["linkageSource"], "sidecar")
+            self.assertEqual(restore_payload["data"]["deanonymizedContent"], original_text)
 
     def test_file_input_auto_resolves_map_from_embedded_marker(self):
         original_text = "Email: alice@example.com"

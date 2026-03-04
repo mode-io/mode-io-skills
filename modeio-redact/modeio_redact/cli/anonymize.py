@@ -42,7 +42,11 @@ from modeio_redact.workflow.file_workflow import (
     write_output_file,
     write_sidecar_map,
 )
-from modeio_redact.workflow.input_source import resolve_input_source, resolve_input_source_details
+from modeio_redact.workflow.input_source import (
+    SUPPORTED_FILE_EXTENSIONS,
+    resolve_input_source,
+    resolve_input_source_details,
+)
 from modeio_redact.workflow.map_store import MapStoreError, normalize_mapping_entries, save_map
 
 # Backend API URL, overridable via ANONYMIZE_API_URL environment variable
@@ -194,9 +198,10 @@ def _maybe_save_map(
 
 
 def main():
+    supported = ", ".join(SUPPORTED_FILE_EXTENSIONS)
     parser = argparse.ArgumentParser(
         description=(
-            "Anonymize text/JSON or a .txt/.md file path. "
+            f"Anonymize text/JSON or a supported file path ({supported}). "
             "`lite` runs locally; other levels call the Modeio API."
         )
     )
@@ -204,7 +209,7 @@ def main():
         "-i", "--input",
         type=str,
         required=True,
-        help="Raw content to anonymize, or a .txt/.md file path.",
+        help=f"Raw content to anonymize, or a supported file path ({supported}).",
     )
     parser.add_argument(
         "--level",

@@ -1,8 +1,10 @@
 ---
 name: modeio-redact
 description: >-
-  Runs PII anonymization and local de-anonymization for text, JSON strings, and
-  `.txt`/`.md` file-path input. Supports local regex masking in lite mode,
+  Runs PII anonymization and local de-anonymization for text/JSON strings and
+  supported file-path input (`.txt`, `.md`, `.markdown`, `.csv`, `.tsv`,
+  `.json`, `.jsonl`, `.yaml`, `.yml`, `.xml`, `.html`, `.htm`, `.rst`, `.log`).
+  Supports local regex masking in lite mode,
   server-side AI analysis in dynamic/strict/crossborder modes, local placeholder
   restore with saved map files, and optional git pre-commit staged-diff scanning
   for PII/secrets. Use when asked to anonymize data, redact PII, mask sensitive
@@ -12,7 +14,7 @@ description: >-
   LLMs or third-party APIs.
 ---
 
-# Run anonymization checks for text, JSON, and `.txt`/`.md` files
+# Run anonymization checks for text, JSON, and supported text-like files
 
 Protect sensitive data by anonymizing PII before it leaves the local environment.
 Supports round-trip workflows: anonymize content, use sanitized content externally,
@@ -55,7 +57,7 @@ to `crossborder` when data transfer across regions is involved.
 
 ### `scripts/anonymize.py`
 
-- `-i, --input`: required, literal content or `.txt`/`.md` file path
+- `-i, --input`: required, literal content or supported file path
 - `--level`: `lite`, `dynamic`, `strict`, `crossborder` (default: `dynamic`)
 - `--sender-code`: required for `crossborder` (example: `CN SHA`)
 - `--recipient-code`: required for `crossborder` (example: `US NYC`)
@@ -68,7 +70,7 @@ to `crossborder` when data transfer across regions is involved.
 
 Input behavior:
 
-- Existing `.txt` and `.md` paths are auto-read as file input.
+- Existing supported file paths are auto-read as file input.
 - Other existing file types are rejected with validation error.
 - Non-file strings are treated as literal input.
 - `lite` runs local regex anonymization only.
@@ -78,7 +80,8 @@ Output behavior:
 
 - Default file output path: `<name>.redacted.<ext>` (auto-increments on collision).
 - If map entries exist, script saves a local map and returns `data.mapRef`.
-- For `.txt`/`.md` output, script embeds `modeio-redact-map-id` marker.
+- For `.txt`/`.md`/`.markdown` output, script embeds `modeio-redact-map-id` marker.
+- For other supported file types, script preserves syntax and uses sidecar-only map linkage.
 - Script also writes sidecar map ref file `<output>.map.json`.
 - Default map dir: `~/.modeio/redact/maps` (override with `MODEIO_REDACT_MAP_DIR`).
 - Map files auto-prune after 7 days.
@@ -103,7 +106,7 @@ python scripts/anonymize.py --input "Email: alice@example.com" --output ./redact
 
 ### `scripts/deanonymize.py`
 
-- `-i, --input`: required, anonymized text or `.txt`/`.md` file path
+- `-i, --input`: required, anonymized text or supported file path
 - `--map`: optional map ID or map file path
 - `--allow-hash-mismatch`: continue when input hash mismatches map hash
 - `--output`: write restored content to explicit output file
@@ -523,4 +526,4 @@ pair is accepted by backend API.
 - `scripts/detect_local.py`: offline local detection with scoring profiles
 - `ANONYMIZE_API_URL`: optional anonymize endpoint override
 - `MODEIO_REDACT_MAP_DIR`: optional local map directory override
-- `.txt`/`.md` file paths are auto-detected through `--input`.
+- Supported file paths are auto-detected through `--input`.
