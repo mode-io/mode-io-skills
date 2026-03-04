@@ -1,147 +1,149 @@
 ---
 name: modeio-redact
-description: Runs PII anonymization and local de-anonymization for text, JSON strings, and `.txt`/`.md` file-path input. Supports local regex masking in lite mode, server-side analysis in dynamic/strict/crossborder modes, and local placeholder restore with saved map files. Use when asked to anonymize data, redact PII, mask sensitive information, detect personal data, restore anonymized placeholders back to originals, check for sensitive content, scrub credentials, or run Modeio anonymization.
+description: >-
+  Runs PII anonymization and local de-anonymization for text, JSON strings, and
+  `.txt`/`.md` file-path input. Supports local regex masking in lite mode,
+  server-side AI analysis in dynamic/strict/crossborder modes, and local placeholder
+  restore with saved map files. Use when asked to anonymize data, redact PII, mask
+  sensitive information, detect personal data, restore anonymized placeholders back
+  to originals, check for sensitive content, scrub credentials, or run Modeio
+  anonymization. Also use proactively before sending user content to external LLMs
+  or third-party APIs.
 ---
 
 # Run anonymization checks for text, JSON, and `.txt`/`.md` files
 
+Protect sensitive data by anonymizing PII before it leaves the local environment.
+Supports round-trip workflows: anonymize content, use sanitized content externally,
+then deanonymize locally when needed.
+
 ## Execution policy
 
-1. Default: run `scripts/anonymize.py`.
+1. Default: run `scripts/anonymize.py` with `--json` for structured output.
 2. For de-anonymization, run `scripts/deanonymize.py` (local only, no backend call).
-3. For offline/no-network anonymization, use `scripts/anonymize.py --level lite` (local regex mode).
-4. Use `scripts/detect_local.py` only when the user explicitly wants detailed local detection output (`items`, `riskScore`, `riskLevel`) or local JSON-first diagnostics.
+3. For offline or no-network anonymization, use `scripts/anonymize.py --level lite`.
+4. Use `scripts/detect_local.py` only when the user explicitly wants full local diagnostics.
+
+## Level selection
+
+| Scenario | Level | Reason |
+|---|---|---|
+| Offline or no network available | `lite` | Local regex only, no API call |
+| Quick PII scan, low-sensitivity content | `lite` | Fast and deterministic |
+| General-purpose anonymization (default) | `dynamic` | AI-powered handling for varied formats |
+| Compliance-sensitive content (GDPR/CCPA) | `strict` | Returns `complianceAnalysis` fields |
+| International data transfer | `crossborder` | Requires jurisdiction codes and returns `crossBorderAnalysis` |
+
+When unsure, use `dynamic`. Escalate to `strict` for compliance language and
+to `crossborder` when data transfer across regions is involved.
+
+## Action policy
+
+1. When `hasPII: true`, provide anonymized output instead of original content.
+2. When `hasPII: false`, report that no PII was detected and content is unchanged.
+3. For file workflows, always report `data.outputPath` so the user can find the result.
+4. When `data.mapRef` exists, tell the user deanonymization is available via `mapRef.mapId`.
+5. Warn on `riskLevel: High` before external sharing.
+6. For `strict`/`crossborder`, surface compliance findings (`complianceAnalysis`, `crossBorderAnalysis`).
+7. On API failure for `dynamic`/`strict`/`crossborder`, offer fallback to `--level lite`.
 
 ## Script commands
 
-### Primary mode: `scripts/anonymize.py`
+### `scripts/anonymize.py`
 
-- `-i, --input`: required, content to anonymize
-- `--level`: anonymization level (`lite`, `dynamic`, `strict`, `crossborder`; default: `dynamic`)
-- `--sender-code`: sender jurisdiction code, required for `crossborder` level (example: `CN SHA`)
-- `--recipient-code`: recipient jurisdiction code, required for `crossborder` level (example: `US NYC`)
-- `--json`: output unified JSON contract for machine consumption
-- `--output`: write anonymized content to an explicit output file path
+- `-i, --input`: required, literal content or `.txt`/`.md` file path
+- `--level`: `lite`, `dynamic`, `strict`, `crossborder` (default: `dynamic`)
+- `--sender-code`: required for `crossborder` (example: `CN SHA`)
+- `--recipient-code`: required for `crossborder` (example: `US NYC`)
+- `--json`: output unified JSON envelope
+- `--output`: write anonymized content to explicit output file
 - `--in-place`: overwrite input file in place (file-path input only)
-- `--input` accepts literal content or file paths. Existing `.txt` and `.md` files are auto-read as file input.
-- `--level lite` runs local regex anonymization (no network call).
-- `--level dynamic|strict|crossborder` calls `https://safety-cf.modeio.ai/api/cf/anonymize` by default. Override via `ANONYMIZE_API_URL` environment variable.
-- On successful runs with detected mappings, the script saves a local map file and returns `data.mapRef`.
-- For file-path input, anonymized output is written by default to `<name>.redacted.<ext>`.
-- For file output, map linkage is written in both places:
-  - embedded map marker (`modeio-redact-map-id`) in `.txt`/`.md` output
-  - sidecar file `<output>.map.json`
-- Default local map directory: `~/.modeio/redact/maps`. Override via `MODEIO_REDACT_MAP_DIR`.
-- File input currently supports `.txt` and `.md` only. Other existing file types are rejected.
+- Endpoint: `https://safety-cf.modeio.ai/api/cf/anonymize` (override with `ANONYMIZE_API_URL`)
+- Retries: 2 retries on 502/503/504 and connection/timeout errors (exponential backoff)
+- Timeout: 60 seconds per attempt
+
+Input behavior:
+
+- Existing `.txt` and `.md` paths are auto-read as file input.
+- Other existing file types are rejected with validation error.
+- Non-file strings are treated as literal input.
+- `lite` runs local regex anonymization only.
+- `dynamic|strict|crossborder` call backend API.
+
+Output behavior:
+
+- Default file output path: `<name>.redacted.<ext>` (auto-increments on collision).
+- If map entries exist, script saves a local map and returns `data.mapRef`.
+- For `.txt`/`.md` output, script embeds `modeio-redact-map-id` marker.
+- Script also writes sidecar map ref file `<output>.map.json`.
+- Default map dir: `~/.modeio/redact/maps` (override with `MODEIO_REDACT_MAP_DIR`).
+- Map files auto-prune after 7 days.
 
 ```bash
-python scripts/anonymize.py --input "Name: Jack, ID number: 110101199001011234"
-
-python scripts/anonymize.py --input "$(cat sensitive_data.json)"
-
-python scripts/anonymize.py --input "Name: Jack, ID number: 110101199001011234" --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
-
-python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic
-
-python scripts/anonymize.py --input "Email: alice@example.com, Phone: 415-555-1234" --level lite
+python scripts/anonymize.py --input "Name: Jack, ID number: 110101199001011234" --json
 
 python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic --json
 
-python scripts/anonymize.py --input ./incident-notes.txt --level lite
+python scripts/anonymize.py --input "Email: alice@example.com, Phone: 415-555-1234" --level lite --json
+
+python scripts/anonymize.py --input "Name: Jack" --level crossborder --sender-code "CN SHA" --recipient-code "US NYC" --json
+
+python scripts/anonymize.py --input ./incident-notes.txt --level lite --json
 
 python scripts/anonymize.py --input ./handoff.md --level dynamic --json
 
-python scripts/anonymize.py --input ./incident-notes.txt --level lite --in-place
+python scripts/anonymize.py --input ./incident-notes.txt --level lite --in-place --json
 
 python scripts/anonymize.py --input "Email: alice@example.com" --output ./redacted-output.txt --json
 ```
 
-### Local de-anonymization: `scripts/deanonymize.py`
+### `scripts/deanonymize.py`
 
-- `-i, --input`: required, anonymized content containing placeholders, or an existing `.txt`/`.md` file path
+- `-i, --input`: required, anonymized text or `.txt`/`.md` file path
 - `--map`: optional map ID or map file path
-- `--allow-hash-mismatch`: allow restore to continue when map hash does not match input
-- `--output`: write restored content to an explicit output file path
+- `--allow-hash-mismatch`: continue when input hash mismatches map hash
+- `--output`: write restored content to explicit output file
 - `--in-place`: overwrite input file in place (file-path input only)
-- `--json`: output unified JSON contract for machine consumption
-- No network call is made in de-anonymization mode.
+- `--json`: output unified JSON envelope
+- No network call is made.
 
 Map resolution order when `--map` is omitted:
-1. embedded map marker in file input
-2. sidecar map file `<input>.map.json`
-3. latest local map (only for literal text input)
 
-For file-path input, restored output is written by default to `<name>.restored.<ext>`.
+1. Embedded map marker in file input
+2. Sidecar map file `<input>.map.json`
+3. Latest local map (literal text input only)
+
+Default file output path: `<name>.restored.<ext>`.
 
 ```bash
-python scripts/deanonymize.py --input "Email: [EMAIL_1]"
+python scripts/deanonymize.py --input "Email: [EMAIL_1]" --json
 
-python scripts/deanonymize.py --input "Email: [EMAIL_1]" --map 20260304T050000Z-a1b2c3d4
-
-python scripts/deanonymize.py --input "Email: [EMAIL_1]" --map ~/.modeio/redact/maps/20260304T050000Z-a1b2c3d4.json --json
-
-python scripts/deanonymize.py --input ./anonymized_notes.txt --map 20260304T050000Z-a1b2c3d4 --json
+python scripts/deanonymize.py --input "Email: [EMAIL_1]" --map 20260304T050000Z-a1b2c3d4 --json
 
 python scripts/deanonymize.py --input ./anonymized_notes.redacted.txt --json
 
 python scripts/deanonymize.py --input ./anonymized_notes.redacted.txt --in-place --json
 ```
 
-### Output
+### `scripts/detect_local.py`
 
-- Successful responses include top-level `success: true` and a `data` object.
-- `data.anonymizedContent`: anonymized content string
-- `data.hasPII`: whether sensitive data was detected
-- Optional `data` fields can include mapping and analysis metadata.
-- When a local map is saved, `data.mapRef` includes `mapId`, `mapPath`, and `entryCount`.
-- For file workflows, JSON output includes `data.outputPath` and linkage metadata.
-- For `lite`, output includes `data.mode: local-regex` and `data.localDetection` details.
+Use this only when user explicitly asks for local/offline detection details.
 
-`--json` output contract:
-
-- `success`: `true`
-- `tool`: `modeio-redact`
-- `mode`: `local-regex` or `api`
-- `level`: chosen anonymization level
-- `data`: anonymization payload
-
-```json
-{
-  "success": true,
-  "data": {
-    "anonymizedContent": "Name: [REDACTED_NAME_1]",
-    "hasPII": true
-  }
-}
-```
-
-Failure behavior:
-
-- For API-backed levels (`dynamic`/`strict`/`crossborder`): HTTP/network failure exits non-zero and prints URL/status/exception details to `stderr`.
-- API semantic failure (`success: false`) prints full response JSON to `stderr` and exits non-zero.
-- With `--json`, failures are emitted as a unified JSON envelope:
-  - `success: false`
-  - `tool: modeio-redact`
-  - `mode`: `local-regex` or `api`
-  - `level`: chosen anonymization level
-  - `error.type`: `validation_error` / `network_error` / `api_error`
-  - `error.message`: failure description
-
-### Offline mode: `scripts/detect_local.py`
-
-Use only when user explicitly asks for offline or local detection.
-
-- `-i, --input`: content to scan
-- `--profile`: detection threshold profile (`strict`, `balanced`, `precision`; default: `balanced`)
-- `--allowlist-file`: optional JSON allowlist rule file
-- `--blocklist-file`: optional JSON blocklist rule file
-- `--thresholds-file`: optional JSON per-type threshold override file
-- `--explain`: print heuristic score diagnostics to `stderr` in non-JSON mode
-- `--json`: output full detection details instead of masked text only
+- `-i, --input`: required input content
+- `--profile`: threshold profile (`strict`, `balanced`, `precision`; default `balanced`)
+- `--allowlist-file`: optional JSON allowlist rules
+- `--blocklist-file`: optional JSON blocklist rules
+- `--thresholds-file`: optional JSON per-type threshold overrides
+- `--explain`: print heuristic scoring diagnostics in non-JSON mode
+- `--json`: output full JSON diagnostics
 - No network call is made.
 
+Supported type families include `phone`, `email`, `idCard`, `creditCard`,
+`bankCard`, `address`, `name`, `password`, `apiKey`, `ipAddress`, `ssn`,
+`passport`, and `dateOfBirth`.
+
 ```bash
-python scripts/detect_local.py --input "Phone 13812345678 Email test@example.com"
+python scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json
 
 python scripts/detect_local.py --input "Name: Alice Wang, phone 415-555-1234" --json
 
@@ -150,23 +152,115 @@ python scripts/detect_local.py --input "Name: Alice Wang" --profile precision --
 python scripts/detect_local.py --input "Project codename Phoenix" --blocklist-file ./blocklist.json --json
 ```
 
-### Output
+## Output contracts
 
-- Default mode prints masked text to `stdout` and summary information to `stderr`.
-- `--json` prints full structured output.
+### Anonymize success (`--json`)
+
+```json
+{
+  "success": true,
+  "tool": "modeio-redact",
+  "mode": "api",
+  "level": "dynamic",
+  "data": {
+    "anonymizedContent": "Name: [REDACTED_NAME_1], ID: [REDACTED_ID_1]",
+    "hasPII": true,
+    "action": "ANONYMIZED",
+    "riskLevel": "High",
+    "description": "PII detected and anonymized",
+    "mapping": [
+      { "original": "Jack", "anonymized": "[REDACTED_NAME_1]", "type": "name" }
+    ],
+    "privacyScore": { "before": 25, "after": 85 },
+    "mapRef": {
+      "mapId": "20260304T050000Z-a1b2c3d4",
+      "mapPath": "~/.modeio/redact/maps/20260304T050000Z-a1b2c3d4.json",
+      "entryCount": 1
+    }
+  }
+}
+```
+
+Core `data` fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `anonymizedContent` | `string` | Content with placeholders |
+| `hasPII` | `boolean` | Whether sensitive data was detected |
+| `action` | `string` | Backend action (`ANONYMIZED`/`PASSTHROUGH`/`NONE`) |
+| `riskLevel` | `string` | `High`/`Medium`/`Low`/`None` |
+| `mapping` | `array` | Mapping entries `{original, anonymized, type}` |
+| `privacyScore` | `object` | Score object `{before, after}` |
+| `mapRef` | `object` | Local map reference `{mapId, mapPath, entryCount}` |
+| `outputPath` | `string` | Output file path for file workflows |
+| `inputType` | `string` | `text` or `file` |
+| `inputPath` | `string` | Source path for file workflows |
+| `warnings` | `array` | Warning list (for example `map_persist_failed`) |
+
+Additional API-level fields:
+
+| Field | Level | Meaning |
+|---|---|---|
+| `complianceAnalysis` | `strict`, `crossborder` | Compliance score and violated articles |
+| `crossBorderAnalysis` | `crossborder` | Cross-border transfer analysis |
+| `intention` | API levels | AI-inferred intent summary |
+| `residualRiskReason` | API levels | Reason privacy score is not maximal |
+
+For `lite`, `mode` is `local-regex` and `data.localDetection` contains the full local detector payload.
+
+### Deanonymize success (`--json`)
+
+```json
+{
+  "success": true,
+  "tool": "modeio-redact",
+  "mode": "local-map",
+  "data": {
+    "deanonymizedContent": "Email: alice@example.com",
+    "replacementSummary": {
+      "totalReplacements": 1,
+      "replacementsByType": { "email": 1 }
+    },
+    "mapRef": {
+      "mapId": "20260304T050000Z-a1b2c3d4",
+      "mapPath": "~/.modeio/redact/maps/20260304T050000Z-a1b2c3d4.json",
+      "entryCount": 1
+    },
+    "linkageSource": "explicit-map",
+    "warnings": []
+  }
+}
+```
+
+`linkageSource` values:
+
+- `explicit-map`: map ref provided via `--map`
+- `embedded-mapid`: map ID found in embedded marker
+- `sidecar`: map ref read from sidecar file
+- `latest-fallback`: most recent local map fallback
+
+For file workflows, `data.outputPath` is included.
+
+### Detect local output (`--json`)
+
+Default mode prints sanitized text to stdout and summary lines to stderr.
+`--json` prints full structured output.
+
+Notable JSON fields:
+
 - `sanitizedText`: masked text
 - `items`: detected entities
-- `items[].detectionScore`: heuristic score in `[0,1]` (not a statistical confidence interval)
-- `items[].scoreThreshold`: active threshold used for this type
-- `items[].scoreReasons`: additive heuristics used to compute the score
-- `items[].validator`: validator status for checksum/format guarded types
+- `items[].detectionScore`: heuristic score in `[0,1]`
+- `items[].scoreThreshold`: active threshold for that type
+- `items[].scoreReasons`: additive score reasons
+- `items[].validator`: validator status for format/checksum-guarded types
 - `items[].detectionSource`: `regex` / `name-context` / `blocklist`
 - `riskScore`: 0-100
 - `riskLevel`: `low` / `medium` / `high`
-- `profile`: active threshold profile
-- `thresholds`: active per-type thresholds
-- `scoringMethod`: current scoring algorithm ID (`heuristic-v1`)
-- `detectorVersion`: local detector implementation version (`local-rules-v1`)
+- `profile`: active profile
+- `thresholds`: effective per-type thresholds
+- `scoringMethod`: scoring algorithm ID (`heuristic-v1`)
+- `detectorVersion`: detector version (`local-rules-v1`)
 - Deprecated aliases (temporary): `confidence`, `confidenceThreshold`, `confidenceReasons`
 
 ```json
@@ -176,60 +270,108 @@ python scripts/detect_local.py --input "Project codename Phoenix" --blocklist-fi
   "items": [
     {
       "id": "1",
-      "type": "phone"
-    },
-    {
-      "id": "2",
-      "type": "email"
+      "type": "phone",
+      "label": "Phone Number",
+      "value": "13812345678",
+      "maskedValue": "[PHONE_1]",
+      "riskLevel": "medium",
+      "startIndex": 6,
+      "endIndex": 17,
+      "detectionScore": 0.92,
+      "scoreThreshold": 0.70,
+      "detectionSource": "regex"
     }
   ],
   "riskScore": 46,
-  "riskLevel": "medium"
+  "riskLevel": "medium",
+  "profile": "balanced",
+  "scoringMethod": "heuristic-v1",
+  "detectorVersion": "local-rules-v1"
 }
 ```
+
+Risk thresholds: `high >= 60`, `medium >= 30`, `low < 30`.
+
+### Failure envelope (`--json`)
+
+```json
+{
+  "success": false,
+  "tool": "modeio-redact",
+  "mode": "api",
+  "level": "dynamic",
+  "error": {
+    "type": "network_error",
+    "message": "anonymization request failed: ConnectionError"
+  }
+}
+```
+
+Error types by script:
+
+| Script | Error types |
+|---|---|
+| `anonymize.py` | `validation_error`, `network_error`, `api_error`, `io_error` |
+| `deanonymize.py` | `validation_error`, `map_error`, `runtime_error`, `io_error` |
+
+Exit code conventions:
+
+- `2`: validation errors
+- `1`: network/API/map/runtime/IO errors
+
+## Failure policy
+
+- On API/network errors for non-lite levels, offer retry with `--level lite`.
+- On `map_error`, verify map ID/path and local map TTL window.
+- On `io_error`, verify output directory exists and is writable.
+- On hash mismatch, ask user before applying `--allow-hash-mismatch`.
+- Never claim anonymization succeeded when command exits non-zero.
 
 ---
 
 ## Jurisdiction codes for `crossborder`
 
-`--sender-code` and `--recipient-code` use the format `<COUNTRY_ISO2> <CITY_CODE>`.
+`--sender-code` and `--recipient-code` use format `<COUNTRY_ISO2> <CITY_CODE>`.
 
 | Code | Jurisdiction |
 |------|-------------|
-| `CN SHA` | China – Shanghai |
-| `CN BJS` | China – Beijing |
-| `CN GZH` | China – Guangzhou |
-| `CN SZX` | China – Shenzhen |
-| `US NYC` | United States – New York |
-| `US SFO` | United States – San Francisco |
-| `US LAX` | United States – Los Angeles |
-| `US CHI` | United States – Chicago |
-| `GB LON` | United Kingdom – London |
-| `DE BER` | Germany – Berlin |
-| `DE FRA` | Germany – Frankfurt |
-| `FR PAR` | France – Paris |
-| `JP TYO` | Japan – Tokyo |
+| `CN SHA` | China - Shanghai |
+| `CN BJS` | China - Beijing |
+| `CN GZH` | China - Guangzhou |
+| `CN SZX` | China - Shenzhen |
+| `US NYC` | United States - New York |
+| `US SFO` | United States - San Francisco |
+| `US LAX` | United States - Los Angeles |
+| `US CHI` | United States - Chicago |
+| `GB LON` | United Kingdom - London |
+| `DE BER` | Germany - Berlin |
+| `DE FRA` | Germany - Frankfurt |
+| `FR PAR` | France - Paris |
+| `JP TYO` | Japan - Tokyo |
 | `SG SIN` | Singapore |
-| `AU SYD` | Australia – Sydney |
-| `CA TOR` | Canada – Toronto |
-| `KR SEL` | South Korea – Seoul |
-| `IN BOM` | India – Mumbai |
-| `BR SAO` | Brazil – São Paulo |
-| `AE DXB` | UAE – Dubai |
+| `AU SYD` | Australia - Sydney |
+| `CA TOR` | Canada - Toronto |
+| `KR SEL` | South Korea - Seoul |
+| `IN BOM` | India - Mumbai |
+| `BR SAO` | Brazil - Sao Paulo |
+| `AE DXB` | UAE - Dubai |
 
-The country portion is the ISO 3166-1 alpha-2 code. The city portion is the IATA airport code. Any valid `<ISO2> <IATA>` pair is accepted by the API; the table above lists common combinations.
+Country code is ISO 3166-1 alpha-2. City code is IATA. Any valid `<ISO2> <IATA>`
+pair is accepted by backend API.
 
 ---
 
 ## When NOT to use
 
-- For command safety or destructive-operation analysis; use `modeio-guardrail` instead.
-- For pure policy or legal discussion when no text needs anonymization.
+- For command safety/destructive-operation analysis; use `modeio-guardrail`.
+- For pure policy/legal discussion with no text to anonymize.
+- For content already anonymized with no original values to protect.
 
 ## Resources
 
-- `scripts/anonymize.py`: default script (`lite` local regex; other levels call `https://safety-cf.modeio.ai/api/cf/anonymize`)
-- `scripts/deanonymize.py`: local-only placeholder restore using saved map files
-- `scripts/map_store.py`: local map persistence and resolution utilities
-- `scripts/detect_local.py`: offline regex detection
-- `.txt`/`.md` file paths are auto-detected through `--input`.
+- `scripts/anonymize.py`: primary anonymization CLI (`lite` local, others API-backed)
+- `scripts/deanonymize.py`: local placeholder restore with map resolution
+- `scripts/map_store.py`: map persistence, permissions, and TTL pruning
+- `scripts/detect_local.py`: offline local detection with scoring profiles
+- `ANONYMIZE_API_URL`: optional anonymize endpoint override
+- `MODEIO_REDACT_MAP_DIR`: optional local map directory override
