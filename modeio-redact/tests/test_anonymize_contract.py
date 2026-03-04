@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -54,22 +55,47 @@ class TestAnonymizeContract(unittest.TestCase):
         self.assertEqual(payload["error"]["type"], "validation_error")
 
     def test_json_success_envelope_for_lite(self):
-        result = self._run_cli([
-            "--input",
-            "Email: alice@example.com, Phone: 415-555-1234",
-            "--level",
-            "lite",
-            "--json",
-        ])
-        self.assertEqual(result.returncode, 0)
-        payload = json.loads(result.stdout)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = self._run_cli(
+                [
+                    "--input",
+                    "Email: alice@example.com, Phone: 415-555-1234",
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env={"MODEIO_REDACT_MAP_DIR": tmpdir},
+            )
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
 
-        self.assertTrue(payload["success"])
-        self.assertEqual(payload["tool"], "modeio-redact")
-        self.assertEqual(payload["mode"], "local-regex")
-        self.assertEqual(payload["level"], "lite")
-        self.assertIn("anonymizedContent", payload["data"])
-        self.assertIn("hasPII", payload["data"])
+            self.assertTrue(payload["success"])
+            self.assertEqual(payload["tool"], "modeio-redact")
+            self.assertEqual(payload["mode"], "local-regex")
+            self.assertEqual(payload["level"], "lite")
+            self.assertIn("anonymizedContent", payload["data"])
+            self.assertIn("hasPII", payload["data"])
+            self.assertIn("mapRef", payload["data"])
+            self.assertGreater(payload["data"]["mapRef"]["entryCount"], 0)
+            self.assertTrue(Path(payload["data"]["mapRef"]["mapPath"]).exists())
+
+    def test_json_success_without_pii_has_no_map_ref(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = self._run_cli(
+                [
+                    "--input",
+                    "Completely harmless sentence without personal data.",
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env={"MODEIO_REDACT_MAP_DIR": tmpdir},
+            )
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["success"])
+            self.assertFalse(payload["data"]["hasPII"])
+            self.assertNotIn("mapRef", payload["data"])
 
     def test_json_network_error_envelope_for_api_mode(self):
         result = self._run_cli(
