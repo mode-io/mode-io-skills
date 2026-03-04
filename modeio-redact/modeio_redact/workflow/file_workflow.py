@@ -10,9 +10,19 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from modeio_redact.workflow.file_types import (
+    MAP_MARKER_STYLE_HASH,
+    MAP_MARKER_STYLE_HTML_COMMENT,
+    marker_style_for_extension,
+)
+
 MAP_MARKER_PREFIX = "modeio-redact-map-id"
-MARKER_PATTERN_MD = re.compile(r"^\s*<!--\s*modeio-redact-map-id:\s*([^\s]+)\s*-->\s*$")
-MARKER_PATTERN_TXT = re.compile(r"^\s*#\s*modeio-redact-map-id:\s*([^\s]+)\s*$")
+MARKER_PATTERNS = {
+    MAP_MARKER_STYLE_HTML_COMMENT: re.compile(
+        r"^\s*<!--\s*modeio-redact-map-id:\s*([^\s]+)\s*-->\s*$"
+    ),
+    MAP_MARKER_STYLE_HASH: re.compile(r"^\s*#\s*modeio-redact-map-id:\s*([^\s]+)\s*$"),
+}
 
 
 def _expand_path(path_value: str) -> Path:
@@ -68,12 +78,10 @@ def write_output_file(path: Path, content: str) -> None:
 
 
 def _match_map_marker(line: str) -> Optional[str]:
-    md_match = MARKER_PATTERN_MD.match(line)
-    if md_match:
-        return md_match.group(1)
-    txt_match = MARKER_PATTERN_TXT.match(line)
-    if txt_match:
-        return txt_match.group(1)
+    for pattern in MARKER_PATTERNS.values():
+        marker_match = pattern.match(line)
+        if marker_match:
+            return marker_match.group(1)
     return None
 
 
@@ -100,13 +108,13 @@ def strip_embedded_map_marker(content: str) -> str:
 
 
 def embed_map_marker(content: str, map_id: str, suffix: str) -> str:
-    """Embed map id marker for txt/md output files."""
+    """Embed map id marker when output file type supports inline markers."""
     clean_content = strip_embedded_map_marker(content)
-    normalized_suffix = suffix.lower()
-    if normalized_suffix == ".md":
+    marker_style = marker_style_for_extension(suffix)
+    if marker_style == MAP_MARKER_STYLE_HTML_COMMENT:
         marker = f"<!-- {MAP_MARKER_PREFIX}: {map_id} -->"
         return f"{marker}\n{clean_content}"
-    if normalized_suffix == ".txt":
+    if marker_style == MAP_MARKER_STYLE_HASH:
         marker = f"# {MAP_MARKER_PREFIX}: {map_id}"
         return f"{marker}\n{clean_content}"
     return clean_content

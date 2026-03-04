@@ -58,6 +58,12 @@ class TestFileWorkflow(unittest.TestCase):
         self.assertEqual(file_workflow.extract_embedded_map_id(mapped), "abc123")
         self.assertEqual(file_workflow.strip_embedded_map_marker(mapped), content)
 
+    def test_embed_marker_uses_sidecar_only_for_json(self):
+        content = '{"email":"[EMAIL_1]"}'
+        mapped = file_workflow.embed_map_marker(content, map_id="abc123", suffix=".json")
+        self.assertEqual(mapped, content)
+        self.assertIsNone(file_workflow.extract_embedded_map_id(mapped))
+
     def test_sidecar_write_and_read_reference(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             content_path = Path(tmpdir) / "incident.redacted.txt"

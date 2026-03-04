@@ -8,7 +8,11 @@ from __future__ import annotations
 import os
 from typing import Optional, Tuple
 
-SUPPORTED_FILE_EXTENSIONS = (".txt", ".md")
+from modeio_redact.workflow.file_types import (
+    SUPPORTED_FILE_EXTENSIONS,
+    is_supported_extension,
+    supported_extensions_for_display,
+)
 
 
 def resolve_input_source(input_value: str) -> Tuple[str, str]:
@@ -26,8 +30,8 @@ def resolve_input_source_details(input_value: str) -> Tuple[str, str, Optional[s
     expanded_path = os.path.expandvars(os.path.expanduser(raw_value))
     if os.path.isfile(expanded_path):
         extension = os.path.splitext(expanded_path)[1].lower()
-        if extension not in SUPPORTED_FILE_EXTENSIONS:
-            allowed = ", ".join(SUPPORTED_FILE_EXTENSIONS)
+        if not is_supported_extension(extension):
+            allowed = supported_extensions_for_display()
             raise ValueError(
                 f"Unsupported file extension '{extension or '(none)'}'. "
                 f"Supported file types: {allowed}."

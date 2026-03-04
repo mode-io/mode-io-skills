@@ -168,9 +168,34 @@ class TestAnonymizeContract(unittest.TestCase):
             self.assertEqual(output_path.name, "handoff.redacted.md")
             self.assertTrue(output_path.read_text(encoding="utf-8").startswith("<!-- modeio-redact-map-id:"))
 
+    def test_json_file_path_is_auto_resolved_and_redacted_without_inline_marker(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "incident.json"
+            file_path.write_text('{"email": "alice@example.com"}', encoding="utf-8")
+            result = self._run_cli(
+                [
+                    "--input",
+                    str(file_path),
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env={"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")},
+            )
+
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["success"])
+            self.assertIn("[EMAIL_1]", payload["data"]["anonymizedContent"])
+            output_path = Path(payload["data"]["outputPath"])
+            self.assertEqual(output_path.name, "incident.redacted.json")
+            output_content = output_path.read_text(encoding="utf-8")
+            self.assertNotIn("modeio-redact-map-id", output_content)
+            self.assertTrue(Path(payload["data"]["mapRef"]["sidecarPath"]).exists())
+
     def test_unsupported_file_extension_returns_json_validation_error(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8", delete=False) as input_file:
-            input_file.write('{"email": "alice@example.com"}')
+        with tempfile.NamedTemporaryFile("w", suffix=".pdf", encoding="utf-8", delete=False) as input_file:
+            input_file.write("Fake PDF payload")
             file_path = input_file.name
 
         try:
