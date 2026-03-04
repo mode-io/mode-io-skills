@@ -48,7 +48,7 @@ python scripts/anonymize.py --input ./handoff.md --level dynamic --json
 
 ### Local de-anonymization: `scripts/deanonymize.py`
 
-- `-i, --input`: required, anonymized content containing placeholders
+- `-i, --input`: required, anonymized content containing placeholders, or an existing `.txt`/`.md` file path
 - `--map`: optional map ID or map file path; defaults to latest local map
 - `--json`: output unified JSON contract for machine consumption
 - No network call is made in de-anonymization mode.
@@ -59,6 +59,8 @@ python scripts/deanonymize.py --input "Email: [EMAIL_1]"
 python scripts/deanonymize.py --input "Email: [EMAIL_1]" --map 20260304T050000Z-a1b2c3d4
 
 python scripts/deanonymize.py --input "Email: [EMAIL_1]" --map ~/.modeio/redact/maps/20260304T050000Z-a1b2c3d4.json --json
+
+python scripts/deanonymize.py --input ./anonymized_notes.txt --map 20260304T050000Z-a1b2c3d4 --json
 ```
 
 ### Output

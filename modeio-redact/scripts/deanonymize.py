@@ -11,6 +11,7 @@ import json
 import sys
 from typing import Any, Dict, List
 
+from input_source import SUPPORTED_FILE_EXTENSIONS, resolve_input_source
 from map_store import MapStoreError, hash_text, load_map
 
 TOOL_NAME = "modeio-redact"
@@ -98,15 +99,20 @@ def deanonymize(raw_input: str, map_ref: str = None) -> Dict[str, Any]:
 
 
 def main() -> None:
+    supported = "/".join(SUPPORTED_FILE_EXTENSIONS)
     parser = argparse.ArgumentParser(
-        description="Restore placeholders with local map file. Defaults to latest map in local store."
+        description=(
+            "Restore placeholders with local map file. "
+            f"--input accepts literal text or {supported} file paths. "
+            "Defaults to latest map in local store."
+        )
     )
     parser.add_argument(
         "-i",
         "--input",
         type=str,
         required=True,
-        help="Anonymized content to restore.",
+        help=f"Anonymized content to restore, or a {supported} file path.",
     )
     parser.add_argument(
         "--map",
@@ -121,9 +127,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    raw_input = (args.input or "").strip()
-    if not raw_input:
-        message = "--input must not be empty."
+    try:
+        raw_input, _ = resolve_input_source(args.input)
+    except ValueError as error:
+        message = str(error)
         if args.json:
             print(json.dumps(_error_envelope("validation_error", message), ensure_ascii=False))
         else:
