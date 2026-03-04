@@ -286,9 +286,11 @@ is_reversible: true
 
 > Trigger phrases: *"anonymize", "redact PII", "mask sensitive data", "scrub credentials", "detect personal data"*
 
-**`modeio-guardrail`** — Evaluates instructions for destructive operations, prompt injection, irreversible actions, and compliance violations.
+**`modeio-guardrail`** — Evaluates instructions for destructive operations, prompt injection, irreversible actions, and compliance violations. Also supports prompt-only static scanning of third-party skill repos before install.
 
-> Trigger phrases: *"safety check", "risk assessment", "security audit", "destructive check", "instruction audit"*
+> Trigger phrases: *"safety check", "risk assessment", "security audit", "destructive check", "instruction audit", "scan this skill repo", "is this skill dangerous"*
+
+Static scan contract: [`modeio-guardrail/prompts/static_repo_scan.md`](modeio-guardrail/prompts/static_repo_scan.md)
 
 ## 🔬 Anonymization Levels
 
@@ -405,6 +407,19 @@ Expected output:
   "is_reversible": false,
   "recommendation": "..."
 }
+```
+
+```text
+Scan this skill repo before install and tell me if it is dangerous: <repo_url_or_local_path>
+```
+
+Expected output (shape):
+
+```text
+Verdict: ALLOW|WARN|BLOCK|UNVERIFIED
+Risk Score: <0-100>
+Top Findings:
+- file:line + exact snippet + fix
 ```
 
 > [!TIP]
