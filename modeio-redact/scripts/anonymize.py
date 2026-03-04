@@ -11,11 +11,31 @@ import json
 import os
 import sys
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-import requests
+try:
+    import requests
+except ModuleNotFoundError:
+    class _RequestsShim:
+        class RequestException(Exception):
+            pass
+
+        class ConnectionError(RequestException):
+            pass
+
+        class Timeout(RequestException):
+            pass
+
+        @staticmethod
+        def post(*_args, **_kwargs):
+            raise _RequestsShim.RequestException(
+                "requests package is required for api-backed anonymization levels"
+            )
+
+    requests = _RequestsShim()
 
 from detect_local import detect_sensitive_local
+from map_store import MapStoreError, normalize_mapping_entries, save_map
 
 # Backend API URL, overridable via ANONYMIZE_API_URL environment variable
 URL = os.environ.get("ANONYMIZE_API_URL", "https://safety-cf.modeio.ai/api/cf/anonymize")
@@ -41,9 +61,9 @@ def _post_with_retry(url, headers, json_payload, timeout=60):
                 continue
             resp.raise_for_status()
             return resp
-        except (requests.ConnectionError, requests.Timeout) as e:
+        except requests.RequestException as e:
             last_exc = e
-            if attempt < MAX_RETRIES:
+            if isinstance(e, (requests.ConnectionError, requests.Timeout)) and attempt < MAX_RETRIES:
                 time.sleep(RETRY_BACKOFF * (2 ** attempt))
                 continue
             raise
@@ -115,6 +135,39 @@ def _error_envelope(
         "level": level,
         "error": error,
     }
+
+
+def _append_warning(data: Dict[str, Any], code: str, message: str) -> None:
+    warnings = data.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+        data["warnings"] = warnings
+    warnings.append({"code": code, "message": message})
+
+
+def _maybe_save_map(
+    raw_input: str,
+    level: str,
+    mode: str,
+    data: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    entries = normalize_mapping_entries(data)
+    if not entries:
+        return None
+
+    anonymized_content = data.get("anonymizedContent")
+    if not isinstance(anonymized_content, str):
+        return None
+
+    map_ref = save_map(
+        raw_input=raw_input,
+        anonymized_content=anonymized_content,
+        entries=entries,
+        level=level,
+        source_mode=mode,
+    )
+    data["mapRef"] = map_ref
+    return map_ref
 
 
 def main():
@@ -231,6 +284,16 @@ def main():
     anonymized = data.get("anonymizedContent", "")
     has_pii = data.get("hasPII", None)
 
+    map_ref = None
+    try:
+        map_ref = _maybe_save_map(raw_input=raw_input, level=args.level, mode=mode, data=data)
+    except MapStoreError as error:
+        _append_warning(
+            data,
+            code="map_persist_failed",
+            message=str(error),
+        )
+
     if args.json:
         print(json.dumps(_success_envelope(level=args.level, mode=mode, data=data), ensure_ascii=False))
         return
@@ -239,6 +302,13 @@ def main():
     if mode == "local-regex":
         print("mode: local-regex", file=sys.stderr)
     print("hasPII:", has_pii, file=sys.stderr)
+    if map_ref:
+        print(f"mapId: {map_ref['mapId']}", file=sys.stderr)
+    warnings = data.get("warnings")
+    if isinstance(warnings, list):
+        for warning in warnings:
+            if isinstance(warning, dict):
+                print(f"Warning: {warning.get('code', 'warning')}: {warning.get('message', '')}", file=sys.stderr)
     print(anonymized)
 
 

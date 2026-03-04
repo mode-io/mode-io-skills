@@ -1,6 +1,6 @@
 ---
 name: modeio-redact
-description: Runs PII anonymization checks for text or JSON. Supports local regex masking in lite mode and server-side analysis in dynamic/strict/crossborder modes. Use when asked to anonymize data, redact PII, mask sensitive information, detect personal data, check for sensitive content, scrub credentials, or run Modeio anonymization.
+description: Runs PII anonymization and local de-anonymization for text or JSON. Supports local regex masking in lite mode, server-side analysis in dynamic/strict/crossborder modes, and local placeholder restore with saved map files. Use when asked to anonymize data, redact PII, mask sensitive information, detect personal data, restore anonymized placeholders back to originals, check for sensitive content, scrub credentials, or run Modeio anonymization.
 ---
 
 # Run anonymization checks for text and JSON
@@ -8,8 +8,9 @@ description: Runs PII anonymization checks for text or JSON. Supports local rege
 ## Execution policy
 
 1. Default: run `scripts/anonymize.py`.
-2. For offline/no-network requests, use `scripts/anonymize.py --level lite` (local regex mode).
-3. Use `scripts/detect_local.py` only when the user explicitly wants detailed local detection output (`items`, `riskScore`, `riskLevel`) or local JSON-first diagnostics.
+2. For de-anonymization, run `scripts/deanonymize.py` (local only, no backend call).
+3. For offline/no-network anonymization, use `scripts/anonymize.py --level lite` (local regex mode).
+4. Use `scripts/detect_local.py` only when the user explicitly wants detailed local detection output (`items`, `riskScore`, `riskLevel`) or local JSON-first diagnostics.
 
 ## Script commands
 
@@ -22,6 +23,8 @@ description: Runs PII anonymization checks for text or JSON. Supports local rege
 - `--json`: output unified JSON contract for machine consumption
 - `--level lite` runs local regex anonymization (no network call).
 - `--level dynamic|strict|crossborder` calls `https://safety-cf.modeio.ai/api/cf/anonymize` by default. Override via `ANONYMIZE_API_URL` environment variable.
+- On successful runs with detected mappings, the script saves a local map file and returns `data.mapRef`.
+- Default local map directory: `~/.modeio/redact/maps`. Override via `MODEIO_REDACT_MAP_DIR`.
 - File-path input mode is not available yet. Planned in a future update.
 
 ```bash
@@ -38,12 +41,28 @@ python scripts/anonymize.py --input "Email: alice@example.com, Phone: 415-555-12
 python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic --json
 ```
 
+### Local de-anonymization: `scripts/deanonymize.py`
+
+- `-i, --input`: required, anonymized content containing placeholders
+- `--map`: optional map ID or map file path; defaults to latest local map
+- `--json`: output unified JSON contract for machine consumption
+- No network call is made in de-anonymization mode.
+
+```bash
+python scripts/deanonymize.py --input "Email: [EMAIL_1]"
+
+python scripts/deanonymize.py --input "Email: [EMAIL_1]" --map 20260304T050000Z-a1b2c3d4
+
+python scripts/deanonymize.py --input "Email: [EMAIL_1]" --map ~/.modeio/redact/maps/20260304T050000Z-a1b2c3d4.json --json
+```
+
 ### Output
 
 - Successful responses include top-level `success: true` and a `data` object.
 - `data.anonymizedContent`: anonymized content string
 - `data.hasPII`: whether sensitive data was detected
 - Optional `data` fields can include mapping and analysis metadata.
+- When a local map is saved, `data.mapRef` includes `mapId`, `mapPath`, and `entryCount`.
 - For `lite`, output includes `data.mode: local-regex` and `data.localDetection` details.
 
 `--json` output contract:
@@ -159,5 +178,7 @@ The country portion is the ISO 3166-1 alpha-2 code. The city portion is the IATA
 ## Resources
 
 - `scripts/anonymize.py`: default script (`lite` local regex; other levels call `https://safety-cf.modeio.ai/api/cf/anonymize`)
+- `scripts/deanonymize.py`: local-only placeholder restore using saved map files
+- `scripts/map_store.py`: local map persistence and resolution utilities
 - `scripts/detect_local.py`: offline regex detection
 - File-path input mode is intentionally deferred and will be added in a later release.
