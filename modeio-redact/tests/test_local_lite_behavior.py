@@ -48,7 +48,63 @@ class TestLocalLiteBehavior(unittest.TestCase):
                 self.assertGreaterEqual(len(phone_items), 1)
                 self.assertIn("[PHONE_1]", result["sanitizedText"])
                 for item in result["items"]:
-                    self.assertNotIn("confidence", item)
+                    self.assertIn("confidence", item)
+                    self.assertGreaterEqual(item["confidence"], 0.0)
+                    self.assertLessEqual(item["confidence"], 1.0)
+                    self.assertIn("detectionSource", item)
+
+    def test_credit_card_luhn_validator_rejects_invalid_number(self):
+        result = detect_local.detect_sensitive_local("Card: 4111-1111-1111-1112")
+        credit_items = [item for item in result["items"] if item["type"] == "creditCard"]
+        self.assertEqual(credit_items, [])
+
+    def test_credit_card_luhn_validator_accepts_valid_number(self):
+        result = detect_local.detect_sensitive_local("Card: 4111-1111-1111-1111")
+        credit_items = [item for item in result["items"] if item["type"] == "creditCard"]
+        self.assertGreaterEqual(len(credit_items), 1)
+        self.assertIn("[CREDIT_CARD_1]", result["sanitizedText"])
+        validator = credit_items[0]["validator"]
+        self.assertTrue(validator["applied"])
+        self.assertTrue(validator["passed"])
+
+    def test_profile_thresholds_change_name_detection_sensitivity(self):
+        text = "Name: Alice Wang"
+        strict_result = detect_local.detect_sensitive_local(text, profile="strict")
+        precision_result = detect_local.detect_sensitive_local(text, profile="precision")
+
+        strict_name_items = [item for item in strict_result["items"] if item["type"] == "name"]
+        precision_name_items = [item for item in precision_result["items"] if item["type"] == "name"]
+
+        self.assertGreaterEqual(len(strict_name_items), 1)
+        self.assertEqual(precision_name_items, [])
+
+    def test_allowlist_suppresses_matching_entity(self):
+        allowlist = [{"type": "email", "kind": "exact", "value": "alice@example.com"}]
+        result = detect_local.detect_sensitive_local(
+            "Email: alice@example.com",
+            allowlist_rules=allowlist,
+        )
+        email_items = [item for item in result["items"] if item["type"] == "email"]
+        self.assertEqual(email_items, [])
+
+    def test_blocklist_forces_masking_even_without_regex_pattern_hit(self):
+        blocklist = [{"type": "name", "kind": "exact", "value": "Phoenix"}]
+        result = detect_local.detect_sensitive_local(
+            "Project codename Phoenix will launch this week.",
+            blocklist_rules=blocklist,
+        )
+        name_items = [item for item in result["items"] if item["type"] == "name"]
+        self.assertGreaterEqual(len(name_items), 1)
+        self.assertTrue(name_items[0]["forcedBlocklist"])
+        self.assertIn("[NAME_1]", result["sanitizedText"])
+
+    def test_threshold_override_can_disable_specific_type(self):
+        result = detect_local.detect_sensitive_local(
+            "Email: alice@example.com",
+            threshold_overrides={"email": 0.99},
+        )
+        email_items = [item for item in result["items"] if item["type"] == "email"]
+        self.assertEqual(email_items, [])
 
     def test_non_phone_lookalike_is_not_detected_as_phone(self):
         text = "Order number 415-555-12345 should remain unchanged."

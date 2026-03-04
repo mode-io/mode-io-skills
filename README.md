@@ -467,6 +467,8 @@ python modeio-guardrail/scripts/safety.py -i "Modify database permissions" -c "p
 
 # Offline local detection (detailed risk scoring)
 python modeio-redact/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json
+python modeio-redact/scripts/detect_local.py --input "Name: Alice Wang" --profile precision --json
+python modeio-redact/scripts/detect_local.py --input "Project codename Phoenix" --blocklist-file ./blocklist.json --json
 ```
 
 > `--input` auto-reads existing `.txt` and `.md` file paths. Other file types should be passed as content strings (for example: `--input "$(cat data.json)"`).
