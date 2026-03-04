@@ -101,6 +101,27 @@ def main():
 
     raw_input = args.input
 
+    def _exit_with_error(error_type: str, message: str, status_code: int = None, details: Dict[str, Any] = None) -> None:
+        if args.json:
+            print(
+                json.dumps(
+                    _error_envelope(
+                        error_type=error_type,
+                        message=message,
+                        status_code=status_code,
+                        details=details,
+                    ),
+                    ensure_ascii=False,
+                )
+            )
+        else:
+            print(f"Error: {message}", file=sys.stderr)
+            if status_code is not None:
+                print(f"Error: status_code={status_code}", file=sys.stderr)
+            if details is not None:
+                print(json.dumps(details, indent=2, ensure_ascii=False), file=sys.stderr)
+        sys.exit(1)
+
     if not raw_input or not raw_input.strip():
         msg = "--input must not be empty."
         if args.json:
@@ -115,46 +136,52 @@ def main():
             context=args.context,
             target=args.target,
         )
+    except requests.HTTPError as e:
+        response = getattr(e, "response", None)
+        status_code = getattr(response, "status_code", None)
+        _exit_with_error(
+            error_type="api_error",
+            message=f"safety backend returned HTTP error: {type(e).__name__}",
+            status_code=status_code,
+        )
     except requests.RequestException as e:
         response = getattr(e, "response", None)
         status_code = getattr(response, "status_code", None)
-        if args.json:
-            print(json.dumps(
-                _error_envelope(
-                    error_type="network_error",
-                    message=f"safety request failed: {type(e).__name__}",
-                    status_code=status_code,
-                ),
-                ensure_ascii=False,
-            ))
-        else:
-            print(f"Error: safety request failed. url={URL}", file=sys.stderr)
-            if status_code is not None:
-                print(f"Error: status_code={status_code}", file=sys.stderr)
-            print(f"Error: exception={type(e).__name__}: {e}", file=sys.stderr)
-        sys.exit(1)
+        _exit_with_error(
+            error_type="network_error",
+            message=f"safety request failed: {type(e).__name__}",
+            status_code=status_code,
+        )
+    except ValueError as e:
+        _exit_with_error(
+            error_type="api_error",
+            message=f"safety backend returned invalid JSON: {type(e).__name__}",
+        )
 
-    if result.get("error"):
-        if args.json:
-            print(json.dumps(
-                _error_envelope(
-                    error_type="api_error",
-                    message=str(result.get("error")),
-                    details=result,
-                ),
-                ensure_ascii=False,
-            ))
-        else:
-            print(f"Error: {result['error']}", file=sys.stderr)
-            print(json.dumps(result, indent=2, ensure_ascii=False), file=sys.stderr)
-        sys.exit(1)
+    if not isinstance(result, dict):
+        _exit_with_error(
+            error_type="api_error",
+            message="safety backend returned invalid payload type",
+            details={"receivedType": type(result).__name__},
+        )
+
+    normalized_result = dict(result)
+    if normalized_result.get("approved") is None:
+        normalized_result["approved"] = False
+
+    if normalized_result.get("error"):
+        _exit_with_error(
+            error_type="api_error",
+            message=str(normalized_result.get("error")),
+            details=normalized_result,
+        )
 
     if args.json:
-        print(json.dumps(_success_envelope(result), ensure_ascii=False))
+        print(json.dumps(_success_envelope(normalized_result), ensure_ascii=False))
         return
 
     print("Status: success", file=sys.stderr)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    print(json.dumps(normalized_result, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
