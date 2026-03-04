@@ -711,7 +711,7 @@ class TestDeanonymizeContract(unittest.TestCase):
             self.assertEqual(summary["replacementsByType"]["email"], 2)
             self.assertEqual(summary["replacementsByType"]["phone"], 1)
 
-    def test_hash_mismatch_fails_without_override(self):
+    def test_hash_mismatch_allows_by_default_with_warning(self):
         source_text = "Email: alice@example.com"
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -736,42 +736,6 @@ class TestDeanonymizeContract(unittest.TestCase):
                 [
                     "--input",
                     anonymized_text,
-                    "--json",
-                ],
-                env=env,
-            )
-            self.assertEqual(deanonymize_result.returncode, 1)
-            payload = json.loads(deanonymize_result.stdout)
-
-            self.assertFalse(payload["success"])
-            self.assertEqual(payload["error"]["type"], "map_error")
-
-    def test_hash_mismatch_allows_override_flag(self):
-        source_text = "Email: alice@example.com"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            env = {"MODEIO_REDACT_MAP_DIR": tmpdir}
-            anon_result = self._run_cli(
-                ANONYMIZE_SCRIPT,
-                [
-                    "--input",
-                    source_text,
-                    "--level",
-                    "lite",
-                    "--json",
-                ],
-                env=env,
-            )
-            self.assertEqual(anon_result.returncode, 0)
-            anon_payload = json.loads(anon_result.stdout)
-            anonymized_text = anon_payload["data"]["anonymizedContent"] + " extra"
-
-            deanonymize_result = self._run_cli(
-                DEANONYMIZE_SCRIPT,
-                [
-                    "--input",
-                    anonymized_text,
-                    "--allow-hash-mismatch",
                     "--json",
                 ],
                 env=env,
@@ -782,6 +746,29 @@ class TestDeanonymizeContract(unittest.TestCase):
             self.assertTrue(payload["success"])
             warning_codes = [item["code"] for item in payload["data"].get("warnings", [])]
             self.assertIn("input_hash_mismatch", warning_codes)
+
+    def test_removed_hash_policy_flags_are_rejected(self):
+        result_require = self._run_cli(
+            DEANONYMIZE_SCRIPT,
+            [
+                "--input",
+                "Email: [EMAIL_1]",
+                "--require-hash-match",
+            ],
+        )
+        self.assertNotEqual(result_require.returncode, 0)
+        self.assertIn("unrecognized arguments: --require-hash-match", result_require.stderr)
+
+        result_allow = self._run_cli(
+            DEANONYMIZE_SCRIPT,
+            [
+                "--input",
+                "Email: [EMAIL_1]",
+                "--allow-hash-mismatch",
+            ],
+        )
+        self.assertNotEqual(result_allow.returncode, 0)
+        self.assertIn("unrecognized arguments: --allow-hash-mismatch", result_allow.stderr)
 
     def test_longer_placeholder_replaced_first(self):
         with tempfile.TemporaryDirectory() as tmpdir:

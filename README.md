@@ -467,6 +467,8 @@ python modeio-redact/scripts/anonymize.py --input ./incident.pdf --level lite
 # - .pdf anonymization is supported for text-layer PDFs in --level lite only.
 # - Redaction removes underlying text and applies black fill.
 # - .pdf de-anonymization is not supported.
+# - file outputs enforce coverage checks by default.
+# - .docx/.pdf also run residual verification by default.
 
 # Optional file output controls
 python modeio-redact/scripts/anonymize.py --input ./sensitive_notes.txt --level lite --in-place
@@ -537,6 +539,12 @@ python -m unittest modeio-redact.tests.test_precommit_scan
 python -m unittest modeio-redact.tests.test_setup_precommit_scan
 python -m unittest modeio-redact.tests.test_precommit_cli_integration
 
+# Run extensive anonymize/deanonymize smoke matrix
+python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
+
+# Optional API smoke (requires network + backend availability)
+MODEIO_REDACT_RUN_API_SMOKE=1 python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
+
 # Offline local detection (detailed risk scoring)
 python modeio-redact/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json
 python modeio-redact/scripts/detect_local.py --input "Name: Alice Wang" --profile precision --json
@@ -548,7 +556,10 @@ python modeio-redact/scripts/detect_local.py --input "Email: alice@example.com" 
 
 > `--input` auto-reads supported file paths (`.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`, `.jsonl`, `.yaml`, `.yml`, `.xml`, `.html`, `.htm`, `.rst`, `.log`, `.docx`, `.pdf`).
 > `.pdf` requires a text layer, is supported only with `--level lite`, and is anonymize-only.
+> `.docx` and `.pdf` outputs run verified fail-closed checks by default.
 > For file workflows, anonymize/deanonymize now write output files by default unless you use explicit `--output` or `--in-place`.
+> File output JSON includes `applyReport`, `verificationReport`, and `assurancePolicy` for coverage + verification visibility.
+> `deanonymize.py` always continues on hash mismatch and emits an `input_hash_mismatch` warning.
 
 For full details, see [modeio-redact/SKILL.md](modeio-redact/SKILL.md) and [modeio-guardrail/SKILL.md](modeio-guardrail/SKILL.md).
 
