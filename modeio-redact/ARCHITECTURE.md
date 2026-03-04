@@ -19,6 +19,7 @@ modeio-redact/
       detect_local.py
     workflow/
       file_types.py
+      file_handlers.py
       input_source.py
       file_workflow.py
       map_store.py
@@ -46,9 +47,11 @@ modeio-redact/
 - Pre-commit scanner (`modeio_redact/precommit/scan.py`) depends on local detection only.
 - File/map helpers live under `modeio_redact/workflow/` and are shared by anonymize/deanonymize and gateway mapping.
 - File type support is registry-driven via `workflow/file_types.py`:
-  - `input_source.py` uses the registry to validate readable file extensions.
+  - `input_source.py` uses the registry and dispatches extension-aware readers.
+  - `file_handlers.py` owns format-specific reads/writes (`text`, `docx`, `pdf`).
   - `file_workflow.py` uses registry marker policies (`hash`, `html_comment`, `none`) to decide inline marker behavior.
   - Most structured types use sidecar-only map linkage to avoid mutating file syntax.
+  - `.pdf` anonymization uses true PDF redaction (remove text + black fill), and `.pdf` de-anonymization is intentionally unsupported.
 
 ## Regression Checklist
 

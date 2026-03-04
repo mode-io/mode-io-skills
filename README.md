@@ -454,12 +454,19 @@ python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com, Pho
 # Crossborder — full compliance + legal analysis (requires jurisdiction codes)
 python modeio-redact/scripts/anonymize.py --input "Name: 张伟, ID: 310101199001011234" --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
 
-# File path input is auto-detected for .txt and .md
+# File path input is auto-detected for supported formats
 python modeio-redact/scripts/anonymize.py --input ./sensitive_notes.txt --level dynamic
 python modeio-redact/scripts/anonymize.py --input ./handoff.md --level lite
+python modeio-redact/scripts/anonymize.py --input ./incident.docx --level lite
+python modeio-redact/scripts/anonymize.py --input ./incident.pdf --level lite
 
 # File input writes output files by default:
 # ./sensitive_notes.redacted.txt + ./sensitive_notes.redacted.map.json
+
+# PDF note:
+# - .pdf anonymization is supported for text-layer PDFs in --level lite only.
+# - Redaction removes underlying text and applies black fill.
+# - .pdf de-anonymization is not supported.
 
 # Optional file output controls
 python modeio-redact/scripts/anonymize.py --input ./sensitive_notes.txt --level lite --in-place
@@ -469,9 +476,6 @@ python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com" --o
 python modeio-redact/scripts/deanonymize.py --input ./sensitive_notes.redacted.txt --json
 python modeio-redact/scripts/deanonymize.py --input ./sensitive_notes.redacted.txt --in-place --json
 python modeio-redact/scripts/deanonymize.py --input "Email: [EMAIL_1]" --map 20260304T050000Z-a1b2c3d4 --json
-
-# For other formats (for example .json), pass the content string explicitly
-python modeio-redact/scripts/anonymize.py --input "$(cat sensitive_data.json)" --level dynamic
 
 # Machine-readable JSON output (works with any level)
 python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com" --level dynamic --json
@@ -542,7 +546,8 @@ python modeio-redact/scripts/detect_local.py --input "Email: alice@example.com" 
 
 > Local detector score fields are heuristic decision scores (for threshold gating), not statistical confidence intervals.
 
-> `--input` auto-reads existing `.txt` and `.md` file paths. Other file types should be passed as content strings (for example: `--input "$(cat data.json)"`).
+> `--input` auto-reads supported file paths (`.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`, `.jsonl`, `.yaml`, `.yml`, `.xml`, `.html`, `.htm`, `.rst`, `.log`, `.docx`, `.pdf`).
+> `.pdf` requires a text layer, is supported only with `--level lite`, and is anonymize-only.
 > For file workflows, anonymize/deanonymize now write output files by default unless you use explicit `--output` or `--in-place`.
 
 For full details, see [modeio-redact/SKILL.md](modeio-redact/SKILL.md) and [modeio-guardrail/SKILL.md](modeio-guardrail/SKILL.md).

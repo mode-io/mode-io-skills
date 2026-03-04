@@ -12,6 +12,11 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from modeio_redact.workflow.file_handlers import (
+    uses_text_handler,
+    validate_non_text_output_extension,
+    write_non_text_deanonymized_file,
+)
 from modeio_redact.workflow.file_workflow import (
     extract_embedded_map_id,
     read_sidecar_map_reference,
@@ -19,7 +24,14 @@ from modeio_redact.workflow.file_workflow import (
     strip_embedded_map_marker,
     write_output_file,
 )
-from modeio_redact.workflow.input_source import SUPPORTED_FILE_EXTENSIONS, resolve_input_source_details
+from modeio_redact.workflow.file_types import (
+    deanonymize_supported_extensions_for_display,
+    supports_deanonymize_for_extension,
+)
+from modeio_redact.workflow.input_source import (
+    SUPPORTED_FILE_EXTENSIONS,
+    resolve_input_source_context,
+)
 from modeio_redact.workflow.map_store import MapStoreError, hash_text, load_map
 
 TOOL_NAME = "modeio-redact"
@@ -75,12 +87,12 @@ def _apply_mapping(text: str, entries: List[Dict[str, str]]) -> Dict[str, Any]:
     }
 
 
-def deanonymize(
+def _deanonymize_with_record(
     raw_input: str,
     map_ref: str = None,
     allow_hash_mismatch: bool = False,
     linkage_source: str = "explicit-map",
-) -> Dict[str, Any]:
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     record, path = load_map(map_ref)
 
     replacement_result = _apply_mapping(raw_input, record["entries"])
@@ -114,6 +126,21 @@ def deanonymize(
         "linkageSource": linkage_source,
         "warnings": warnings,
     }
+    return payload, record
+
+
+def deanonymize(
+    raw_input: str,
+    map_ref: str = None,
+    allow_hash_mismatch: bool = False,
+    linkage_source: str = "explicit-map",
+) -> Dict[str, Any]:
+    payload, _ = _deanonymize_with_record(
+        raw_input=raw_input,
+        map_ref=map_ref,
+        allow_hash_mismatch=allow_hash_mismatch,
+        linkage_source=linkage_source,
+    )
     return payload
 
 
@@ -148,28 +175,42 @@ def _resolve_map_reference(
 def _persist_output_file(
     content: str,
     input_path: Optional[str],
+    input_extension: Optional[str],
     output_arg: Optional[str],
     in_place: bool,
     output_tag: str,
+    mapping_entries: List[Dict[str, str]],
 ) -> Optional[str]:
-    output_path = resolve_output_path(
+    resolved_output_path = resolve_output_path(
         input_path=input_path,
         output_path=output_arg,
         in_place=in_place,
         output_tag=output_tag,
     )
-    if output_path is None:
+    if resolved_output_path is None:
         return None
-    write_output_file(output_path, content)
-    return str(output_path)
+
+    if input_path and input_extension and not uses_text_handler(input_extension):
+        validate_non_text_output_extension(input_extension, resolved_output_path)
+        write_non_text_deanonymized_file(
+            input_path=Path(input_path).expanduser(),
+            output_path=resolved_output_path,
+            extension=input_extension,
+            mapping_entries=mapping_entries,
+        )
+    else:
+        write_output_file(resolved_output_path, content)
+    return str(resolved_output_path)
 
 
 def main() -> None:
     supported = ", ".join(SUPPORTED_FILE_EXTENSIONS)
+    deanonymize_supported = deanonymize_supported_extensions_for_display()
     parser = argparse.ArgumentParser(
         description=(
             "Restore placeholders with local map file. "
-            f"--input accepts literal text or {supported} file paths. "
+            f"--input accepts literal text or supported file paths ({supported}). "
+            f"De-anonymization file support: {deanonymize_supported}. "
             "Defaults to latest map in local store."
         )
     )
@@ -178,7 +219,10 @@ def main() -> None:
         "--input",
         type=str,
         required=True,
-        help=f"Anonymized content to restore, or a {supported} file path.",
+        help=(
+            f"Anonymized content to restore, or a supported file path ({supported}). "
+            f"De-anonymization file support: {deanonymize_supported}."
+        ),
     )
     parser.add_argument(
         "--map",
@@ -210,9 +254,21 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        raw_input, input_type, input_path = resolve_input_source_details(args.input)
+        input_source = resolve_input_source_context(args.input)
+        raw_input = input_source.content
+        input_type = input_source.input_type
+        input_path = input_source.input_path
+        input_extension = input_source.extension
     except ValueError as error:
         message = str(error)
+        if args.json:
+            print(json.dumps(_error_envelope("validation_error", message), ensure_ascii=False))
+        else:
+            print(f"Error: {message}", file=sys.stderr)
+        sys.exit(2)
+
+    if input_extension and not supports_deanonymize_for_extension(input_extension):
+        message = f"De-anonymization is not supported for '{input_extension}' files."
         if args.json:
             print(json.dumps(_error_envelope("validation_error", message), ensure_ascii=False))
         else:
@@ -238,8 +294,8 @@ def main() -> None:
     sanitized_input = strip_embedded_map_marker(raw_input)
 
     try:
-        result = deanonymize(
-            sanitized_input,
+        result, map_record = _deanonymize_with_record(
+            raw_input=sanitized_input,
             map_ref=map_ref,
             allow_hash_mismatch=args.allow_hash_mismatch,
             linkage_source=linkage_source,
@@ -262,9 +318,11 @@ def main() -> None:
         output_path = _persist_output_file(
             content=result["deanonymizedContent"],
             input_path=input_path,
+            input_extension=input_extension,
             output_arg=args.output,
             in_place=args.in_place,
             output_tag="restored",
+            mapping_entries=map_record["entries"],
         )
         if output_path:
             result["outputPath"] = output_path
