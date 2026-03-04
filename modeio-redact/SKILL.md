@@ -21,10 +21,16 @@ description: Runs PII anonymization and local de-anonymization for text, JSON st
 - `--sender-code`: sender jurisdiction code, required for `crossborder` level (example: `CN SHA`)
 - `--recipient-code`: recipient jurisdiction code, required for `crossborder` level (example: `US NYC`)
 - `--json`: output unified JSON contract for machine consumption
+- `--output`: write anonymized content to an explicit output file path
+- `--in-place`: overwrite input file in place (file-path input only)
 - `--input` accepts literal content or file paths. Existing `.txt` and `.md` files are auto-read as file input.
 - `--level lite` runs local regex anonymization (no network call).
 - `--level dynamic|strict|crossborder` calls `https://safety-cf.modeio.ai/api/cf/anonymize` by default. Override via `ANONYMIZE_API_URL` environment variable.
 - On successful runs with detected mappings, the script saves a local map file and returns `data.mapRef`.
+- For file-path input, anonymized output is written by default to `<name>.redacted.<ext>`.
+- For file output, map linkage is written in both places:
+  - embedded map marker (`modeio-redact-map-id`) in `.txt`/`.md` output
+  - sidecar file `<output>.map.json`
 - Default local map directory: `~/.modeio/redact/maps`. Override via `MODEIO_REDACT_MAP_DIR`.
 - File input currently supports `.txt` and `.md` only. Other existing file types are rejected.
 
@@ -44,14 +50,28 @@ python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic -
 python scripts/anonymize.py --input ./incident-notes.txt --level lite
 
 python scripts/anonymize.py --input ./handoff.md --level dynamic --json
+
+python scripts/anonymize.py --input ./incident-notes.txt --level lite --in-place
+
+python scripts/anonymize.py --input "Email: alice@example.com" --output ./redacted-output.txt --json
 ```
 
 ### Local de-anonymization: `scripts/deanonymize.py`
 
 - `-i, --input`: required, anonymized content containing placeholders, or an existing `.txt`/`.md` file path
-- `--map`: optional map ID or map file path; defaults to latest local map
+- `--map`: optional map ID or map file path
+- `--allow-hash-mismatch`: allow restore to continue when map hash does not match input
+- `--output`: write restored content to an explicit output file path
+- `--in-place`: overwrite input file in place (file-path input only)
 - `--json`: output unified JSON contract for machine consumption
 - No network call is made in de-anonymization mode.
+
+Map resolution order when `--map` is omitted:
+1. embedded map marker in file input
+2. sidecar map file `<input>.map.json`
+3. latest local map (only for literal text input)
+
+For file-path input, restored output is written by default to `<name>.restored.<ext>`.
 
 ```bash
 python scripts/deanonymize.py --input "Email: [EMAIL_1]"
@@ -61,6 +81,10 @@ python scripts/deanonymize.py --input "Email: [EMAIL_1]" --map 20260304T050000Z-
 python scripts/deanonymize.py --input "Email: [EMAIL_1]" --map ~/.modeio/redact/maps/20260304T050000Z-a1b2c3d4.json --json
 
 python scripts/deanonymize.py --input ./anonymized_notes.txt --map 20260304T050000Z-a1b2c3d4 --json
+
+python scripts/deanonymize.py --input ./anonymized_notes.redacted.txt --json
+
+python scripts/deanonymize.py --input ./anonymized_notes.redacted.txt --in-place --json
 ```
 
 ### Output
@@ -70,6 +94,7 @@ python scripts/deanonymize.py --input ./anonymized_notes.txt --map 20260304T0500
 - `data.hasPII`: whether sensitive data was detected
 - Optional `data` fields can include mapping and analysis metadata.
 - When a local map is saved, `data.mapRef` includes `mapId`, `mapPath`, and `entryCount`.
+- For file workflows, JSON output includes `data.outputPath` and linkage metadata.
 - For `lite`, output includes `data.mode: local-regex` and `data.localDetection` details.
 
 `--json` output contract:

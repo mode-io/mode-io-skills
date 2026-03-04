@@ -243,6 +243,170 @@ class TestDeanonymizeContract(unittest.TestCase):
             self.assertFalse(payload["success"])
             self.assertEqual(payload["error"]["type"], "validation_error")
 
+    def test_file_input_auto_resolves_map_from_embedded_marker(self):
+        original_text = "Email: alice@example.com"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "incident.txt"
+            input_path.write_text(original_text, encoding="utf-8")
+            env = {"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")}
+
+            anon_result = self._run_cli(
+                ANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(input_path),
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(anon_result.returncode, 0)
+            anon_payload = json.loads(anon_result.stdout)
+            redacted_path = Path(anon_payload["data"]["outputPath"])
+            redacted_content = redacted_path.read_text(encoding="utf-8")
+            self.assertIn("modeio-redact-map-id", redacted_content)
+
+            restore_result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(redacted_path),
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(restore_result.returncode, 0)
+            restore_payload = json.loads(restore_result.stdout)
+
+            self.assertTrue(restore_payload["success"])
+            self.assertEqual(restore_payload["data"]["linkageSource"], "embedded-mapid")
+            self.assertEqual(restore_payload["data"]["deanonymizedContent"], original_text)
+            restored_path = Path(restore_payload["data"]["outputPath"])
+            self.assertEqual(restored_path.read_text(encoding="utf-8"), original_text)
+
+    def test_file_input_falls_back_to_sidecar_when_marker_missing(self):
+        original_text = "Email: alice@example.com"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "incident.txt"
+            input_path.write_text(original_text, encoding="utf-8")
+            env = {"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")}
+
+            anon_result = self._run_cli(
+                ANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(input_path),
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(anon_result.returncode, 0)
+            anon_payload = json.loads(anon_result.stdout)
+            redacted_path = Path(anon_payload["data"]["outputPath"])
+            sidecar_path = Path(anon_payload["data"]["mapRef"]["sidecarPath"])
+            self.assertTrue(sidecar_path.exists())
+
+            lines = redacted_path.read_text(encoding="utf-8").splitlines()
+            redacted_path.write_text("\n".join(lines[1:]), encoding="utf-8")
+
+            restore_result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(redacted_path),
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(restore_result.returncode, 0)
+            restore_payload = json.loads(restore_result.stdout)
+
+            self.assertTrue(restore_payload["success"])
+            self.assertEqual(restore_payload["data"]["linkageSource"], "sidecar")
+            self.assertEqual(restore_payload["data"]["deanonymizedContent"], original_text)
+
+    def test_file_input_requires_map_reference_when_marker_and_sidecar_missing(self):
+        original_text = "Email: alice@example.com"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "incident.txt"
+            input_path.write_text(original_text, encoding="utf-8")
+            env = {"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")}
+
+            anon_result = self._run_cli(
+                ANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(input_path),
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(anon_result.returncode, 0)
+            anon_payload = json.loads(anon_result.stdout)
+            redacted_path = Path(anon_payload["data"]["outputPath"])
+            sidecar_path = Path(anon_payload["data"]["mapRef"]["sidecarPath"])
+
+            lines = redacted_path.read_text(encoding="utf-8").splitlines()
+            redacted_path.write_text("\n".join(lines[1:]), encoding="utf-8")
+            sidecar_path.unlink()
+
+            restore_result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(redacted_path),
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(restore_result.returncode, 1)
+            restore_payload = json.loads(restore_result.stdout)
+
+            self.assertFalse(restore_payload["success"])
+            self.assertEqual(restore_payload["error"]["type"], "map_error")
+
+    def test_deanonymize_in_place_overwrites_input_file(self):
+        original_text = "Email: alice@example.com"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "incident.txt"
+            input_path.write_text(original_text, encoding="utf-8")
+            env = {"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")}
+
+            anon_result = self._run_cli(
+                ANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(input_path),
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(anon_result.returncode, 0)
+            redacted_path = Path(json.loads(anon_result.stdout)["data"]["outputPath"])
+
+            restore_result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(redacted_path),
+                    "--in-place",
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(restore_result.returncode, 0)
+            restore_payload = json.loads(restore_result.stdout)
+
+            self.assertEqual(restore_payload["data"]["outputPath"], str(redacted_path))
+            self.assertEqual(redacted_path.read_text(encoding="utf-8"), original_text)
+
     def test_deanonymize_reports_map_error_when_no_maps_exist(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             env = {"MODEIO_REDACT_MAP_DIR": tmpdir}
@@ -273,6 +437,42 @@ class TestDeanonymizeContract(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertFalse(payload["success"])
         self.assertEqual(payload["error"]["type"], "validation_error")
+
+    def test_deanonymize_in_place_requires_file_input(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {"MODEIO_REDACT_MAP_DIR": tmpdir}
+            anon_result = self._run_cli(
+                ANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    "Email: alice@example.com",
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(anon_result.returncode, 0)
+            anon_payload = json.loads(anon_result.stdout)
+            map_id = anon_payload["data"]["mapRef"]["mapId"]
+            anonymized_text = anon_payload["data"]["anonymizedContent"]
+
+            result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    anonymized_text,
+                    "--map",
+                    map_id,
+                    "--in-place",
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["success"])
+            self.assertEqual(payload["error"]["type"], "validation_error")
 
     def test_deanonymize_returns_map_error_for_invalid_map_json(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -330,7 +530,7 @@ class TestDeanonymizeContract(unittest.TestCase):
             self.assertEqual(summary["replacementsByType"]["email"], 2)
             self.assertEqual(summary["replacementsByType"]["phone"], 1)
 
-    def test_hash_mismatch_produces_warning_but_succeeds(self):
+    def test_hash_mismatch_fails_without_override(self):
         source_text = "Email: alice@example.com"
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -355,6 +555,42 @@ class TestDeanonymizeContract(unittest.TestCase):
                 [
                     "--input",
                     anonymized_text,
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(deanonymize_result.returncode, 1)
+            payload = json.loads(deanonymize_result.stdout)
+
+            self.assertFalse(payload["success"])
+            self.assertEqual(payload["error"]["type"], "map_error")
+
+    def test_hash_mismatch_allows_override_flag(self):
+        source_text = "Email: alice@example.com"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {"MODEIO_REDACT_MAP_DIR": tmpdir}
+            anon_result = self._run_cli(
+                ANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    source_text,
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env=env,
+            )
+            self.assertEqual(anon_result.returncode, 0)
+            anon_payload = json.loads(anon_result.stdout)
+            anonymized_text = anon_payload["data"]["anonymizedContent"] + " extra"
+
+            deanonymize_result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    anonymized_text,
+                    "--allow-hash-mismatch",
                     "--json",
                 ],
                 env=env,
