@@ -10,8 +10,10 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
+from urllib.parse import urlsplit
 
-from modeio_middleware.core.engine import GatewayRuntimeConfig, MiddlewareEngine
+from modeio_middleware.core.contracts import ENDPOINT_CHAT_COMPLETIONS, ENDPOINT_RESPONSES
+from modeio_middleware.core.engine import GatewayRuntimeConfig, MiddlewareEngine, ProcessResult, StreamProcessResult
 from modeio_middleware.core.errors import MiddlewareError
 from modeio_middleware.core.http_contract import (
     CONTRACT_VERSION,
@@ -24,9 +26,15 @@ from modeio_middleware.core.profiles import DEFAULT_PROFILE, normalize_profile_n
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8787
-DEFAULT_UPSTREAM_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_UPSTREAM_CHAT_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_UPSTREAM_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_UPSTREAM_TIMEOUT_SECONDS = 60
 DEFAULT_UPSTREAM_API_KEY_ENV = "MODEIO_GATEWAY_UPSTREAM_API_KEY"
+
+PATH_TO_ENDPOINT_KIND = {
+    "/v1/chat/completions": ENDPOINT_CHAT_COMPLETIONS,
+    "/v1/responses": ENDPOINT_RESPONSES,
+}
 
 
 def _read_json_body(handler: BaseHTTPRequestHandler) -> Dict[str, Any]:
@@ -84,8 +92,13 @@ def load_runtime_config(args: argparse.Namespace) -> GatewayRuntimeConfig:
     if not isinstance(plugins, dict):
         raise MiddlewareError(500, "MODEIO_CONFIG_ERROR", "config.plugins must be an object")
 
+    upstream_chat_url = args.upstream_chat_url
+    if args.upstream_url:
+        upstream_chat_url = args.upstream_url
+
     return GatewayRuntimeConfig(
-        upstream_url=args.upstream_url,
+        upstream_chat_completions_url=upstream_chat_url,
+        upstream_responses_url=args.upstream_responses_url,
         upstream_timeout_seconds=args.upstream_timeout,
         upstream_api_key_env=args.upstream_api_key_env,
         default_profile=normalize_profile_name(args.default_profile, default_profile=DEFAULT_PROFILE),
@@ -110,6 +123,28 @@ def build_handler(engine: MiddlewareEngine):
             self.end_headers()
             self.wfile.write(body)
 
+        def _send_stream(self, status: int, stream: Sequence[bytes] | Any, headers: Dict[str, str]) -> None:
+            self.send_response(status)
+            has_connection_header = False
+            for key, value in headers.items():
+                if key.lower() == "connection":
+                    has_connection_header = True
+                self.send_header(key, str(value))
+            if not has_connection_header:
+                self.send_header("Connection", "close")
+            self.end_headers()
+
+            try:
+                for chunk in stream:
+                    if not isinstance(chunk, (bytes, bytearray)):
+                        continue
+                    self.wfile.write(bytes(chunk))
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            finally:
+                self.close_connection = True
+
         def do_GET(self) -> None:
             if self.path != "/healthz":
                 self._send_json(404, {"error": {"message": "not found"}})
@@ -125,8 +160,10 @@ def build_handler(engine: MiddlewareEngine):
 
         def do_POST(self) -> None:
             request_id = new_request_id()
+            request_path = urlsplit(self.path).path
+            endpoint_kind = PATH_TO_ENDPOINT_KIND.get(request_path)
 
-            if self.path != "/v1/chat/completions":
+            if endpoint_kind is None:
                 headers = contract_headers(
                     request_id,
                     profile=engine.config.default_profile,
@@ -165,12 +202,47 @@ def build_handler(engine: MiddlewareEngine):
                 self._send_json(error.status, payload, headers)
                 return
 
-            result = engine.process_chat_request(
+            result = engine.process_request(
+                endpoint_kind=endpoint_kind,
                 request_id=request_id,
                 request_body=body,
                 incoming_headers=dict(self.headers.items()),
             )
-            self._send_json(result.status, result.payload, result.headers)
+            if isinstance(result, StreamProcessResult):
+                if result.stream is not None:
+                    self._send_stream(result.status, result.stream, result.headers)
+                    return
+
+                payload = result.payload or error_payload(
+                    request_id,
+                    "MODEIO_INTERNAL_ERROR",
+                    "stream result missing payload",
+                    retryable=False,
+                )
+                self._send_json(result.status, payload, result.headers)
+                return
+
+            if isinstance(result, ProcessResult):
+                self._send_json(result.status, result.payload, result.headers)
+                return
+
+            self._send_json(
+                500,
+                error_payload(
+                    request_id,
+                    "MODEIO_INTERNAL_ERROR",
+                    "unexpected result type from middleware engine",
+                    retryable=False,
+                ),
+                contract_headers(
+                    request_id,
+                    profile=engine.config.default_profile,
+                    pre_actions=[],
+                    post_actions=[],
+                    degraded=[],
+                    upstream_called=False,
+                ),
+            )
 
         def log_message(self, format: str, *args: Any) -> None:
             message = format % args
@@ -189,17 +261,33 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run local modeio-middleware gateway for Codex/OpenCode provider routing. "
-            "Contract: POST /v1/chat/completions (stream=false), GET /healthz"
+            "Contract: POST /v1/chat/completions and /v1/responses (stream supported), GET /healthz"
         )
     )
     parser.add_argument("--host", default=DEFAULT_HOST, help=f"Listen host (default: {DEFAULT_HOST})")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Listen port (default: {DEFAULT_PORT})")
     parser.add_argument(
         "--upstream-url",
-        default=os.environ.get("MODEIO_MIDDLEWARE_UPSTREAM_URL", DEFAULT_UPSTREAM_URL),
+        default="",
+        help=(
+            "Deprecated alias for --upstream-chat-url. "
+            "If set, overrides chat-completions upstream URL."
+        ),
+    )
+    parser.add_argument(
+        "--upstream-chat-url",
+        default=os.environ.get("MODEIO_MIDDLEWARE_UPSTREAM_CHAT_URL", DEFAULT_UPSTREAM_CHAT_URL),
         help=(
             "Upstream OpenAI-compatible chat completions endpoint "
-            f"(default env MODEIO_MIDDLEWARE_UPSTREAM_URL or {DEFAULT_UPSTREAM_URL})"
+            f"(default env MODEIO_MIDDLEWARE_UPSTREAM_CHAT_URL or {DEFAULT_UPSTREAM_CHAT_URL})"
+        ),
+    )
+    parser.add_argument(
+        "--upstream-responses-url",
+        default=os.environ.get("MODEIO_MIDDLEWARE_UPSTREAM_RESPONSES_URL", DEFAULT_UPSTREAM_RESPONSES_URL),
+        help=(
+            "Upstream OpenAI-compatible responses endpoint "
+            f"(default env MODEIO_MIDDLEWARE_UPSTREAM_RESPONSES_URL or {DEFAULT_UPSTREAM_RESPONSES_URL})"
         ),
     )
     parser.add_argument(
@@ -240,8 +328,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     server = create_server(args.host, args.port, config)
     listen_host, listen_port = server.server_address
     print(
-        f"modeio-middleware listening on http://{listen_host}:{listen_port} "
-        f"-> upstream {config.upstream_url}",
+        (
+            f"modeio-middleware listening on http://{listen_host}:{listen_port} "
+            f"-> chat upstream {config.upstream_chat_completions_url} "
+            f"-> responses upstream {config.upstream_responses_url}"
+        ),
         file=sys.stderr,
     )
 

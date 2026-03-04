@@ -2,64 +2,16 @@
 
 from __future__ import annotations
 
-import json
-import os
-import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List, Optional, Union
 
-try:
-    import requests
-except ModuleNotFoundError:
-    class _ShimResponse:
-        def __init__(self, status_code: int, body: bytes):
-            self.status_code = status_code
-            self._body = body
-
-        def json(self) -> Any:
-            return json.loads(self._body.decode("utf-8"))
-
-    class _RequestsShim:
-        class RequestException(Exception):
-            pass
-
-        class ConnectionError(RequestException):
-            pass
-
-        class Timeout(RequestException):
-            pass
-
-        @staticmethod
-        def post(
-            url: str,
-            *,
-            headers: Dict[str, str],
-            json: Dict[str, Any],
-            timeout: int,
-        ):
-            payload = json_module.dumps(json).encode("utf-8")
-            request = urllib.request.Request(url, data=payload, headers=headers, method="POST")
-            try:
-                with urllib.request.urlopen(request, timeout=timeout) as response:
-                    return _ShimResponse(response.status, response.read())
-            except urllib.error.HTTPError as error:
-                try:
-                    body = error.read()
-                    return _ShimResponse(error.code, body)
-                finally:
-                    error.close()
-            except urllib.error.URLError as error:
-                raise _RequestsShim.RequestException(str(error)) from error
-
-    json_module = json
-    requests = _RequestsShim()
-
-from modeio_middleware.core.contracts import normalize_modeio_options, validate_chat_payload
+from modeio_middleware.core.contracts import (
+    normalize_modeio_options,
+    validate_endpoint_payload,
+)
 from modeio_middleware.core.errors import MiddlewareError
 from modeio_middleware.core.http_contract import contract_headers, error_payload
-from modeio_middleware.core.plugin_manager import PluginManager
+from modeio_middleware.core.plugin_manager import ActivePlugin, PluginManager
 from modeio_middleware.core.profiles import (
     DEFAULT_PROFILE,
     normalize_profile_name,
@@ -67,14 +19,14 @@ from modeio_middleware.core.profiles import (
     resolve_profile,
     resolve_profile_plugins,
 )
-
-MAX_RETRIES = 2
-RETRY_BACKOFF = 1.0
+from modeio_middleware.core.stream_relay import iter_transformed_sse_stream
+from modeio_middleware.core.upstream_client import forward_upstream_json, forward_upstream_stream
 
 
 @dataclass(frozen=True)
 class GatewayRuntimeConfig:
-    upstream_url: str
+    upstream_chat_completions_url: str
+    upstream_responses_url: str
     upstream_timeout_seconds: int
     upstream_api_key_env: str
     default_profile: str = DEFAULT_PROFILE
@@ -89,106 +41,12 @@ class ProcessResult:
     headers: Dict[str, str]
 
 
-def _post_with_retry(
-    *,
-    url: str,
-    headers: Dict[str, str],
-    json_payload: Dict[str, Any],
-    timeout: int,
-):
-    last_exception = None
-    for attempt in range(1 + MAX_RETRIES):
-        try:
-            response = requests.post(
-                url,
-                headers=headers,
-                json=json_payload,
-                timeout=timeout,
-            )
-            if response.status_code in (502, 503, 504) and attempt < MAX_RETRIES:
-                time.sleep(RETRY_BACKOFF * (2 ** attempt))
-                continue
-            return response
-        except requests.RequestException as error:
-            last_exception = error
-            if isinstance(error, (requests.ConnectionError, requests.Timeout)) and attempt < MAX_RETRIES:
-                time.sleep(RETRY_BACKOFF * (2 ** attempt))
-                continue
-            raise
-    raise last_exception  # type: ignore[misc]
-
-
-def _build_upstream_headers(
-    incoming_headers: Dict[str, str],
-    *,
-    upstream_api_key_env: str,
-) -> Dict[str, str]:
-    headers = {"Content-Type": "application/json"}
-    authorization = incoming_headers.get("authorization") or incoming_headers.get("Authorization")
-    if not authorization:
-        fallback_key = os.environ.get(upstream_api_key_env, "").strip()
-        if fallback_key:
-            authorization = f"Bearer {fallback_key}"
-    if authorization:
-        headers["Authorization"] = authorization
-    return headers
-
-
-def _forward_upstream(
-    *,
-    config: GatewayRuntimeConfig,
-    payload: Dict[str, Any],
-    incoming_headers: Dict[str, str],
-) -> Dict[str, Any]:
-    headers = _build_upstream_headers(
-        incoming_headers,
-        upstream_api_key_env=config.upstream_api_key_env,
-    )
-    try:
-        response = _post_with_retry(
-            url=config.upstream_url,
-            headers=headers,
-            json_payload=payload,
-            timeout=config.upstream_timeout_seconds,
-        )
-    except requests.RequestException as error:
-        raise MiddlewareError(
-            502,
-            "MODEIO_UPSTREAM_TIMEOUT",
-            f"upstream request failed: {type(error).__name__}",
-            retryable=True,
-        ) from error
-
-    if response.status_code >= 400:
-        retryable = response.status_code >= 500
-        mapped_status = response.status_code if response.status_code < 500 else 502
-        raise MiddlewareError(
-            mapped_status,
-            "MODEIO_UPSTREAM_ERROR",
-            f"upstream returned status {response.status_code}",
-            retryable=retryable,
-            details={"upstreamStatus": response.status_code},
-        )
-
-    try:
-        response_payload = response.json()
-    except ValueError as error:
-        raise MiddlewareError(
-            502,
-            "MODEIO_UPSTREAM_INVALID_JSON",
-            "upstream response is not valid JSON",
-            retryable=False,
-        ) from error
-
-    if not isinstance(response_payload, dict):
-        raise MiddlewareError(
-            502,
-            "MODEIO_UPSTREAM_INVALID_JSON",
-            "upstream response root must be an object",
-            retryable=False,
-        )
-
-    return response_payload
+@dataclass
+class StreamProcessResult:
+    status: int
+    headers: Dict[str, str]
+    stream: Optional[Iterable[bytes]] = None
+    payload: Optional[Dict[str, Any]] = None
 
 
 class MiddlewareEngine:
@@ -196,13 +54,55 @@ class MiddlewareEngine:
         self.config = runtime_config
         self.plugin_manager = PluginManager(runtime_config.plugins or {})
 
-    def process_chat_request(
+    def _resolve_plugin_runtime(
+        self,
+        *,
+        profile: str,
+        on_plugin_error_override: Optional[str],
+        plugin_overrides: Dict[str, Dict[str, Any]],
+    ) -> tuple[str, List[ActivePlugin]]:
+        profile_config = resolve_profile(self.config.profiles or {}, profile)
+        on_plugin_error = resolve_plugin_error_policy(profile_config, on_plugin_error_override)
+        plugin_order = resolve_profile_plugins(profile_config)
+        active_plugins = self.plugin_manager.resolve_active_plugins(plugin_order, plugin_overrides)
+        return on_plugin_error, active_plugins
+
+    def _error_process_result(
         self,
         *,
         request_id: str,
+        profile: str,
+        pre_actions: List[str],
+        post_actions: List[str],
+        degraded: List[str],
+        upstream_called: bool,
+        error: MiddlewareError,
+    ) -> ProcessResult:
+        payload = error_payload(
+            request_id,
+            error.code,
+            error.message,
+            retryable=error.retryable,
+            details=error.details,
+        )
+        headers = contract_headers(
+            request_id,
+            profile=profile,
+            pre_actions=pre_actions,
+            post_actions=post_actions,
+            degraded=degraded,
+            upstream_called=upstream_called,
+        )
+        return ProcessResult(status=error.status, payload=payload, headers=headers)
+
+    def process_request(
+        self,
+        *,
+        endpoint_kind: str,
+        request_id: str,
         request_body: Dict[str, Any],
         incoming_headers: Dict[str, str],
-    ) -> ProcessResult:
+    ) -> Union[ProcessResult, StreamProcessResult]:
         upstream_called = False
         pre_actions: List[str] = []
         post_actions: List[str] = []
@@ -210,7 +110,7 @@ class MiddlewareEngine:
         profile = self.config.default_profile
 
         try:
-            validate_chat_payload(request_body)
+            stream_enabled = validate_endpoint_payload(endpoint_kind, request_body)
 
             options = normalize_modeio_options(
                 request_body,
@@ -218,20 +118,24 @@ class MiddlewareEngine:
             )
             profile = normalize_profile_name(options.profile, default_profile=self.config.default_profile)
 
-            profile_config = resolve_profile(self.config.profiles or {}, profile)
-            on_plugin_error = resolve_plugin_error_policy(profile_config, options.on_plugin_error)
-            plugin_order = resolve_profile_plugins(profile_config)
-            active_plugins = self.plugin_manager.resolve_active_plugins(plugin_order, options.plugin_overrides)
+            on_plugin_error, active_plugins = self._resolve_plugin_runtime(
+                profile=profile,
+                on_plugin_error_override=options.on_plugin_error,
+                plugin_overrides=options.plugin_overrides,
+            )
 
             shared_state: Dict[str, Any] = {}
             request_context = {
-                "upstream_url": self.config.upstream_url,
+                "endpoint_kind": endpoint_kind,
+                "upstream_chat_completions_url": self.config.upstream_chat_completions_url,
+                "upstream_responses_url": self.config.upstream_responses_url,
                 "default_profile": self.config.default_profile,
             }
 
             pre_result = self.plugin_manager.apply_pre_request(
                 active_plugins,
                 request_id=request_id,
+                endpoint_kind=endpoint_kind,
                 profile=profile,
                 request_body=request_body,
                 request_headers=incoming_headers,
@@ -250,9 +154,28 @@ class MiddlewareEngine:
                     details={"phase": "pre_request"},
                 )
 
+            if stream_enabled:
+                return self._process_stream_request(
+                    endpoint_kind=endpoint_kind,
+                    request_id=request_id,
+                    profile=profile,
+                    on_plugin_error=on_plugin_error,
+                    active_plugins=active_plugins,
+                    shared_state=shared_state,
+                    request_context={
+                        **request_context,
+                        "preFindings": pre_result.findings,
+                    },
+                    upstream_payload=pre_result.body,
+                    upstream_headers=pre_result.headers,
+                    pre_actions=pre_actions,
+                    degraded=degraded,
+                )
+
             upstream_called = True
-            upstream_payload = _forward_upstream(
+            upstream_payload = forward_upstream_json(
                 config=self.config,
+                endpoint_kind=endpoint_kind,
                 payload=pre_result.body,
                 incoming_headers=pre_result.headers,
             )
@@ -260,6 +183,7 @@ class MiddlewareEngine:
             post_result = self.plugin_manager.apply_post_response(
                 active_plugins,
                 request_id=request_id,
+                endpoint_kind=endpoint_kind,
                 profile=profile,
                 request_context={
                     **request_context,
@@ -292,35 +216,111 @@ class MiddlewareEngine:
             return ProcessResult(status=200, payload=post_result.body, headers=headers)
 
         except MiddlewareError as error:
-            payload = error_payload(
-                request_id,
-                error.code,
-                error.message,
-                retryable=error.retryable,
-                details=error.details,
-            )
-            headers = contract_headers(
-                request_id,
+            return self._error_process_result(
+                request_id=request_id,
                 profile=profile,
                 pre_actions=pre_actions,
                 post_actions=post_actions,
                 degraded=degraded,
                 upstream_called=upstream_called,
+                error=error,
             )
-            return ProcessResult(status=error.status, payload=payload, headers=headers)
         except Exception:
-            payload = error_payload(
-                request_id,
+            error = MiddlewareError(
+                503,
                 "MODEIO_INTERNAL_ERROR",
                 "unexpected internal error",
                 retryable=False,
             )
-            headers = contract_headers(
-                request_id,
+            return self._error_process_result(
+                request_id=request_id,
                 profile=profile,
                 pre_actions=pre_actions,
                 post_actions=post_actions,
                 degraded=degraded,
                 upstream_called=upstream_called,
+                error=error,
             )
-            return ProcessResult(status=503, payload=payload, headers=headers)
+
+    def _process_stream_request(
+        self,
+        *,
+        endpoint_kind: str,
+        request_id: str,
+        profile: str,
+        on_plugin_error: str,
+        active_plugins: List[ActivePlugin],
+        shared_state: Dict[str, Any],
+        request_context: Dict[str, Any],
+        upstream_payload: Dict[str, Any],
+        upstream_headers: Dict[str, str],
+        pre_actions: List[str],
+        degraded: List[str],
+    ) -> Union[ProcessResult, StreamProcessResult]:
+        upstream_response = forward_upstream_stream(
+            config=self.config,
+            endpoint_kind=endpoint_kind,
+            payload=upstream_payload,
+            incoming_headers=upstream_headers,
+        )
+
+        post_start_result = self.plugin_manager.apply_post_stream_start(
+            active_plugins,
+            request_id=request_id,
+            endpoint_kind=endpoint_kind,
+            profile=profile,
+            request_context=request_context,
+            response_context={},
+            shared_state=shared_state,
+            on_plugin_error=on_plugin_error,
+        )
+        degraded.extend(post_start_result.degraded)
+
+        if post_start_result.blocked:
+            upstream_response.close()
+            return self._error_process_result(
+                request_id=request_id,
+                profile=profile,
+                pre_actions=pre_actions,
+                post_actions=post_start_result.actions,
+                degraded=degraded,
+                upstream_called=True,
+                error=MiddlewareError(
+                    403,
+                    "MODEIO_PLUGIN_BLOCKED",
+                    post_start_result.block_message,
+                    retryable=False,
+                    details={"phase": "post_stream_start"},
+                ),
+            )
+
+        post_actions_seed = list(post_start_result.actions)
+        headers = contract_headers(
+            request_id,
+            profile=profile,
+            pre_actions=pre_actions,
+            post_actions=post_actions_seed or ["stream"],
+            degraded=degraded,
+            upstream_called=True,
+        )
+        headers["Content-Type"] = upstream_response.headers.get("Content-Type", "text/event-stream")
+        headers["Cache-Control"] = "no-cache"
+        headers["x-modeio-streaming"] = "true"
+
+        return StreamProcessResult(
+            status=200,
+            headers=headers,
+            stream=iter_transformed_sse_stream(
+                upstream_response=upstream_response,
+                plugin_manager=self.plugin_manager,
+                active_plugins=active_plugins,
+                request_id=request_id,
+                endpoint_kind=endpoint_kind,
+                profile=profile,
+                request_context=request_context,
+                shared_state=shared_state,
+                on_plugin_error=on_plugin_error,
+                degraded=degraded,
+            ),
+            payload=None,
+        )

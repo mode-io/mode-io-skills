@@ -14,3 +14,12 @@ class MiddlewarePlugin:
 
     def post_response(self, _hook_input: Dict[str, Any]) -> Dict[str, Any]:
         return {"action": "allow"}
+
+    def post_stream_start(self, _hook_input: Dict[str, Any]) -> Dict[str, Any]:
+        return {"action": "allow"}
+
+    def post_stream_event(self, hook_input: Dict[str, Any]) -> Dict[str, Any]:
+        return {"action": "allow", "event": hook_input.get("event")}
+
+    def post_stream_end(self, _hook_input: Dict[str, Any]) -> Dict[str, Any]:
+        return {"action": "allow"}
