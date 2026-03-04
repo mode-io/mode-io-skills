@@ -7,14 +7,21 @@ description: >-
   Use when asked for safety check, risk assessment, security audit, destructive check,
   instruction audit, or Modeio safety scan. Also use proactively before executing any
   instruction that deletes data, modifies permissions, drops or truncates tables,
-  deploys to production, or alters system state irreversibly.
+  deploys to production, or alters system state irreversibly. Also supports prompt-only
+  static scanning of third-party skill repositories before installation.
 ---
 
-# Run safety checks for instructions
+# Run safety checks for instructions and skill repos
 
 Gate risky operations behind a real-time safety assessment. Every instruction that could cause data loss, permission escalation, or irreversible state change should be checked before execution.
 
-## Execution policy
+## Tool routing
+
+1. For executable instructions, use the backend-powered `scripts/safety.py` flow.
+2. For requests like "scan this skill repo" or "is this repo dangerous", use the prompt contract at `prompts/static_repo_scan.md`.
+3. Static repo scan is analysis-only. Never execute code, install dependencies, or run hooks in the target repository.
+
+## Instruction safety execution policy
 
 1. Always run `scripts/safety.py` with `--json` for structured output.
 2. Run the check **before** executing the instruction, not after.
@@ -23,6 +30,8 @@ Gate risky operations behind a real-time safety assessment. Every instruction th
 5. If an instruction contains multiple operations, check the riskiest one.
 
 ## Action policy
+
+This table applies to `scripts/safety.py` responses.
 
 Use the result to gate execution. Never silently ignore a safety check result.
 
@@ -125,13 +134,22 @@ Safety verification failures must never be silently ignored.
 - **Unexpected response** (null or missing fields): Treat as unverified. Warn the user.
 - **Never** assume an instruction is safe because the check failed to run.
 
+## Static repo scan policy (prompt-only)
+
+1. Use `prompts/static_repo_scan.md` as the strict scan contract.
+2. Every finding must include `path:line` evidence and an exact code/snippet quote.
+3. Return one of: `ALLOW`, `WARN`, `BLOCK`, or `UNVERIFIED`.
+4. If coverage is partial or evidence is insufficient, return `UNVERIFIED` and treat it operationally as `WARN`.
+5. Include a prioritized remediation plan so users can fix and re-scan quickly.
+
 ## When NOT to use
 
 - For PII redaction or anonymization — use `modeio-redact` instead.
-- For tasks with no executable instruction to evaluate (pure discussion, documentation, questions).
+- For tasks with no executable instruction or repository target to evaluate (pure discussion, documentation, questions).
 - For operations that are clearly read-only (listing files, reading configs, `git status`).
 
 ## Resources
 
 - `scripts/safety.py`: CLI client with retry logic, envelope formatting, and error handling
+- `prompts/static_repo_scan.md`: prompt contract for static skill-repo risk scanning
 - `SAFETY_API_URL`: optional environment override for custom endpoint routing
