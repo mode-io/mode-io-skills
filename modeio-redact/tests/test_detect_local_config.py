@@ -49,6 +49,8 @@ class TestDetectLocalConfig(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0)
             payload = json.loads(result.stdout)
+            self.assertEqual(payload["scoringMethod"], "heuristic-v1")
+            self.assertEqual(payload["detectorVersion"], "local-rules-v1")
             email_items = [item for item in payload["items"] if item["type"] == "email"]
             self.assertEqual(email_items, [])
 
@@ -83,6 +85,9 @@ class TestDetectLocalConfig(unittest.TestCase):
             name_items = [item for item in payload["items"] if item["type"] == "name"]
             self.assertGreaterEqual(len(name_items), 1)
             self.assertTrue(name_items[0]["forcedBlocklist"])
+            self.assertIn("detectionScore", name_items[0])
+            self.assertIn("scoreThreshold", name_items[0])
+            self.assertIn("scoreReasons", name_items[0])
 
     def test_thresholds_file_overrides_email_threshold(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -123,6 +128,20 @@ class TestDetectLocalConfig(unittest.TestCase):
 
             self.assertEqual(result.returncode, 2)
             self.assertIn("blocklist rule requires explicit type", result.stderr)
+
+    def test_explain_flag_prints_scoring_details_to_stderr(self):
+        result = self._run_cli(
+            [
+                "--input",
+                "Email: alice@example.com",
+                "--explain",
+            ]
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("scoringMethod: heuristic-v1", result.stderr)
+        self.assertIn("detectorVersion: local-rules-v1", result.stderr)
+        self.assertIn("score=", result.stderr)
 
 
 if __name__ == "__main__":

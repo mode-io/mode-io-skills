@@ -5,7 +5,7 @@ Modeio AI Anonymization Skill - Local privacy detection (no API required).
 This detector is local-first and deterministic:
 - regex/pattern matching
 - per-type validators (checksum/date/format)
-- confidence scoring with profile thresholds
+- heuristic detection scoring with profile thresholds
 - allowlist/blocklist policy hooks
 """
 
@@ -41,6 +41,8 @@ PROFILE_THRESHOLD_DELTA = {
     "balanced": 0.0,
     "precision": 0.10,
 }
+SCORING_METHOD = "heuristic-v1"
+DETECTOR_VERSION = "local-rules-v1"
 
 PLACEHOLDER_MAP = {
     "phone": "PHONE",
@@ -883,21 +885,24 @@ def _evaluate_candidates(
                 continue
 
         if forced_blocklist:
-            confidence = 1.0
-            confidence_reasons = ["source:blocklist"]
+            detection_score = 1.0
+            score_reasons = ["source:blocklist"]
         else:
-            confidence, confidence_reasons = _score_candidate(candidate, text, validator_passed)
+            detection_score, score_reasons = _score_candidate(candidate, text, validator_passed)
 
         threshold = thresholds.get(stype, 0.70)
-        if not forced_blocklist and confidence < threshold:
+        if not forced_blocklist and detection_score < threshold:
             continue
 
         evaluated.append(
             {
                 **candidate,
-                "confidence": confidence,
+                "detectionScore": detection_score,
+                "scoreThreshold": threshold,
+                "scoreReasons": score_reasons,
+                "confidence": detection_score,
                 "confidenceThreshold": threshold,
-                "confidenceReasons": confidence_reasons,
+                "confidenceReasons": score_reasons,
                 "validator": {
                     "applied": validator_applied,
                     "passed": validator_passed,
@@ -918,7 +923,7 @@ def _resolve_overlaps(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         candidates,
         key=lambda item: (
             -int(item.get("forcedBlocklist", False)),
-            -float(item.get("confidence", 0.0)),
+            -float(item.get("detectionScore", item.get("confidence", 0.0))),
             -_risk_priority(item["type"]),
             -(item["endIndex"] - item["startIndex"]),
             item["startIndex"],
@@ -961,10 +966,13 @@ def _build_items(selected_candidates: List[Dict[str, Any]]) -> List[Dict[str, An
                 "riskLevel": _infer_risk_level(stype),
                 "startIndex": candidate["startIndex"],
                 "endIndex": candidate["endIndex"],
-                "confidence": candidate["confidence"],
-                "confidenceThreshold": candidate["confidenceThreshold"],
+                "detectionScore": candidate["detectionScore"],
+                "scoreThreshold": candidate["scoreThreshold"],
+                "scoreReasons": candidate["scoreReasons"],
+                "confidence": candidate["detectionScore"],
+                "confidenceThreshold": candidate["scoreThreshold"],
                 "detectionSource": candidate["source"],
-                "confidenceReasons": candidate["confidenceReasons"],
+                "confidenceReasons": candidate["scoreReasons"],
                 "validator": candidate["validator"],
                 "forcedBlocklist": bool(candidate.get("forcedBlocklist", False)),
             }
@@ -988,7 +996,7 @@ def detect_sensitive_local(
     threshold_overrides: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Any]:
     """
-    Local PII detection with validators, confidence, and policy thresholds.
+    Local PII detection with validators, heuristic scoring, and policy thresholds.
     """
     if not text or len(text) < 5:
         return {
@@ -999,6 +1007,8 @@ def detect_sensitive_local(
             "riskLevel": "low",
             "profile": profile,
             "thresholds": _build_thresholds(profile, threshold_overrides),
+            "scoringMethod": SCORING_METHOD,
+            "detectorVersion": DETECTOR_VERSION,
         }
 
     normalized_allowlist = list(_normalize_runtime_rules(BUILTIN_ALLOWLIST_RULES, "allowlist"))
@@ -1034,6 +1044,8 @@ def detect_sensitive_local(
         "riskLevel": risk_level,
         "profile": profile,
         "thresholds": thresholds,
+        "scoringMethod": SCORING_METHOD,
+        "detectorVersion": DETECTOR_VERSION,
         "stats": {
             "candidateCount": len(candidates),
             "keptCount": len(items),
@@ -1044,7 +1056,7 @@ def detect_sensitive_local(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Local PII detection (no API call): regex + validators + confidence thresholds. "
+            "Local PII detection (no API call): regex + validators + heuristic thresholds. "
             "Outputs masked text by default; use --json for full details."
         )
     )
@@ -1079,6 +1091,11 @@ def main() -> None:
         action="store_true",
         help="Output full JSON; otherwise only output sanitizedText.",
     )
+    parser.add_argument(
+        "--explain",
+        action="store_true",
+        help="Include scoring metadata in non-JSON output for troubleshooting.",
+    )
     args = parser.parse_args()
 
     raw = args.input or ""
@@ -1107,9 +1124,20 @@ def main() -> None:
         return
 
     print("Status: local detection done", file=sys.stderr)
+    print(f"detectorVersion: {DETECTOR_VERSION}", file=sys.stderr)
+    print(f"scoringMethod: {SCORING_METHOD}", file=sys.stderr)
     print(f"profile: {result['profile']}", file=sys.stderr)
     print(f"riskScore: {result['riskScore']}, riskLevel: {result['riskLevel']}", file=sys.stderr)
     print(f"items: {len(result['items'])}", file=sys.stderr)
+    if args.explain:
+        for item in result["items"]:
+            print(
+                (
+                    f"item={item['id']} type={item['type']} source={item['detectionSource']} "
+                    f"score={item['detectionScore']:.3f} threshold={item['scoreThreshold']:.3f}"
+                ),
+                file=sys.stderr,
+            )
     print(result["sanitizedText"])
 
 

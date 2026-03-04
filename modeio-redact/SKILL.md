@@ -136,6 +136,7 @@ Use only when user explicitly asks for offline or local detection.
 - `--allowlist-file`: optional JSON allowlist rule file
 - `--blocklist-file`: optional JSON blocklist rule file
 - `--thresholds-file`: optional JSON per-type threshold override file
+- `--explain`: print heuristic score diagnostics to `stderr` in non-JSON mode
 - `--json`: output full detection details instead of masked text only
 - No network call is made.
 
@@ -155,14 +156,18 @@ python scripts/detect_local.py --input "Project codename Phoenix" --blocklist-fi
 - `--json` prints full structured output.
 - `sanitizedText`: masked text
 - `items`: detected entities
-- `items[].confidence`: confidence score in `[0,1]`
-- `items[].confidenceThreshold`: active threshold used for this type
+- `items[].detectionScore`: heuristic score in `[0,1]` (not a statistical confidence interval)
+- `items[].scoreThreshold`: active threshold used for this type
+- `items[].scoreReasons`: additive heuristics used to compute the score
 - `items[].validator`: validator status for checksum/format guarded types
 - `items[].detectionSource`: `regex` / `name-context` / `blocklist`
 - `riskScore`: 0-100
 - `riskLevel`: `low` / `medium` / `high`
 - `profile`: active threshold profile
 - `thresholds`: active per-type thresholds
+- `scoringMethod`: current scoring algorithm ID (`heuristic-v1`)
+- `detectorVersion`: local detector implementation version (`local-rules-v1`)
+- Deprecated aliases (temporary): `confidence`, `confidenceThreshold`, `confidenceReasons`
 
 ```json
 {

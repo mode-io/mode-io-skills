@@ -48,10 +48,16 @@ class TestLocalLiteBehavior(unittest.TestCase):
                 self.assertGreaterEqual(len(phone_items), 1)
                 self.assertIn("[PHONE_1]", result["sanitizedText"])
                 for item in result["items"]:
+                    self.assertIn("detectionScore", item)
+                    self.assertIn("scoreThreshold", item)
+                    self.assertIn("scoreReasons", item)
+                    self.assertGreaterEqual(item["detectionScore"], 0.0)
+                    self.assertLessEqual(item["detectionScore"], 1.0)
                     self.assertIn("confidence", item)
-                    self.assertGreaterEqual(item["confidence"], 0.0)
-                    self.assertLessEqual(item["confidence"], 1.0)
+                    self.assertEqual(item["confidence"], item["detectionScore"])
                     self.assertIn("detectionSource", item)
+                self.assertEqual(result["scoringMethod"], "heuristic-v1")
+                self.assertEqual(result["detectorVersion"], "local-rules-v1")
 
     def test_credit_card_luhn_validator_rejects_invalid_number(self):
         result = detect_local.detect_sensitive_local("Card: 4111-1111-1111-1112")
