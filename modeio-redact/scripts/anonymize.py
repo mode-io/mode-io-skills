@@ -11,7 +11,7 @@ import json
 import os
 import sys
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 try:
     import requests
@@ -35,6 +35,7 @@ except ModuleNotFoundError:
     requests = _RequestsShim()
 
 from detect_local import detect_sensitive_local
+from input_source import resolve_input_source
 from map_store import MapStoreError, normalize_mapping_entries, save_map
 
 # Backend API URL, overridable via ANONYMIZE_API_URL environment variable
@@ -43,7 +44,6 @@ URL = os.environ.get("ANONYMIZE_API_URL", "https://safety-cf.modeio.ai/api/cf/an
 HEADERS = {"Content-Type": "application/json"}
 
 VALID_LEVELS = ("lite", "dynamic", "strict", "crossborder")
-SUPPORTED_FILE_EXTENSIONS = (".txt", ".md")
 
 TOOL_NAME = "modeio-redact"
 
@@ -70,38 +70,6 @@ def _post_with_retry(url, headers, json_payload, timeout=60):
             raise
     # Should not reach here, but raise last exception if it does
     raise last_exc  # type: ignore[misc]
-
-
-def resolve_input_source(input_value: str) -> Tuple[str, str]:
-    """Resolve --input as literal text or supported file path."""
-    raw_value = (input_value or "").strip()
-    if not raw_value:
-        raise ValueError("--input must not be empty.")
-
-    expanded_path = os.path.expandvars(os.path.expanduser(raw_value))
-    if os.path.isfile(expanded_path):
-        extension = os.path.splitext(expanded_path)[1].lower()
-        if extension not in SUPPORTED_FILE_EXTENSIONS:
-            allowed = ", ".join(SUPPORTED_FILE_EXTENSIONS)
-            raise ValueError(
-                f"Unsupported file extension '{extension or '(none)'}'. "
-                f"Supported file types: {allowed}."
-            )
-
-        try:
-            with open(expanded_path, "r", encoding="utf-8") as input_file:
-                content = input_file.read()
-        except UnicodeDecodeError as exc:
-            raise ValueError("Input file must be UTF-8 encoded.") from exc
-        except OSError as exc:
-            raise ValueError(f"Failed to read input file: {exc}") from exc
-
-        if not content.strip():
-            raise ValueError("Input file must not be empty.")
-
-        return content, "file"
-
-    return raw_value, "text"
 
 
 def anonymize(

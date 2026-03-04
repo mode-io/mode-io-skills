@@ -138,6 +138,111 @@ class TestDeanonymizeContract(unittest.TestCase):
             self.assertTrue(payload["success"])
             self.assertEqual(payload["data"]["deanonymizedContent"], source_text)
 
+    def test_deanonymize_accepts_txt_file_input(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            map_path = Path(tmpdir) / "map.json"
+            map_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": "1",
+                        "mapId": "file-map",
+                        "entries": [
+                            {"placeholder": "[EMAIL_1]", "original": "alice@example.com", "type": "email"}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            input_path = Path(tmpdir) / "anonymized.txt"
+            input_path.write_text("Email: [EMAIL_1]", encoding="utf-8")
+
+            result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(input_path),
+                    "--map",
+                    str(map_path),
+                    "--json",
+                ],
+            )
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+
+            self.assertTrue(payload["success"])
+            self.assertEqual(payload["data"]["deanonymizedContent"], "Email: alice@example.com")
+
+    def test_deanonymize_accepts_markdown_file_input(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            map_path = Path(tmpdir) / "map.json"
+            map_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": "1",
+                        "mapId": "md-map",
+                        "entries": [
+                            {"placeholder": "[PHONE_1]", "original": "415-555-1234", "type": "phone"}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            input_path = Path(tmpdir) / "anonymized.md"
+            input_path.write_text("Call [PHONE_1]", encoding="utf-8")
+
+            result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(input_path),
+                    "--map",
+                    str(map_path),
+                    "--json",
+                ],
+            )
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+
+            self.assertTrue(payload["success"])
+            self.assertEqual(payload["data"]["deanonymizedContent"], "Call 415-555-1234")
+
+    def test_deanonymize_rejects_unsupported_file_input_type(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            map_path = Path(tmpdir) / "map.json"
+            map_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": "1",
+                        "mapId": "json-map",
+                        "entries": [
+                            {"placeholder": "[EMAIL_1]", "original": "alice@example.com", "type": "email"}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            input_path = Path(tmpdir) / "anonymized.json"
+            input_path.write_text('{"value":"[EMAIL_1]"}', encoding="utf-8")
+
+            result = self._run_cli(
+                DEANONYMIZE_SCRIPT,
+                [
+                    "--input",
+                    str(input_path),
+                    "--map",
+                    str(map_path),
+                    "--json",
+                ],
+            )
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+
+            self.assertFalse(payload["success"])
+            self.assertEqual(payload["error"]["type"], "validation_error")
+
     def test_deanonymize_reports_map_error_when_no_maps_exist(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             env = {"MODEIO_REDACT_MAP_DIR": tmpdir}
