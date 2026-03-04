@@ -6,13 +6,19 @@ Shared --input resolver for modeio-redact scripts.
 from __future__ import annotations
 
 import os
-from typing import Tuple
+from typing import Optional, Tuple
 
 SUPPORTED_FILE_EXTENSIONS = (".txt", ".md")
 
 
 def resolve_input_source(input_value: str) -> Tuple[str, str]:
     """Resolve --input as literal text or supported file path."""
+    content, input_type, _ = resolve_input_source_details(input_value)
+    return content, input_type
+
+
+def resolve_input_source_details(input_value: str) -> Tuple[str, str, Optional[str]]:
+    """Resolve --input and preserve source path when input is a file."""
     raw_value = (input_value or "").strip()
     if not raw_value:
         raise ValueError("--input must not be empty.")
@@ -38,6 +44,6 @@ def resolve_input_source(input_value: str) -> Tuple[str, str]:
         if not content.strip():
             raise ValueError("Input file must not be empty.")
 
-        return content, "file"
+        return content, "file", expanded_path
 
-    return raw_value, "text"
+    return raw_value, "text", None

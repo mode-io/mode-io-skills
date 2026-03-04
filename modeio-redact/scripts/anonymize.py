@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 try:
@@ -35,7 +36,13 @@ except ModuleNotFoundError:
     requests = _RequestsShim()
 
 from detect_local import detect_sensitive_local
-from input_source import resolve_input_source
+from file_workflow import (
+    embed_map_marker,
+    resolve_output_path,
+    write_output_file,
+    write_sidecar_map,
+)
+from input_source import resolve_input_source, resolve_input_source_details
 from map_store import MapStoreError, normalize_mapping_entries, save_map
 
 # Backend API URL, overridable via ANONYMIZE_API_URL environment variable
@@ -147,6 +154,20 @@ def _append_warning(data: Dict[str, Any], code: str, message: str) -> None:
     warnings.append({"code": code, "message": message})
 
 
+def _persist_output_file(
+    input_path: Optional[str],
+    output_arg: Optional[str],
+    in_place: bool,
+    output_tag: str,
+) -> Optional[Path]:
+    return resolve_output_path(
+        input_path=input_path,
+        output_path=output_arg,
+        in_place=in_place,
+        output_tag=output_tag,
+    )
+
+
 def _maybe_save_map(
     raw_input: str,
     level: str,
@@ -209,12 +230,23 @@ def main():
         action="store_true",
         help="Output unified JSON contract for machine consumption.",
     )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Write anonymized content to this file path.",
+    )
+    parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Overwrite the input file in place (file-path input only).",
+    )
     args = parser.parse_args()
 
     mode = "local-regex" if args.level == "lite" else "api"
 
     try:
-        raw_input, input_type = resolve_input_source(args.input)
+        raw_input, input_type, input_path = resolve_input_source_details(args.input)
     except ValueError as exc:
         if args.json:
             print(json.dumps(
@@ -300,6 +332,9 @@ def main():
     data = result.get("data", {})
     anonymized = data.get("anonymizedContent", "")
     has_pii = data.get("hasPII", None)
+    data["inputType"] = input_type
+    if input_path:
+        data["inputPath"] = input_path
 
     map_ref = None
     try:
@@ -311,6 +346,73 @@ def main():
             message=str(error),
         )
 
+    output_path = None
+    sidecar_path = None
+    if not isinstance(anonymized, str):
+        anonymized = str(anonymized)
+        data["anonymizedContent"] = anonymized
+
+    try:
+        resolved_output_path = _persist_output_file(
+            input_path=input_path,
+            output_arg=args.output,
+            in_place=args.in_place,
+            output_tag="redacted",
+        )
+
+        output_content = anonymized
+        if map_ref:
+            normalized_suffix = ""
+            if resolved_output_path is not None:
+                normalized_suffix = resolved_output_path.suffix.lower()
+
+            output_content = embed_map_marker(
+                content=output_content,
+                map_id=map_ref["mapId"],
+                suffix=normalized_suffix,
+            )
+
+        if resolved_output_path is not None:
+            write_output_file(resolved_output_path, output_content)
+            output_path = str(resolved_output_path)
+
+        if output_path:
+            data["outputPath"] = output_path
+            if map_ref:
+                sidecar_path = write_sidecar_map(
+                    content_path=Path(output_path).expanduser(),
+                    map_ref=map_ref,
+                )
+                map_ref["sidecarPath"] = str(sidecar_path)
+    except ValueError as error:
+        if args.json:
+            print(json.dumps(
+                _error_envelope(
+                    level=args.level,
+                    mode=mode,
+                    error_type="validation_error",
+                    message=str(error),
+                ),
+                ensure_ascii=False,
+            ))
+        else:
+            print(f"Error: {error}", file=sys.stderr)
+        sys.exit(2)
+    except OSError as error:
+        if args.json:
+            print(json.dumps(
+                _error_envelope(
+                    level=args.level,
+                    mode=mode,
+                    error_type="io_error",
+                    message=f"failed to write output file: {error}",
+                ),
+                ensure_ascii=False,
+            ))
+        else:
+            print(f"Error: failed to write output file: {error}", file=sys.stderr)
+        sys.exit(1)
+
     if args.json:
         print(json.dumps(_success_envelope(level=args.level, mode=mode, data=data), ensure_ascii=False))
         return
@@ -321,6 +423,10 @@ def main():
     print("hasPII:", has_pii, file=sys.stderr)
     if map_ref:
         print(f"mapId: {map_ref['mapId']}", file=sys.stderr)
+    if output_path:
+        print(f"outputPath: {output_path}", file=sys.stderr)
+    if sidecar_path:
+        print(f"sidecarPath: {sidecar_path}", file=sys.stderr)
     warnings = data.get("warnings")
     if isinstance(warnings, list):
         for warning in warnings:

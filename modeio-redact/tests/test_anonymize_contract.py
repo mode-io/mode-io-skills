@@ -117,57 +117,56 @@ class TestAnonymizeContract(unittest.TestCase):
         self.assertEqual(payload["error"]["type"], "network_error")
 
     def test_txt_file_path_is_auto_resolved_and_redacted(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8", delete=False) as input_file:
-            input_file.write("Email: alice@example.com")
-            file_path = input_file.name
-
         with tempfile.TemporaryDirectory() as tmpdir:
-            try:
-                result = self._run_cli(
-                    [
-                        "--input",
-                        file_path,
-                        "--level",
-                        "lite",
-                        "--json",
-                    ],
-                    env={"MODEIO_REDACT_MAP_DIR": tmpdir},
-                )
-            finally:
-                os.unlink(file_path)
+            file_path = Path(tmpdir) / "incident.txt"
+            file_path.write_text("Email: alice@example.com", encoding="utf-8")
+            result = self._run_cli(
+                [
+                    "--input",
+                    str(file_path),
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env={"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")},
+            )
 
-        self.assertEqual(result.returncode, 0)
-        payload = json.loads(result.stdout)
-        self.assertTrue(payload["success"])
-        self.assertEqual(payload["mode"], "local-regex")
-        self.assertEqual(payload["level"], "lite")
-        self.assertTrue(payload["data"]["hasPII"])
-        self.assertIn("[EMAIL_1]", payload["data"]["anonymizedContent"])
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["success"])
+            self.assertEqual(payload["mode"], "local-regex")
+            self.assertEqual(payload["level"], "lite")
+            self.assertTrue(payload["data"]["hasPII"])
+            self.assertIn("[EMAIL_1]", payload["data"]["anonymizedContent"])
+            self.assertIn("outputPath", payload["data"])
+            output_path = Path(payload["data"]["outputPath"])
+            self.assertTrue(output_path.exists())
+            self.assertEqual(output_path.name, "incident.redacted.txt")
+            self.assertIn("modeio-redact-map-id", output_path.read_text(encoding="utf-8"))
+            self.assertTrue(Path(payload["data"]["mapRef"]["sidecarPath"]).exists())
 
     def test_markdown_file_path_is_auto_resolved_and_redacted(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8", delete=False) as input_file:
-            input_file.write("Contact: alice@example.com")
-            file_path = input_file.name
-
         with tempfile.TemporaryDirectory() as tmpdir:
-            try:
-                result = self._run_cli(
-                    [
-                        "--input",
-                        file_path,
-                        "--level",
-                        "lite",
-                        "--json",
-                    ],
-                    env={"MODEIO_REDACT_MAP_DIR": tmpdir},
-                )
-            finally:
-                os.unlink(file_path)
+            file_path = Path(tmpdir) / "handoff.md"
+            file_path.write_text("Contact: alice@example.com", encoding="utf-8")
+            result = self._run_cli(
+                [
+                    "--input",
+                    str(file_path),
+                    "--level",
+                    "lite",
+                    "--json",
+                ],
+                env={"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")},
+            )
 
-        self.assertEqual(result.returncode, 0)
-        payload = json.loads(result.stdout)
-        self.assertTrue(payload["success"])
-        self.assertIn("[EMAIL_1]", payload["data"]["anonymizedContent"])
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["success"])
+            self.assertIn("[EMAIL_1]", payload["data"]["anonymizedContent"])
+            output_path = Path(payload["data"]["outputPath"])
+            self.assertEqual(output_path.name, "handoff.redacted.md")
+            self.assertTrue(output_path.read_text(encoding="utf-8").startswith("<!-- modeio-redact-map-id:"))
 
     def test_unsupported_file_extension_returns_json_validation_error(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8", delete=False) as input_file:
@@ -191,6 +190,85 @@ class TestAnonymizeContract(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertFalse(payload["success"])
         self.assertEqual(payload["error"]["type"], "validation_error")
+
+    def test_anonymize_in_place_overwrites_input_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "incident.txt"
+            file_path.write_text("Email: alice@example.com", encoding="utf-8")
+
+            result = self._run_cli(
+                [
+                    "--input",
+                    str(file_path),
+                    "--level",
+                    "lite",
+                    "--in-place",
+                    "--json",
+                ],
+                env={"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")},
+            )
+
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["data"]["outputPath"], str(file_path))
+            self.assertIn("[EMAIL_1]", file_path.read_text(encoding="utf-8"))
+
+    def test_anonymize_in_place_requires_file_input(self):
+        result = self._run_cli(
+            [
+                "--input",
+                "Email: alice@example.com",
+                "--level",
+                "lite",
+                "--in-place",
+                "--json",
+            ]
+        )
+        self.assertEqual(result.returncode, 2)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error"]["type"], "validation_error")
+
+    def test_anonymize_output_flag_writes_requested_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "custom-output.txt"
+            result = self._run_cli(
+                [
+                    "--input",
+                    "Email: alice@example.com",
+                    "--level",
+                    "lite",
+                    "--output",
+                    str(output_path),
+                    "--json",
+                ],
+                env={"MODEIO_REDACT_MAP_DIR": str(Path(tmpdir) / "maps")},
+            )
+
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["data"]["outputPath"], str(output_path))
+            self.assertTrue(output_path.exists())
+
+    def test_anonymize_rejects_missing_output_directory(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_output = Path(tmpdir) / "missing" / "out.txt"
+            result = self._run_cli(
+                [
+                    "--input",
+                    "Email: alice@example.com",
+                    "--level",
+                    "lite",
+                    "--output",
+                    str(missing_output),
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["success"])
+            self.assertEqual(payload["error"]["type"], "validation_error")
 
     @patch("anonymize.requests.post")
     def test_api_payload_uses_file_input_type_when_file_path_is_used(self, mock_post):

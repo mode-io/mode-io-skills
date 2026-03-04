@@ -443,6 +443,18 @@ python modeio-redact/scripts/anonymize.py --input "Name: 张伟, ID: 31010119900
 python modeio-redact/scripts/anonymize.py --input ./sensitive_notes.txt --level dynamic
 python modeio-redact/scripts/anonymize.py --input ./handoff.md --level lite
 
+# File input writes output files by default:
+# ./sensitive_notes.redacted.txt + ./sensitive_notes.redacted.map.json
+
+# Optional file output controls
+python modeio-redact/scripts/anonymize.py --input ./sensitive_notes.txt --level lite --in-place
+python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com" --output ./manual-redacted.txt --json
+
+# Local de-anonymization (auto map resolution for file input)
+python modeio-redact/scripts/deanonymize.py --input ./sensitive_notes.redacted.txt --json
+python modeio-redact/scripts/deanonymize.py --input ./sensitive_notes.redacted.txt --in-place --json
+python modeio-redact/scripts/deanonymize.py --input "Email: [EMAIL_1]" --map 20260304T050000Z-a1b2c3d4 --json
+
 # For other formats (for example .json), pass the content string explicitly
 python modeio-redact/scripts/anonymize.py --input "$(cat sensitive_data.json)" --level dynamic
 
@@ -458,6 +470,7 @@ python modeio-redact/scripts/detect_local.py --input "Phone 13812345678 Email te
 ```
 
 > `--input` auto-reads existing `.txt` and `.md` file paths. Other file types should be passed as content strings (for example: `--input "$(cat data.json)"`).
+> For file workflows, anonymize/deanonymize now write output files by default unless you use explicit `--output` or `--in-place`.
 
 For full details, see [modeio-redact/SKILL.md](modeio-redact/SKILL.md) and [modeio-guardrail/SKILL.md](modeio-guardrail/SKILL.md).
 
