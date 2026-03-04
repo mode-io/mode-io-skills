@@ -116,6 +116,109 @@ class TestAnonymizeContract(unittest.TestCase):
         self.assertEqual(payload["level"], "dynamic")
         self.assertEqual(payload["error"]["type"], "network_error")
 
+    def test_maybe_save_map_returns_none_without_entries(self):
+        data = {"anonymizedContent": "No placeholders"}
+        map_ref = anonymize._maybe_save_map(
+            raw_input="No placeholders",
+            level="lite",
+            mode="local-regex",
+            data=data,
+        )
+        self.assertIsNone(map_ref)
+        self.assertNotIn("mapRef", data)
+
+    def test_maybe_save_map_from_local_detection_items(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original = os.environ.get("MODEIO_REDACT_MAP_DIR")
+            os.environ["MODEIO_REDACT_MAP_DIR"] = tmpdir
+            try:
+                data = {
+                    "anonymizedContent": "Email: [EMAIL_1]",
+                    "localDetection": {
+                        "items": [
+                            {
+                                "maskedValue": "[EMAIL_1]",
+                                "value": "alice@example.com",
+                                "type": "email",
+                            }
+                        ]
+                    },
+                }
+                map_ref = anonymize._maybe_save_map(
+                    raw_input="Email: alice@example.com",
+                    level="lite",
+                    mode="local-regex",
+                    data=data,
+                )
+                self.assertIsNotNone(map_ref)
+                self.assertEqual(map_ref["entryCount"], 1)
+                self.assertTrue(Path(map_ref["mapPath"]).exists())
+            finally:
+                if original is None:
+                    os.environ.pop("MODEIO_REDACT_MAP_DIR", None)
+                else:
+                    os.environ["MODEIO_REDACT_MAP_DIR"] = original
+
+    def test_maybe_save_map_from_api_mapping_shape(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original = os.environ.get("MODEIO_REDACT_MAP_DIR")
+            os.environ["MODEIO_REDACT_MAP_DIR"] = tmpdir
+            try:
+                data = {
+                    "anonymizedContent": "Name: [NAME_1]",
+                    "mapping": [
+                        {
+                            "anonymized": "[NAME_1]",
+                            "original": "Alice",
+                            "type": "name",
+                        }
+                    ],
+                }
+                map_ref = anonymize._maybe_save_map(
+                    raw_input="Name: Alice",
+                    level="dynamic",
+                    mode="api",
+                    data=data,
+                )
+                self.assertIsNotNone(map_ref)
+                self.assertEqual(map_ref["entryCount"], 1)
+                self.assertIn("mapRef", data)
+            finally:
+                if original is None:
+                    os.environ.pop("MODEIO_REDACT_MAP_DIR", None)
+                else:
+                    os.environ["MODEIO_REDACT_MAP_DIR"] = original
+
+    @patch("anonymize.save_map")
+    def test_maybe_save_map_propagates_storage_error(self, mock_save_map):
+        mock_save_map.side_effect = anonymize.MapStoreError("disk full")
+        data = {
+            "anonymizedContent": "Email: [EMAIL_1]",
+            "mapping": [
+                {
+                    "anonymized": "[EMAIL_1]",
+                    "original": "alice@example.com",
+                    "type": "email",
+                }
+            ],
+        }
+
+        with self.assertRaises(anonymize.MapStoreError):
+            anonymize._maybe_save_map(
+                raw_input="Email: alice@example.com",
+                level="dynamic",
+                mode="api",
+                data=data,
+            )
+
+    def test_append_warning_initializes_warning_list(self):
+        data = {}
+        anonymize._append_warning(data, code="map_persist_failed", message="boom")
+
+        self.assertIn("warnings", data)
+        self.assertEqual(len(data["warnings"]), 1)
+        self.assertEqual(data["warnings"][0]["code"], "map_persist_failed")
+
     @patch("anonymize.requests.post")
     def test_api_payload_uses_text_input_type_and_crossborder_codes(self, mock_post):
         fake_response = Mock()
