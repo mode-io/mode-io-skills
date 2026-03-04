@@ -516,64 +516,28 @@ python modeio-guardrail/scripts/safety.py -i "Modify database permissions" -c "p
 
 # Generic middleware gateway (Codex/OpenCode)
 python modeio-middleware/scripts/setup_middleware_gateway.py --client both --health-check
-python modeio-middleware/scripts/middleware_gateway.py --host 127.0.0.1 --port 8787 --upstream-url "https://api.openai.com/v1/chat/completions"
+python modeio-middleware/scripts/middleware_gateway.py --host 127.0.0.1 --port 8787 --upstream-chat-url "https://api.openai.com/v1/chat/completions" --upstream-responses-url "https://api.openai.com/v1/responses"
 # Quickstart: modeio-middleware/QUICKSTART.md
 
 # Middleware one-command uninstall (prints Codex unset and optional OpenCode rollback)
 python modeio-middleware/scripts/setup_middleware_gateway.py --client both --uninstall --apply-opencode
 
-# Local prompt shield gateway (Codex/OpenCode)
-# Routes OpenAI-compatible chat completion calls through local shield/unshield
-# Optional but recommended for automatic protection.
-# Quickstart: modeio-redact/PROMPT_GATEWAY_QUICKSTART.md
-python modeio-redact/scripts/setup_prompt_gateway.py --client both
-
-# Shortcut
-make prompt-gateway-setup
-# (Windows users can run the direct python command above)
-
-# Optional: apply OpenCode baseURL config automatically (with backup)
-python modeio-redact/scripts/setup_prompt_gateway.py --client opencode --apply-opencode --create-opencode-config
-
+# Runtime prompt shielding now belongs to modeio-middleware (not modeio-redact)
+# Start middleware gateway with separate upstream routes
 export MODEIO_GATEWAY_UPSTREAM_API_KEY="<your-upstream-key>"
-python modeio-redact/scripts/prompt_gateway.py \
+python modeio-middleware/scripts/middleware_gateway.py \
   --host 127.0.0.1 \
   --port 8787 \
-  --upstream-url "https://api.openai.com/v1/chat/completions"
+  --upstream-chat-url "https://api.openai.com/v1/chat/completions" \
+  --upstream-responses-url "https://api.openai.com/v1/responses"
 
 # In your client, set base URL to: http://127.0.0.1:8787/v1
 
-# One-command uninstall (OpenCode rollback + gateway-local map cleanup)
-make prompt-gateway-uninstall
-# (Windows users can run setup_prompt_gateway.py --uninstall directly)
+# Run middleware contract and plugin tests
+python -m unittest discover modeio-middleware/tests -p "test_*.py"
 
-# Optional local git pre-commit staged-diff scanner (agent-agnostic)
-# Install modeio-managed pre-commit hook (default: balanced + medium risk gate)
-python modeio-redact/scripts/setup_precommit_scan.py
-
-# Shortcut
-make precommit-scan-setup
-
-# Keep existing custom pre-commit logic and append modeio scanner block
-python modeio-redact/scripts/setup_precommit_scan.py --append
-
-# One-off staged scan without installing a hook
-python modeio-redact/scripts/precommit_scan.py --verbose
-
-# Uninstall modeio-managed pre-commit scanner block
-python modeio-redact/scripts/setup_precommit_scan.py --uninstall
-
-# Shortcut
-make precommit-scan-uninstall
-
-# Run dedicated gateway contract tests only
-python -m unittest discover modeio-redact/tests -p "test_prompt_gateway*.py"
-python -m unittest modeio-redact.tests.test_setup_prompt_gateway
-
-# Run dedicated pre-commit scanner tests
-python -m unittest modeio-redact.tests.test_precommit_scan
-python -m unittest modeio-redact.tests.test_setup_precommit_scan
-python -m unittest modeio-redact.tests.test_precommit_cli_integration
+# Run redact test suite (focused anonymize/deanonymize and file workflows)
+python -m unittest discover modeio-redact/tests -p "test_*.py"
 
 # Run extensive anonymize/deanonymize smoke matrix
 python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
