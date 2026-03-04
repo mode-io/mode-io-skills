@@ -116,6 +116,115 @@ class TestAnonymizeContract(unittest.TestCase):
         self.assertEqual(payload["level"], "dynamic")
         self.assertEqual(payload["error"]["type"], "network_error")
 
+    def test_txt_file_path_is_auto_resolved_and_redacted(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8", delete=False) as input_file:
+            input_file.write("Email: alice@example.com")
+            file_path = input_file.name
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                result = self._run_cli(
+                    [
+                        "--input",
+                        file_path,
+                        "--level",
+                        "lite",
+                        "--json",
+                    ],
+                    env={"MODEIO_REDACT_MAP_DIR": tmpdir},
+                )
+            finally:
+                os.unlink(file_path)
+
+        self.assertEqual(result.returncode, 0)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["mode"], "local-regex")
+        self.assertEqual(payload["level"], "lite")
+        self.assertTrue(payload["data"]["hasPII"])
+        self.assertIn("[EMAIL_1]", payload["data"]["anonymizedContent"])
+
+    def test_markdown_file_path_is_auto_resolved_and_redacted(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8", delete=False) as input_file:
+            input_file.write("Contact: alice@example.com")
+            file_path = input_file.name
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                result = self._run_cli(
+                    [
+                        "--input",
+                        file_path,
+                        "--level",
+                        "lite",
+                        "--json",
+                    ],
+                    env={"MODEIO_REDACT_MAP_DIR": tmpdir},
+                )
+            finally:
+                os.unlink(file_path)
+
+        self.assertEqual(result.returncode, 0)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["success"])
+        self.assertIn("[EMAIL_1]", payload["data"]["anonymizedContent"])
+
+    def test_unsupported_file_extension_returns_json_validation_error(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8", delete=False) as input_file:
+            input_file.write('{"email": "alice@example.com"}')
+            file_path = input_file.name
+
+        try:
+            result = self._run_cli(
+                [
+                    "--input",
+                    file_path,
+                    "--level",
+                    "dynamic",
+                    "--json",
+                ]
+            )
+        finally:
+            os.unlink(file_path)
+
+        self.assertEqual(result.returncode, 2)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error"]["type"], "validation_error")
+
+    @patch("anonymize.requests.post")
+    def test_api_payload_uses_file_input_type_when_file_path_is_used(self, mock_post):
+        fake_response = Mock()
+        fake_response.raise_for_status.return_value = None
+        fake_response.json.return_value = {
+            "success": True,
+            "data": {
+                "anonymizedContent": "[REDACTED]",
+                "hasPII": True,
+            },
+        }
+        mock_post.return_value = fake_response
+
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8", delete=False) as input_file:
+            input_file.write("Email: alice@example.com")
+            file_path = input_file.name
+
+        try:
+            content, input_type = anonymize.resolve_input_source(file_path)
+            result = anonymize.anonymize(content, level="dynamic", input_type=input_type)
+        finally:
+            os.unlink(file_path)
+
+        self.assertTrue(result["success"])
+        _, kwargs = mock_post.call_args
+        payload = kwargs["json"]
+        self.assertEqual(payload["inputType"], "file")
+
+    def test_non_file_input_stays_text_mode(self):
+        content, input_type = anonymize.resolve_input_source("Email: alice@example.com")
+        self.assertEqual(input_type, "text")
+        self.assertEqual(content, "Email: alice@example.com")
+
     def test_maybe_save_map_returns_none_without_entries(self):
         data = {"anonymizedContent": "No placeholders"}
         map_ref = anonymize._maybe_save_map(

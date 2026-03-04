@@ -11,7 +11,7 @@ import json
 import os
 import sys
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 try:
     import requests
@@ -43,6 +43,7 @@ URL = os.environ.get("ANONYMIZE_API_URL", "https://safety-cf.modeio.ai/api/cf/an
 HEADERS = {"Content-Type": "application/json"}
 
 VALID_LEVELS = ("lite", "dynamic", "strict", "crossborder")
+SUPPORTED_FILE_EXTENSIONS = (".txt", ".md")
 
 TOOL_NAME = "modeio-redact"
 
@@ -71,11 +72,44 @@ def _post_with_retry(url, headers, json_payload, timeout=60):
     raise last_exc  # type: ignore[misc]
 
 
+def resolve_input_source(input_value: str) -> Tuple[str, str]:
+    """Resolve --input as literal text or supported file path."""
+    raw_value = (input_value or "").strip()
+    if not raw_value:
+        raise ValueError("--input must not be empty.")
+
+    expanded_path = os.path.expandvars(os.path.expanduser(raw_value))
+    if os.path.isfile(expanded_path):
+        extension = os.path.splitext(expanded_path)[1].lower()
+        if extension not in SUPPORTED_FILE_EXTENSIONS:
+            allowed = ", ".join(SUPPORTED_FILE_EXTENSIONS)
+            raise ValueError(
+                f"Unsupported file extension '{extension or '(none)'}'. "
+                f"Supported file types: {allowed}."
+            )
+
+        try:
+            with open(expanded_path, "r", encoding="utf-8") as input_file:
+                content = input_file.read()
+        except UnicodeDecodeError as exc:
+            raise ValueError("Input file must be UTF-8 encoded.") from exc
+        except OSError as exc:
+            raise ValueError(f"Failed to read input file: {exc}") from exc
+
+        if not content.strip():
+            raise ValueError("Input file must not be empty.")
+
+        return content, "file"
+
+    return raw_value, "text"
+
+
 def anonymize(
     raw_input: str,
     level: str = "dynamic",
     sender_code: str = None,
     recipient_code: str = None,
+    input_type: str = "text",
 ) -> dict:
     if level == "lite":
         local_result = detect_sensitive_local(raw_input)
@@ -91,7 +125,7 @@ def anonymize(
 
     payload = {
         "input": raw_input,
-        "inputType": "text",
+        "inputType": input_type,
         "level": level,
     }
     if sender_code:
@@ -172,13 +206,16 @@ def _maybe_save_map(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Anonymize text or JSON. `lite` runs locally; other levels call the Modeio API."
+        description=(
+            "Anonymize text/JSON or a .txt/.md file path. "
+            "`lite` runs locally; other levels call the Modeio API."
+        )
     )
     parser.add_argument(
         "-i", "--input",
         type=str,
         required=True,
-        help="Raw content to anonymize (text or JSON string).",
+        help="Raw content to anonymize, or a .txt/.md file path.",
     )
     parser.add_argument(
         "--level",
@@ -206,10 +243,23 @@ def main():
     )
     args = parser.parse_args()
 
-    raw_input = (args.input or "").strip()
+    mode = "local-regex" if args.level == "lite" else "api"
 
-    if not raw_input:
-        print("Error: --input must not be empty.", file=sys.stderr)
+    try:
+        raw_input, input_type = resolve_input_source(args.input)
+    except ValueError as exc:
+        if args.json:
+            print(json.dumps(
+                _error_envelope(
+                    level=args.level,
+                    mode=mode,
+                    error_type="validation_error",
+                    message=str(exc),
+                ),
+                ensure_ascii=False,
+            ))
+        else:
+            print(f"Error: {exc}", file=sys.stderr)
         sys.exit(2)
 
     if args.level == "crossborder":
@@ -234,14 +284,13 @@ def main():
         sender_code = None
         recipient_code = None
 
-    mode = "local-regex" if args.level == "lite" else "api"
-
     try:
         result = anonymize(
             raw_input,
             level=args.level,
             sender_code=sender_code,
             recipient_code=recipient_code,
+            input_type=input_type,
         )
     except requests.RequestException as e:
         response = getattr(e, "response", None)

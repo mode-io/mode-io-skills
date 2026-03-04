@@ -1,9 +1,9 @@
 ---
 name: modeio-redact
-description: Runs PII anonymization and local de-anonymization for text or JSON. Supports local regex masking in lite mode, server-side analysis in dynamic/strict/crossborder modes, and local placeholder restore with saved map files. Use when asked to anonymize data, redact PII, mask sensitive information, detect personal data, restore anonymized placeholders back to originals, check for sensitive content, scrub credentials, or run Modeio anonymization.
+description: Runs PII anonymization and local de-anonymization for text, JSON strings, and `.txt`/`.md` file-path input. Supports local regex masking in lite mode, server-side analysis in dynamic/strict/crossborder modes, and local placeholder restore with saved map files. Use when asked to anonymize data, redact PII, mask sensitive information, detect personal data, restore anonymized placeholders back to originals, check for sensitive content, scrub credentials, or run Modeio anonymization.
 ---
 
-# Run anonymization checks for text and JSON
+# Run anonymization checks for text, JSON, and `.txt`/`.md` files
 
 ## Execution policy
 
@@ -21,11 +21,12 @@ description: Runs PII anonymization and local de-anonymization for text or JSON.
 - `--sender-code`: sender jurisdiction code, required for `crossborder` level (example: `CN SHA`)
 - `--recipient-code`: recipient jurisdiction code, required for `crossborder` level (example: `US NYC`)
 - `--json`: output unified JSON contract for machine consumption
+- `--input` accepts literal content or file paths. Existing `.txt` and `.md` files are auto-read as file input.
 - `--level lite` runs local regex anonymization (no network call).
 - `--level dynamic|strict|crossborder` calls `https://safety-cf.modeio.ai/api/cf/anonymize` by default. Override via `ANONYMIZE_API_URL` environment variable.
 - On successful runs with detected mappings, the script saves a local map file and returns `data.mapRef`.
 - Default local map directory: `~/.modeio/redact/maps`. Override via `MODEIO_REDACT_MAP_DIR`.
-- File-path input mode is not available yet. Planned in a future update.
+- File input currently supports `.txt` and `.md` only. Other existing file types are rejected.
 
 ```bash
 python scripts/anonymize.py --input "Name: Jack, ID number: 110101199001011234"
@@ -39,6 +40,10 @@ python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic
 python scripts/anonymize.py --input "Email: alice@example.com, Phone: 415-555-1234" --level lite
 
 python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic --json
+
+python scripts/anonymize.py --input ./incident-notes.txt --level lite
+
+python scripts/anonymize.py --input ./handoff.md --level dynamic --json
 ```
 
 ### Local de-anonymization: `scripts/deanonymize.py`
@@ -181,4 +186,4 @@ The country portion is the ISO 3166-1 alpha-2 code. The city portion is the IATA
 - `scripts/deanonymize.py`: local-only placeholder restore using saved map files
 - `scripts/map_store.py`: local map persistence and resolution utilities
 - `scripts/detect_local.py`: offline regex detection
-- File-path input mode is intentionally deferred and will be added in a later release.
+- `.txt`/`.md` file paths are auto-detected through `--input`.
