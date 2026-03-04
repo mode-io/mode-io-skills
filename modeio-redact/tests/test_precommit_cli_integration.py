@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 SCRIPTS_SOURCE_DIR = Path(__file__).resolve().parents[1] / "scripts"
+PACKAGE_SOURCE_DIR = Path(__file__).resolve().parents[1] / "modeio_redact"
 
 
 class TestPrecommitCliIntegration(unittest.TestCase):
@@ -33,7 +34,9 @@ class TestPrecommitCliIntegration(unittest.TestCase):
 
     def _prepare_repo(self, repo_root: Path) -> Path:
         scripts_dir = repo_root / "modeio-redact" / "scripts"
+        package_dir = repo_root / "modeio-redact" / "modeio_redact"
         scripts_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(PACKAGE_SOURCE_DIR, package_dir)
 
         for filename in ("detect_local.py", "precommit_scan.py", "setup_precommit_scan.py"):
             shutil.copy2(SCRIPTS_SOURCE_DIR / filename, scripts_dir / filename)
