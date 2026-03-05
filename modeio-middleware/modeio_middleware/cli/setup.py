@@ -14,27 +14,20 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
 from modeio_middleware.cli.setup_lib.claude import (
-    apply_claude_hook_config,
     apply_claude_settings_file,
     default_claude_settings_path,
     derive_claude_hook_url,
-    remove_claude_hook_config,
     uninstall_claude_settings_file,
 )
 from modeio_middleware.cli.setup_lib.common import (
     HealthCheckResult,
     SetupError,
     derive_health_url,
-    ensure_object,
     normalize_gateway_base_url,
-    read_json_file,
-    utc_timestamp,
-    write_json_file,
 )
 from modeio_middleware.cli.setup_lib.opencode import (
     apply_opencode_base_url,
     apply_opencode_config_file,
-    remove_opencode_base_url,
     uninstall_opencode_config_file,
 )
 
@@ -43,22 +36,15 @@ DEFAULT_UPSTREAM_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_UPSTREAM_RESPONSES_URL = "https://api.openai.com/v1/responses"
 
 # Backward-compatible module-level aliases for tests and script wrappers.
-_utc_timestamp = utc_timestamp
 _normalize_gateway_base_url = normalize_gateway_base_url
 _derive_health_url = derive_health_url
-_ensure_object = ensure_object
-_read_json_file = read_json_file
-_write_json_file = write_json_file
 
 _default_claude_settings_path = default_claude_settings_path
 _derive_claude_hook_url = derive_claude_hook_url
-_apply_claude_hook_config = apply_claude_hook_config
-_remove_claude_hook_config = remove_claude_hook_config
 _apply_claude_settings_file = apply_claude_settings_file
 _uninstall_claude_settings_file = uninstall_claude_settings_file
 
 _apply_opencode_base_url = apply_opencode_base_url
-_remove_opencode_base_url = remove_opencode_base_url
 _apply_opencode_config_file = apply_opencode_config_file
 _uninstall_opencode_config_file = uninstall_opencode_config_file
 

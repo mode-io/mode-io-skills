@@ -133,6 +133,52 @@ def build_handler(engine: MiddlewareEngine):
             self.end_headers()
             self.wfile.write(body)
 
+        def _default_contract_headers(self, request_id: str) -> Dict[str, str]:
+            return contract_headers(
+                request_id,
+                profile=engine.config.default_profile,
+                pre_actions=[],
+                post_actions=[],
+                degraded=[],
+                upstream_called=False,
+            )
+
+        def _send_contract_error(
+            self,
+            request_id: str,
+            *,
+            status: int,
+            code: str,
+            message: str,
+            retryable: bool,
+            details: Optional[Dict[str, Any]] = None,
+        ) -> None:
+            self._send_json(
+                status,
+                error_payload(
+                    request_id,
+                    code,
+                    message,
+                    retryable=retryable,
+                    details=details,
+                ),
+                self._default_contract_headers(request_id),
+            )
+
+        def _read_json_body_or_send_error(self, request_id: str) -> Optional[Dict[str, Any]]:
+            try:
+                return _read_json_body(self)
+            except MiddlewareError as error:
+                self._send_contract_error(
+                    request_id,
+                    status=error.status,
+                    code=error.code,
+                    message=error.message,
+                    retryable=error.retryable,
+                    details=error.details,
+                )
+                return None
+
         def _send_stream(self, status: int, stream: Sequence[bytes] | Any, headers: Dict[str, str]) -> None:
             self.send_response(status)
             has_connection_header = False
@@ -173,25 +219,8 @@ def build_handler(engine: MiddlewareEngine):
             request_path = urlsplit(self.path).path
 
             if request_path == CLAUDE_HOOK_CONNECTOR_PATH:
-                try:
-                    body = _read_json_body(self)
-                except MiddlewareError as error:
-                    headers = contract_headers(
-                        request_id,
-                        profile=engine.config.default_profile,
-                        pre_actions=[],
-                        post_actions=[],
-                        degraded=[],
-                        upstream_called=False,
-                    )
-                    payload = error_payload(
-                        request_id,
-                        error.code,
-                        error.message,
-                        retryable=error.retryable,
-                        details=error.details,
-                    )
-                    self._send_json(error.status, payload, headers)
+                body = self._read_json_body_or_send_error(request_id)
+                if body is None:
                     return
 
                 result = engine.process_claude_hook(
@@ -205,42 +234,17 @@ def build_handler(engine: MiddlewareEngine):
             endpoint_kind = PATH_TO_ENDPOINT_KIND.get(request_path)
 
             if endpoint_kind is None:
-                headers = contract_headers(
+                self._send_contract_error(
                     request_id,
-                    profile=engine.config.default_profile,
-                    pre_actions=[],
-                    post_actions=[],
-                    degraded=[],
-                    upstream_called=False,
-                )
-                payload = error_payload(
-                    request_id,
-                    "MODEIO_ROUTE_NOT_FOUND",
-                    "route not found",
+                    status=404,
+                    code="MODEIO_ROUTE_NOT_FOUND",
+                    message="route not found",
                     retryable=False,
                 )
-                self._send_json(404, payload, headers)
                 return
 
-            try:
-                body = _read_json_body(self)
-            except MiddlewareError as error:
-                headers = contract_headers(
-                    request_id,
-                    profile=engine.config.default_profile,
-                    pre_actions=[],
-                    post_actions=[],
-                    degraded=[],
-                    upstream_called=False,
-                )
-                payload = error_payload(
-                    request_id,
-                    error.code,
-                    error.message,
-                    retryable=error.retryable,
-                    details=error.details,
-                )
-                self._send_json(error.status, payload, headers)
+            body = self._read_json_body_or_send_error(request_id)
+            if body is None:
                 return
 
             result = engine.process_request(
