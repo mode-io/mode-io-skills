@@ -14,12 +14,16 @@ Core runtime remains generic and plugin-based.
 ```text
 modeio-middleware/
   config/default.json
-  config/presets/
-    guardrail.json
+  MODEIO_PLUGIN_PROTOCOL.md
+  MODEIO_PLUGIN_MANIFEST.schema.json
+  MODEIO_PLUGIN_MESSAGE.schema.json
+  PROTOCOL_IMPLEMENTATION_PLAN.md
   scripts/
     middleware_gateway.py
     new_plugin.py
+    run_plugin_conformance.py
     setup_middleware_gateway.py
+    validate_plugin_manifest.py
   modeio_middleware/
     cli/
       gateway.py
@@ -37,19 +41,29 @@ modeio-middleware/
       services/
         defer_queue.py
         telemetry.py
+    protocol/
+      versions.py
+      messages.py
+      manifest.py
+      validator.py
+      jsonpatch.py
+    registry/
+      resolver.py
+      loader.py
+    runtime/
+      base.py
+      legacy_inprocess.py
+      stdio_jsonrpc.py
+      supervisor.py
     plugins/
       base.py
-      guardrail.py
-      guardrail_impl/
-        plugin.py
-        policy.py
-        client.py
-        presets.py
       redact.py
   tests/
     test_config_resolver.py
-    test_guardrail_plugin_preset.py
     test_gateway_contract.py
+    test_protocol_manifest.py
+    test_protocol_registry.py
+    test_protocol_stdio_runtime.py
     test_smoke_opencode_flow.py
     test_setup_gateway.py
     test_plugin_manager.py
@@ -61,20 +75,23 @@ modeio-middleware/
 1. Gateway receives `POST /v1/chat/completions`
 2. Core validates request and parses `modeio` metadata
 3. Config resolver computes final plugin config (defaults + preset + profile override + request override)
-4. Plugin manager runs pre-request hooks
-5. Core forwards request to upstream provider
-6. Plugin manager runs post-response hooks
-7. Gateway returns provider-compatible JSON + middleware headers
+4. Registry resolves runtime spec (mode, capabilities, transport)
+5. Plugin manager runs pre-request hooks through runtime adapters
+6. Core forwards request to upstream provider
+7. Plugin manager runs post-response/stream hooks through runtime adapters
+8. Gateway returns provider-compatible JSON + middleware headers
 
 ## Integration boundaries
 
 - `plugins/base.py` defines plugin contract
 - Plugins can return dict payloads or typed `HookDecision`
 - Plugins can `allow`, `modify`, `warn`, `defer`, or `block`
-- Existing skills integrate as optional plugin modules
-- Core does not hardcode guardrail/redact decisions
-- Presets are registry-driven (`config/presets/*.json`)
+- In-process plugins run via `runtime/legacy_inprocess.py`
+- External plugins run via `runtime/stdio_jsonrpc.py` using MPP v1
+- Core does not hardcode plugin-specific policy decisions
+- Presets are registry-driven when provided (`config/presets/*.json`)
 - Runtime shared services are injected via `hook_input["services"]`
+- Mode controls (`observe`, `assist`, `enforce`) keep external plugins non-intrusive by default
 
 ## Compatibility and safety
 

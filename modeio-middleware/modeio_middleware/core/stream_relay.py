@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Iterable, Iterator, List
+from typing import Any, Callable, Dict, Iterable, Iterator, List
 
 from modeio_middleware.core.plugin_manager import ActivePlugin, PluginManager
 from modeio_middleware.core.sse import parse_sse_data_line, serialize_sse_data_line
@@ -22,6 +22,7 @@ def iter_transformed_sse_stream(
     on_plugin_error: str,
     degraded: List[str],
     services: Dict[str, Any] | None = None,
+    on_finish: Callable[[], None] | None = None,
 ) -> Iterator[bytes]:
     runtime_degraded = list(degraded)
     try:
@@ -95,3 +96,8 @@ def iter_transformed_sse_stream(
             yield b"data: [DONE]\n\n"
     finally:
         upstream_response.close()
+        if on_finish is not None:
+            try:
+                on_finish()
+            except Exception:
+                pass

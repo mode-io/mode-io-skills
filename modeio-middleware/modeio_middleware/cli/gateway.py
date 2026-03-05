@@ -112,6 +112,7 @@ def load_runtime_config(args: argparse.Namespace) -> GatewayRuntimeConfig:
         plugins=plugins,
         preset_registry=preset_registry,
         service_config=services,
+        config_base_dir=str(config_path.parent),
     )
 
 

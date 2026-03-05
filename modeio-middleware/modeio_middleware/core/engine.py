@@ -37,6 +37,7 @@ class GatewayRuntimeConfig:
     plugins: Dict[str, Any] = None  # type: ignore[assignment]
     preset_registry: Dict[str, Any] = None  # type: ignore[assignment]
     service_config: Dict[str, Any] = None  # type: ignore[assignment]
+    config_base_dir: str = ""
 
 
 @dataclass
@@ -76,6 +77,7 @@ class MiddlewareEngine:
         self.plugin_manager = PluginManager(
             runtime_config.plugins or {},
             preset_registry=runtime_config.preset_registry or {},
+            config_base_dir=runtime_config.config_base_dir,
         )
         self.services = _build_runtime_services(runtime_config.service_config)
 
@@ -138,6 +140,8 @@ class MiddlewareEngine:
         post_actions: List[str] = []
         degraded: List[str] = []
         profile = self.config.default_profile
+        active_plugins: List[ActivePlugin] = []
+        release_plugins = True
 
         try:
             stream_enabled = validate_endpoint_payload(endpoint_kind, request_body)
@@ -186,7 +190,7 @@ class MiddlewareEngine:
                 )
 
             if stream_enabled:
-                return self._process_stream_request(
+                stream_result = self._process_stream_request(
                     endpoint_kind=endpoint_kind,
                     request_id=request_id,
                     profile=profile,
@@ -202,6 +206,9 @@ class MiddlewareEngine:
                     pre_actions=pre_actions,
                     degraded=degraded,
                 )
+                if isinstance(stream_result, StreamProcessResult) and stream_result.stream is not None:
+                    release_plugins = False
+                return stream_result
 
             upstream_called = True
             upstream_payload = forward_upstream_json(
@@ -273,6 +280,9 @@ class MiddlewareEngine:
                 upstream_called=upstream_called,
                 error=error,
             )
+        finally:
+            if release_plugins and active_plugins:
+                self.plugin_manager.shutdown_active_plugins(active_plugins)
 
     def _process_stream_request(
         self,
@@ -355,6 +365,7 @@ class MiddlewareEngine:
                 on_plugin_error=on_plugin_error,
                 degraded=degraded,
                 services=self.services,
+                on_finish=lambda: self.plugin_manager.shutdown_active_plugins(active_plugins),
             ),
             payload=None,
         )

@@ -1,0 +1,25 @@
+{
+  "name": "tests/stdio-echo-plugin",
+  "version": "0.1.0",
+  "protocol_version": "1.0",
+  "transport": "stdio-jsonrpc",
+  "hooks": [
+    "pre.request",
+    "post.response",
+    "post.stream.start",
+    "post.stream.event",
+    "post.stream.end"
+  ],
+  "capabilities": {
+    "can_patch": true,
+    "can_block": true,
+    "can_defer": true,
+    "needs_network": false,
+    "needs_raw_body": false
+  },
+  "timeout_ms": {
+    "pre.request": 200,
+    "post.response": 150,
+    "post.stream.event": 60
+  }
+}

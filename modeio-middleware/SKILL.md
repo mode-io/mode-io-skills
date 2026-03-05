@@ -54,15 +54,34 @@ Scaffold a new plugin and a matching unit test.
 
 ```bash
 python modeio-middleware/scripts/new_plugin.py my-plugin
+python modeio-middleware/scripts/new_plugin.py my-protocol-plugin --runtime stdio_jsonrpc
+```
+
+### `scripts/validate_plugin_manifest.py`
+
+Validate an external protocol plugin manifest.
+
+```bash
+python modeio-middleware/scripts/validate_plugin_manifest.py /path/to/manifest.json
+```
+
+### `scripts/run_plugin_conformance.py`
+
+Run basic stdio protocol conformance checks.
+
+```bash
+python modeio-middleware/scripts/run_plugin_conformance.py /path/to/manifest.json python3 /path/to/plugin.py
 ```
 
 ## Behavior notes
 
 - Core middleware is generic; plugin chain is config-driven (`config/default.json`).
-- Default plugin definitions include `guardrail` and `redact`, both disabled by default.
-- Profile `guardrail_quiet` enables guardrail-only execution with the quiet preset.
-- Presets are loaded from `config/presets/*.json` and resolved in core.
+- Default bundled plugin definition includes `redact` (disabled by default).
+- Presets are optional and resolved in core when supplied by config.
 - Profile policy controls plugin-error behavior (`fail_open`, `warn`, `fail_safe`).
+- External plugins use `stdio-jsonrpc` with ModeIO Plugin Protocol v1.
+- External runtime mode defaults to `observe` for non-intrusive behavior.
+- Runtime modes: `observe`, `assist`, `enforce`.
 - Plugins receive shared runtime services in `hook_input["services"]` (telemetry, defer queue).
 - Stream pipeline supports `post_stream_start`, `post_stream_event`, and `post_stream_end` hooks.
 
@@ -86,3 +105,5 @@ python modeio-middleware/scripts/new_plugin.py my-plugin
 - `CONTRACT_AND_IMPLEMENTATION_PLAN.md`
 - `ARCHITECTURE.md`
 - `QUICKSTART.md`
+- `MODEIO_PLUGIN_PROTOCOL.md`
+- `PROTOCOL_IMPLEMENTATION_PLAN.md`

@@ -130,6 +130,91 @@ def resolve_profile_plugin_overrides(profile_config: Dict[str, Any]) -> Dict[str
                 f"profile.plugin_overrides.{plugin_name}.preset must be a non-empty string",
                 retryable=False,
             )
+        if "mode" in plugin_override and (
+            not isinstance(plugin_override["mode"], str)
+            or not plugin_override["mode"].strip()
+        ):
+            raise MiddlewareError(
+                500,
+                "MODEIO_CONFIG_ERROR",
+                f"profile.plugin_overrides.{plugin_name}.mode must be a non-empty string",
+                retryable=False,
+            )
+        if "manifest" in plugin_override and (
+            not isinstance(plugin_override["manifest"], str)
+            or not plugin_override["manifest"].strip()
+        ):
+            raise MiddlewareError(
+                500,
+                "MODEIO_CONFIG_ERROR",
+                f"profile.plugin_overrides.{plugin_name}.manifest must be a non-empty string",
+                retryable=False,
+            )
+        if "command" in plugin_override:
+            command = plugin_override["command"]
+            if not isinstance(command, list) or not command:
+                raise MiddlewareError(
+                    500,
+                    "MODEIO_CONFIG_ERROR",
+                    f"profile.plugin_overrides.{plugin_name}.command must be a non-empty array",
+                    retryable=False,
+                )
+            for index, item in enumerate(command):
+                if not isinstance(item, str) or not item.strip():
+                    raise MiddlewareError(
+                        500,
+                        "MODEIO_CONFIG_ERROR",
+                        f"profile.plugin_overrides.{plugin_name}.command[{index}] must be a non-empty string",
+                        retryable=False,
+                    )
+        if "capabilities_grant" in plugin_override:
+            grants = plugin_override["capabilities_grant"]
+            if not isinstance(grants, dict):
+                raise MiddlewareError(
+                    500,
+                    "MODEIO_CONFIG_ERROR",
+                    f"profile.plugin_overrides.{plugin_name}.capabilities_grant must be an object",
+                    retryable=False,
+                )
+            for cap_key, cap_value in grants.items():
+                if not isinstance(cap_key, str) or not cap_key.strip():
+                    raise MiddlewareError(
+                        500,
+                        "MODEIO_CONFIG_ERROR",
+                        f"profile.plugin_overrides.{plugin_name}.capabilities_grant keys must be non-empty strings",
+                        retryable=False,
+                    )
+                if not isinstance(cap_value, bool):
+                    raise MiddlewareError(
+                        500,
+                        "MODEIO_CONFIG_ERROR",
+                        f"profile.plugin_overrides.{plugin_name}.capabilities_grant.{cap_key} must be boolean",
+                        retryable=False,
+                    )
+        if "timeout_ms" in plugin_override:
+            timeout_map = plugin_override["timeout_ms"]
+            if not isinstance(timeout_map, dict):
+                raise MiddlewareError(
+                    500,
+                    "MODEIO_CONFIG_ERROR",
+                    f"profile.plugin_overrides.{plugin_name}.timeout_ms must be an object",
+                    retryable=False,
+                )
+            for hook_name, timeout_value in timeout_map.items():
+                if not isinstance(hook_name, str) or not hook_name.strip():
+                    raise MiddlewareError(
+                        500,
+                        "MODEIO_CONFIG_ERROR",
+                        f"profile.plugin_overrides.{plugin_name}.timeout_ms keys must be non-empty strings",
+                        retryable=False,
+                    )
+                if not isinstance(timeout_value, int) or timeout_value <= 0:
+                    raise MiddlewareError(
+                        500,
+                        "MODEIO_CONFIG_ERROR",
+                        f"profile.plugin_overrides.{plugin_name}.timeout_ms.{hook_name} must be a positive integer",
+                        retryable=False,
+                    )
         overrides[plugin_name.strip()] = dict(plugin_override)
 
     return overrides

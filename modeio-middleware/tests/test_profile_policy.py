@@ -44,28 +44,28 @@ class TestProfilePolicy(unittest.TestCase):
 
     def test_resolve_profile_plugins_requires_string_entries(self):
         with self.assertRaises(MiddlewareError):
-            resolve_profile_plugins({"plugins": ["guardrail", 123]})
+            resolve_profile_plugins({"plugins": ["example_policy", 123]})
 
     def test_resolve_profile_plugin_overrides_returns_mapping(self):
         overrides = resolve_profile_plugin_overrides(
             {
                 "plugin_overrides": {
-                    "guardrail": {
+                    "example_policy": {
                         "enabled": True,
                         "preset": "quiet",
                     }
                 }
             }
         )
-        self.assertTrue(overrides["guardrail"]["enabled"])
-        self.assertEqual(overrides["guardrail"]["preset"], "quiet")
+        self.assertTrue(overrides["example_policy"]["enabled"])
+        self.assertEqual(overrides["example_policy"]["preset"], "quiet")
 
     def test_resolve_profile_plugin_overrides_rejects_non_object_override(self):
         with self.assertRaises(MiddlewareError):
             resolve_profile_plugin_overrides(
                 {
                     "plugin_overrides": {
-                        "guardrail": True,
+                        "example_policy": True,
                     }
                 }
             )
@@ -75,7 +75,7 @@ class TestProfilePolicy(unittest.TestCase):
             resolve_profile_plugin_overrides(
                 {
                     "plugin_overrides": {
-                        "guardrail": {
+                        "example_policy": {
                             "enabled": "yes",
                         }
                     }
@@ -87,8 +87,22 @@ class TestProfilePolicy(unittest.TestCase):
             resolve_profile_plugin_overrides(
                 {
                     "plugin_overrides": {
-                        "guardrail": {
+                        "example_policy": {
                             "preset": True,
+                        }
+                    }
+                }
+            )
+
+    def test_resolve_profile_plugin_overrides_rejects_invalid_capabilities_grant(self):
+        with self.assertRaises(MiddlewareError):
+            resolve_profile_plugin_overrides(
+                {
+                    "plugin_overrides": {
+                        "example_policy": {
+                            "capabilities_grant": {
+                                "can_patch": "yes",
+                            }
                         }
                     }
                 }

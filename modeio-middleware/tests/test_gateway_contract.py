@@ -156,8 +156,34 @@ class TestGatewayContract(unittest.TestCase):
                     "messages": [{"role": "user", "content": "hello"}],
                     "modeio": {
                         "plugins": {
-                            "guardrail": {
+                            "custom_policy": {
                                 "preset": True,
+                            }
+                        }
+                    },
+                },
+            )
+            self.assertEqual(status, 400)
+            self.assertEqual(payload["error"]["code"], "MODEIO_VALIDATION_ERROR")
+        finally:
+            gateway_stub.stop()
+            upstream.stop()
+
+    def test_invalid_modeio_plugin_mode_returns_validation_error(self):
+        upstream, gateway_stub = self._start_pair(
+            lambda _path, payload: completion_payload(payload["messages"][0]["content"])
+        )
+        try:
+            status, _headers, payload = self._post_json(
+                gateway_stub.base_url,
+                "/v1/chat/completions",
+                {
+                    "model": "gpt-test",
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "modeio": {
+                        "plugins": {
+                            "custom_policy": {
+                                "mode": True,
                             }
                         }
                     },
@@ -232,10 +258,6 @@ class TestGatewayContract(unittest.TestCase):
 
     def test_redact_plugin_shields_and_restores_non_stream_chat(self):
         plugins = {
-            "guardrail": {
-                "enabled": False,
-                "module": "modeio_middleware.plugins.guardrail",
-            },
             "redact": {
                 "enabled": True,
                 "module": "modeio_middleware.plugins.redact",
@@ -282,10 +304,6 @@ class TestGatewayContract(unittest.TestCase):
 
     def test_redact_plugin_restores_streamed_chat_content(self):
         plugins = {
-            "guardrail": {
-                "enabled": False,
-                "module": "modeio_middleware.plugins.guardrail",
-            },
             "redact": {
                 "enabled": True,
                 "module": "modeio_middleware.plugins.redact",
@@ -368,7 +386,7 @@ class TestGatewayContract(unittest.TestCase):
             gateway_stub.stop()
             upstream.stop()
 
-    def test_profile_plugin_override_can_enable_guardrail_only_preset(self):
+    def test_profile_plugin_override_can_enable_plugin(self):
         module_name = "modeio_middleware.tests.plugins.blocker_profile_enabled"
         _register_blocker_plugin_module(module_name)
 
@@ -379,7 +397,7 @@ class TestGatewayContract(unittest.TestCase):
             }
         }
         profiles = {
-            "guardrail_quiet": {
+            "profile_with_override": {
                 "on_plugin_error": "warn",
                 "plugins": ["blocker"],
                 "plugin_overrides": {
@@ -403,7 +421,7 @@ class TestGatewayContract(unittest.TestCase):
                     "model": "gpt-test",
                     "messages": [{"role": "user", "content": "hello"}],
                     "modeio": {
-                        "profile": "guardrail_quiet",
+                        "profile": "profile_with_override",
                     },
                 },
             )
@@ -425,7 +443,7 @@ class TestGatewayContract(unittest.TestCase):
             }
         }
         profiles = {
-            "guardrail_quiet": {
+            "profile_with_override": {
                 "on_plugin_error": "warn",
                 "plugins": ["blocker"],
                 "plugin_overrides": {
@@ -449,7 +467,7 @@ class TestGatewayContract(unittest.TestCase):
                     "model": "gpt-test",
                     "messages": [{"role": "user", "content": "hello"}],
                     "modeio": {
-                        "profile": "guardrail_quiet",
+                        "profile": "profile_with_override",
                         "plugins": {
                             "blocker": {
                                 "enabled": False,
