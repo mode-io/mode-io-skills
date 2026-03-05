@@ -6,7 +6,10 @@ from __future__ import annotations
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Any, Iterable, List, Sequence, Tuple
+
+from modeio_redact.core.models import MappingEntry
+from modeio_redact.core.replacement import build_replacement_pairs
 
 from modeio_redact.workflow.file_types import (
     HANDLER_DOCX,
@@ -47,21 +50,22 @@ def write_non_text_anonymized_file(
     input_path: Path,
     output_path: Path,
     extension: str,
-    mapping_entries: Sequence[Dict[str, str]],
+    mapping_entries: Sequence[Any],
 ) -> None:
+    normalized_entries = _normalize_entries(mapping_entries)
     handler_key = handler_key_for_extension(extension)
     if handler_key == HANDLER_DOCX:
         _write_docx_with_replacements(
             input_path=input_path,
             output_path=output_path,
-            replacements=_build_replacements(mapping_entries, deanonymize=False),
+            replacements=build_replacement_pairs(normalized_entries, direction="redact"),
         )
         return
     if handler_key == HANDLER_PDF:
         _write_pdf_with_redactions(
             input_path=input_path,
             output_path=output_path,
-            targets=_build_pdf_redaction_targets(mapping_entries),
+            targets=_build_pdf_redaction_targets(normalized_entries),
         )
         return
     raise ValueError(f"Unsupported non-text anonymization handler for extension '{extension}'.")
@@ -71,14 +75,15 @@ def write_non_text_deanonymized_file(
     input_path: Path,
     output_path: Path,
     extension: str,
-    mapping_entries: Sequence[Dict[str, str]],
+    mapping_entries: Sequence[Any],
 ) -> None:
+    normalized_entries = _normalize_entries(mapping_entries)
     handler_key = handler_key_for_extension(extension)
     if handler_key == HANDLER_DOCX:
         _write_docx_with_replacements(
             input_path=input_path,
             output_path=output_path,
-            replacements=_build_replacements(mapping_entries, deanonymize=True),
+            replacements=build_replacement_pairs(normalized_entries, direction="restore"),
         )
         return
     if handler_key == HANDLER_PDF:
@@ -155,29 +160,17 @@ def _read_docx_text(path: Path) -> str:
     return "\n".join(lines).strip()
 
 
-def _build_replacements(
-    mapping_entries: Sequence[Dict[str, str]],
-    deanonymize: bool,
-) -> List[Tuple[str, str]]:
-    replacements: List[Tuple[str, str]] = []
-    seen = set()
-    for entry in mapping_entries:
-        source_key = "placeholder" if deanonymize else "original"
-        target_key = "original" if deanonymize else "placeholder"
-        source = entry.get(source_key)
-        target = entry.get(target_key)
-        if not isinstance(source, str) or not isinstance(target, str):
+def _normalize_entries(mapping_entries: Sequence[Any]) -> List[MappingEntry]:
+    normalized: List[MappingEntry] = []
+    for raw in mapping_entries:
+        if isinstance(raw, MappingEntry):
+            normalized.append(raw)
             continue
-        source = source.strip()
-        if not source:
-            continue
-        dedupe_key = (source, target)
-        if dedupe_key in seen:
-            continue
-        seen.add(dedupe_key)
-        replacements.append((source, target))
-    replacements.sort(key=lambda pair: len(pair[0]), reverse=True)
-    return replacements
+        if isinstance(raw, dict):
+            entry = MappingEntry.from_raw(raw)
+            if entry is not None:
+                normalized.append(entry)
+    return normalized
 
 
 def _apply_replacements_to_paragraph(paragraph, replacements: Sequence[Tuple[str, str]]) -> None:
@@ -257,14 +250,11 @@ def _read_pdf_text(path: Path) -> str:
     return "\n\n".join(page_texts).strip()
 
 
-def _build_pdf_redaction_targets(mapping_entries: Sequence[Dict[str, str]]) -> List[str]:
+def _build_pdf_redaction_targets(mapping_entries: Sequence[MappingEntry]) -> List[str]:
     targets: List[str] = []
     seen = set()
     for entry in mapping_entries:
-        value = entry.get("original")
-        if not isinstance(value, str):
-            continue
-        value = value.strip()
+        value = entry.original.strip()
         if not value or value in seen:
             continue
         seen.add(value)

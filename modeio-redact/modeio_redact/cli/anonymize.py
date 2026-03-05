@@ -11,7 +11,7 @@ import json
 import os
 import sys
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 REQUESTS_AVAILABLE = True
 try:
@@ -60,6 +60,7 @@ from modeio_redact.workflow.input_source import (
     resolve_input_source,
     resolve_input_source_context,
 )
+from modeio_redact.core.models import MapRef, MappingEntry
 from modeio_redact.workflow.map_store import MapStoreError, normalize_mapping_entries, save_map
 
 # Backend API URL, overridable via ANONYMIZE_API_URL environment variable
@@ -139,7 +140,7 @@ def _validate_non_text_mapping_or_raise(
     raw_input: str,
     anonymized_content: str,
     has_pii: Any,
-    entries: list,
+    entries: List[MappingEntry],
 ) -> None:
     if not input_path or not input_extension:
         return
@@ -331,8 +332,8 @@ def _maybe_save_map(
     level: str,
     mode: str,
     data: Dict[str, Any],
-    entries: Optional[list] = None,
-) -> Optional[Dict[str, Any]]:
+    entries: Optional[List[MappingEntry]] = None,
+) -> Optional[MapRef]:
     if entries is None:
         entries = normalize_mapping_entries(data)
     if not entries:
@@ -349,7 +350,7 @@ def _maybe_save_map(
         level=level,
         source_mode=mode,
     )
-    data["mapRef"] = map_ref
+    data["mapRef"] = map_ref.to_dict()
     return map_ref
 
 
@@ -604,7 +605,7 @@ def main():
         print("mode: local-regex", file=sys.stderr)
     print("hasPII:", has_pii, file=sys.stderr)
     if map_ref:
-        print(f"mapId: {map_ref['mapId']}", file=sys.stderr)
+        print(f"mapId: {map_ref.map_id}", file=sys.stderr)
     if output_path:
         print(f"outputPath: {output_path}", file=sys.stderr)
     if sidecar_path:

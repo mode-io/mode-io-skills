@@ -551,8 +551,8 @@ class TestAnonymizeContract(unittest.TestCase):
                     data=data,
                 )
                 self.assertIsNotNone(map_ref)
-                self.assertEqual(map_ref["entryCount"], 1)
-                self.assertTrue(Path(map_ref["mapPath"]).exists())
+                self.assertEqual(map_ref.entry_count, 1)
+                self.assertTrue(Path(map_ref.map_path).exists())
             finally:
                 if original is None:
                     os.environ.pop("MODEIO_REDACT_MAP_DIR", None)
@@ -581,7 +581,7 @@ class TestAnonymizeContract(unittest.TestCase):
                     data=data,
                 )
                 self.assertIsNotNone(map_ref)
-                self.assertEqual(map_ref["entryCount"], 1)
+                self.assertEqual(map_ref.entry_count, 1)
                 self.assertIn("mapRef", data)
             finally:
                 if original is None:

@@ -3,14 +3,14 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence
+from typing import Any, List, Sequence
 
-from modeio_redact.core.models import ResidualFinding
+from modeio_redact.core.models import MappingEntry, ResidualFinding
 
 
 def scan_for_residuals(
     text: str,
-    mapping_entries: Sequence[Dict[str, str]],
+    mapping_entries: Sequence[Any],
     *,
     part_id: str,
 ) -> List[ResidualFinding]:
@@ -18,7 +18,12 @@ def scan_for_residuals(
     findings: List[ResidualFinding] = []
     seen = set()
     for entry in mapping_entries:
-        original = (entry.get("original") or "").strip()
+        if isinstance(entry, MappingEntry):
+            original = entry.original.strip()
+        elif isinstance(entry, dict):
+            original = str(entry.get("original") or "").strip()
+        else:
+            continue
         if not original or original in seen:
             continue
         seen.add(original)

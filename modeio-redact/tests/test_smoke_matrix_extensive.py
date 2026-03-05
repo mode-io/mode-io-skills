@@ -380,8 +380,10 @@ class TestSmokeMatrixExtensive(unittest.TestCase):
             self.assertIn("alice@example.com", restored_text)
             self.assertIn("415-555-1234", restored_text)
 
-    @unittest.skipUnless(os.environ.get("MODEIO_REDACT_RUN_API_SMOKE") == "1", "set MODEIO_REDACT_RUN_API_SMOKE=1")
     def test_api_dynamic_and_crossborder_smoke(self):
+        if os.environ.get("MODEIO_REDACT_SKIP_API_SMOKE") == "1":
+            self.skipTest("set MODEIO_REDACT_SKIP_API_SMOKE=1 to disable API smoke")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
             env = {"MODEIO_REDACT_MAP_DIR": str(tmp_path / "maps")}

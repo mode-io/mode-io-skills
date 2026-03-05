@@ -4,13 +4,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Optional, Sequence
 
 from modeio_redact.adapters.registry import AdapterRegistry, default_adapter_registry
 from modeio_redact.core.errors import ApplyError, VerificationError
 from modeio_redact.core.models import (
     ApplyReport,
     InputSource,
+    MapRef,
+    MappingEntry,
     OutputPipelineResult,
     VerificationReport,
 )
@@ -76,9 +78,9 @@ class RedactionFilePipeline:
         *,
         source: InputSource,
         anonymized_content: str,
-        mapping_entries: Sequence[Dict[str, str]],
+        mapping_entries: Sequence[MappingEntry],
         resolved_output_path: Optional[Path],
-        map_ref: Optional[Dict[str, Any]],
+        map_ref: Optional[MapRef],
     ) -> OutputPipelineResult:
         adapter = self.adapter_registry.adapter_for_source(source)
         extraction = adapter.extract(source)
@@ -105,9 +107,12 @@ class RedactionFilePipeline:
                 verification_report=VerificationReport.skipped_report(),
             )
 
+        if isinstance(map_ref, dict):
+            map_ref = MapRef.from_dict(map_ref)
+
         map_id = None
-        if map_ref and isinstance(map_ref.get("mapId"), str):
-            map_id = map_ref.get("mapId")
+        if map_ref:
+            map_id = map_ref.map_id
 
         apply_report = adapter.apply(
             source=source,

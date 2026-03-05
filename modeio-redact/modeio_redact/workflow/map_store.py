@@ -12,7 +12,9 @@ import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+from modeio_redact.core.models import MappingEntry, MapRecord, MapRef
 
 MAP_DIR_ENV = "MODEIO_REDACT_MAP_DIR"
 DEFAULT_MAP_DIR = Path.home() / ".modeio" / "redact" / "maps"
@@ -48,65 +50,46 @@ def get_map_dir() -> Path:
     return map_dir
 
 
-def _normalize_entry(raw: Dict[str, Any]) -> Optional[Dict[str, str]]:
-    if not isinstance(raw, dict):
-        return None
-
-    placeholder = raw.get("placeholder") or raw.get("anonymized") or raw.get("maskedValue")
-    original = raw.get("original")
-    if original is None:
-        original = raw.get("value")
-
-    if not isinstance(placeholder, str) or not isinstance(original, str):
-        return None
-
-    placeholder = placeholder.strip()
-    original = original.strip()
-    if not placeholder or not original:
-        return None
-
-    entity_type = raw.get("type")
-    if not isinstance(entity_type, str) or not entity_type.strip():
-        entity_type = "unknown"
-
-    return {
-        "placeholder": placeholder,
-        "original": original,
-        "type": entity_type,
-    }
+# ---------------------------------------------------------------------------
+# Entry normalization
+# ---------------------------------------------------------------------------
 
 
-def normalize_mapping_entries(data: Dict[str, Any]) -> List[Dict[str, str]]:
-    entries: List[Dict[str, str]] = []
-    seen_placeholders = set()
+def normalize_mapping_entries(data: Dict[str, Any]) -> List[MappingEntry]:
+    entries: List[MappingEntry] = []
+    seen_placeholders: set = set()
+
+    def _collect(items: Any) -> None:
+        if not isinstance(items, list):
+            return
+        for item in items:
+            entry = MappingEntry.from_raw(item)
+            if entry is None:
+                continue
+            if entry.placeholder in seen_placeholders:
+                continue
+            seen_placeholders.add(entry.placeholder)
+            entries.append(entry)
 
     local_detection = data.get("localDetection")
     if isinstance(local_detection, dict):
-        local_items = local_detection.get("items")
-        if isinstance(local_items, list):
-            for item in local_items:
-                normalized = _normalize_entry(item)
-                if not normalized:
-                    continue
-                placeholder = normalized["placeholder"]
-                if placeholder in seen_placeholders:
-                    continue
-                seen_placeholders.add(placeholder)
-                entries.append(normalized)
+        _collect(local_detection.get("items"))
 
-    mapping_items = data.get("mapping")
-    if isinstance(mapping_items, list):
-        for item in mapping_items:
-            normalized = _normalize_entry(item)
-            if not normalized:
-                continue
-            placeholder = normalized["placeholder"]
-            if placeholder in seen_placeholders:
-                continue
-            seen_placeholders.add(placeholder)
-            entries.append(normalized)
-
+    _collect(data.get("mapping"))
     return entries
+
+
+def _coerce_entries(entries: Sequence[Any]) -> List[MappingEntry]:
+    normalized: List[MappingEntry] = []
+    for item in entries:
+        if isinstance(item, MappingEntry):
+            normalized.append(item)
+            continue
+        if isinstance(item, dict):
+            entry = MappingEntry.from_raw(item)
+            if entry is not None:
+                normalized.append(entry)
+    return normalized
 
 
 def _prune_old_maps(map_dir: Path) -> None:
@@ -126,14 +109,20 @@ def _new_map_id() -> str:
     return f"{ts}-{rand}"
 
 
+# ---------------------------------------------------------------------------
+# Save
+# ---------------------------------------------------------------------------
+
+
 def save_map(
     raw_input: str,
     anonymized_content: str,
-    entries: List[Dict[str, str]],
+    entries: Sequence[Any],
     level: str,
     source_mode: str,
-) -> Dict[str, Any]:
-    if not entries:
+) -> MapRef:
+    normalized_entries = _coerce_entries(entries)
+    if not normalized_entries:
         raise MapStoreError("cannot save map: no mapping entries found")
 
     map_dir = get_map_dir()
@@ -142,23 +131,22 @@ def save_map(
     map_id = _new_map_id()
     path = map_dir / f"{map_id}{MAP_FILE_SUFFIX}"
 
-    record: Dict[str, Any] = {
-        "schemaVersion": SCHEMA_VERSION,
-        "mapId": map_id,
-        "createdAt": _utc_now_iso(),
-        "level": level,
-        "sourceMode": source_mode,
-        "inputHash": hash_text(raw_input),
-        "anonymizedHash": hash_text(anonymized_content),
-        "entryCount": len(entries),
-        "entries": entries,
-    }
+    record = MapRecord(
+        schema_version=SCHEMA_VERSION,
+        map_id=map_id,
+        created_at=_utc_now_iso(),
+        level=level,
+        source_mode=source_mode,
+        input_hash=hash_text(raw_input),
+        anonymized_hash=hash_text(anonymized_content),
+        entries=normalized_entries,
+    )
 
     temp_name = None
     try:
         fd, temp_name = tempfile.mkstemp(prefix=f"{map_id}-", suffix=".tmp", dir=str(map_dir))
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(record, handle, ensure_ascii=False, indent=2)
+            json.dump(record.to_dict(), handle, ensure_ascii=False, indent=2)
         temp_path = Path(temp_name)
         _safe_chmod(temp_path, 0o600)
         os.replace(temp_path, path)
@@ -171,11 +159,7 @@ def save_map(
                 pass
         raise MapStoreError(f"failed to persist local map file: {exc}") from exc
 
-    return {
-        "mapId": map_id,
-        "mapPath": str(path),
-        "entryCount": len(entries),
-    }
+    return record.to_ref(str(path))
 
 
 def _resolve_map_path(map_ref: Optional[str]) -> Path:
@@ -202,16 +186,16 @@ def _resolve_map_path(map_ref: Optional[str]) -> Path:
     return candidates[0]
 
 
-def _validate_record(raw: Dict[str, Any], fallback_map_id: str) -> Dict[str, Any]:
+def _validate_record(raw: Dict[str, Any], fallback_map_id: str) -> MapRecord:
     entries_raw = raw.get("entries")
     if not isinstance(entries_raw, list):
         raise MapStoreError("invalid map file: missing entries array")
 
-    entries: List[Dict[str, str]] = []
+    entries: List[MappingEntry] = []
     for item in entries_raw:
-        normalized = _normalize_entry(item)
-        if normalized:
-            entries.append(normalized)
+        entry = MappingEntry.from_raw(item)
+        if entry is not None:
+            entries.append(entry)
 
     if not entries:
         raise MapStoreError("invalid map file: entries are empty or malformed")
@@ -220,21 +204,19 @@ def _validate_record(raw: Dict[str, Any], fallback_map_id: str) -> Dict[str, Any
     if not isinstance(map_id, str) or not map_id.strip():
         map_id = fallback_map_id
 
-    cleaned = {
-        "schemaVersion": str(raw.get("schemaVersion") or SCHEMA_VERSION),
-        "mapId": map_id,
-        "createdAt": str(raw.get("createdAt") or ""),
-        "level": str(raw.get("level") or ""),
-        "sourceMode": str(raw.get("sourceMode") or ""),
-        "inputHash": str(raw.get("inputHash") or ""),
-        "anonymizedHash": str(raw.get("anonymizedHash") or ""),
-        "entryCount": len(entries),
-        "entries": entries,
-    }
-    return cleaned
+    return MapRecord(
+        schema_version=str(raw.get("schemaVersion") or SCHEMA_VERSION),
+        map_id=map_id,
+        created_at=str(raw.get("createdAt") or ""),
+        level=str(raw.get("level") or ""),
+        source_mode=str(raw.get("sourceMode") or ""),
+        input_hash=str(raw.get("inputHash") or ""),
+        anonymized_hash=str(raw.get("anonymizedHash") or ""),
+        entries=entries,
+    )
 
 
-def load_map(map_ref: Optional[str]) -> Tuple[Dict[str, Any], Path]:
+def load_map(map_ref: Optional[str]) -> Tuple[MapRecord, Path]:
     path = _resolve_map_path(map_ref)
     try:
         with path.open("r", encoding="utf-8") as handle:

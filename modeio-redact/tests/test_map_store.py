@@ -66,9 +66,9 @@ class TestMapStore(unittest.TestCase):
 
         entries = map_store.normalize_mapping_entries(data)
         self.assertEqual(len(entries), 2)
-        self.assertEqual(entries[0]["placeholder"], "[EMAIL_1]")
-        self.assertEqual(entries[0]["original"], "alice@example.com")
-        self.assertEqual(entries[1]["placeholder"], "[NAME_1]")
+        self.assertEqual(entries[0].placeholder, "[EMAIL_1]")
+        self.assertEqual(entries[0].original, "alice@example.com")
+        self.assertEqual(entries[1].placeholder, "[NAME_1]")
 
     def test_save_and_load_map_by_id_and_path(self):
         saved = map_store.save_map(
@@ -81,17 +81,17 @@ class TestMapStore(unittest.TestCase):
             source_mode="local-regex",
         )
 
-        self.assertIn("mapId", saved)
-        self.assertIn("mapPath", saved)
-        self.assertEqual(saved["entryCount"], 1)
+        self.assertTrue(saved.map_id)
+        self.assertTrue(saved.map_path)
+        self.assertEqual(saved.entry_count, 1)
 
-        record_by_id, path_by_id = map_store.load_map(saved["mapId"])
-        record_by_path, path_by_path = map_store.load_map(saved["mapPath"])
+        record_by_id, path_by_id = map_store.load_map(saved.map_id)
+        record_by_path, path_by_path = map_store.load_map(saved.map_path)
 
         self.assertEqual(path_by_id, path_by_path)
-        self.assertEqual(record_by_id["mapId"], saved["mapId"])
-        self.assertEqual(record_by_path["entries"][0]["placeholder"], "[EMAIL_1]")
-        self.assertEqual(record_by_path["entries"][0]["original"], "alice@example.com")
+        self.assertEqual(record_by_id.map_id, saved.map_id)
+        self.assertEqual(record_by_path.entries[0].placeholder, "[EMAIL_1]")
+        self.assertEqual(record_by_path.entries[0].original, "alice@example.com")
 
     def test_save_map_sets_private_permissions(self):
         saved = map_store.save_map(
@@ -104,7 +104,7 @@ class TestMapStore(unittest.TestCase):
             source_mode="local-regex",
         )
 
-        mode = Path(saved["mapPath"]).stat().st_mode & 0o777
+        mode = Path(saved.map_path).stat().st_mode & 0o777
         self.assertEqual(mode, 0o600)
 
     def test_load_map_without_ref_uses_latest_file(self):
@@ -125,8 +125,8 @@ class TestMapStore(unittest.TestCase):
         )
 
         record, _ = map_store.load_map(None)
-        self.assertNotEqual(record["mapId"], first["mapId"])
-        self.assertEqual(record["mapId"], second["mapId"])
+        self.assertNotEqual(record.map_id, first.map_id)
+        self.assertEqual(record.map_id, second.map_id)
 
     def test_prunes_old_maps_when_saving_new_map(self):
         stale_path = Path(self.temp_dir.name) / "stale-map.json"
@@ -200,7 +200,7 @@ class TestMapStore(unittest.TestCase):
         )
 
         record, _ = map_store.load_map(str(candidate))
-        self.assertEqual(record["mapId"], "fallback-id")
+        self.assertEqual(record.map_id, "fallback-id")
 
 
 if __name__ == "__main__":
