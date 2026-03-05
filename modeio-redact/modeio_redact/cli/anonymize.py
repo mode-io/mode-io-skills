@@ -50,6 +50,8 @@ from modeio_redact.cli.anonymize_output import (
     run_file_pipeline as _run_file_pipeline,
 )
 from modeio_redact.workflow.file_types import (
+    HANDLER_TEXT,
+    handler_key_for_extension,
     is_level_supported_for_extension,
     supported_levels_for_extension,
 )
@@ -127,6 +129,37 @@ def _validate_level_support_or_raise(level: str, input_extension: Optional[str])
             f"Anonymization level '{level}' is not supported for '{input_extension}' files. "
             f"Supported levels: {supported_levels}."
         )
+
+
+def _validate_non_text_mapping_or_raise(
+    *,
+    level: str,
+    input_path: Optional[str],
+    input_extension: Optional[str],
+    raw_input: str,
+    anonymized_content: str,
+    has_pii: Any,
+    entries: list,
+) -> None:
+    if not input_path or not input_extension:
+        return
+    if level == "lite":
+        return
+    if handler_key_for_extension(input_extension) == HANDLER_TEXT:
+        return
+    if entries:
+        return
+
+    pii_detected = bool(has_pii)
+    content_changed = anonymized_content != raw_input
+    if not pii_detected and not content_changed:
+        return
+
+    raise ValueError(
+        f"Anonymization provider returned no mapping entries for '{input_extension}' file output. "
+        "Cannot safely project non-text redactions without mapping data. "
+        "Use --level lite or ensure API mapping entries are returned."
+    )
 
 
 def _resolve_crossborder_codes_or_raise(
@@ -470,7 +503,36 @@ def main():
     if input_path:
         data["inputPath"] = input_path
 
+    if not isinstance(anonymized, str):
+        anonymized = str(anonymized)
+        data["anonymizedContent"] = anonymized
+
     entries = normalize_mapping_entries(data)
+
+    try:
+        _validate_non_text_mapping_or_raise(
+            level=args.level,
+            input_path=input_path,
+            input_extension=input_extension,
+            raw_input=raw_input,
+            anonymized_content=anonymized,
+            has_pii=has_pii,
+            entries=entries,
+        )
+    except ValueError as error:
+        if args.json:
+            print(json.dumps(
+                _error_envelope(
+                    level=args.level,
+                    mode=mode,
+                    error_type="validation_error",
+                    message=str(error),
+                ),
+                ensure_ascii=False,
+            ))
+        else:
+            print(f"Error: {error}", file=sys.stderr)
+        sys.exit(2)
 
     map_ref = None
     try:
@@ -490,9 +552,6 @@ def main():
 
     output_path = None
     sidecar_path = None
-    if not isinstance(anonymized, str):
-        anonymized = str(anonymized)
-        data["anonymizedContent"] = anonymized
 
     try:
         output_path, sidecar_path, _ = _run_file_pipeline(
