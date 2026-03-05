@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import platform
 import sys
 import urllib.error
 import urllib.request
@@ -22,21 +21,18 @@ from modeio_middleware.cli.setup_lib.claude import (
 from modeio_middleware.cli.setup_lib.common import (
     HealthCheckResult,
     SetupError,
+    detect_os_name,
     derive_health_url,
     normalize_gateway_base_url,
 )
 from modeio_middleware.cli.setup_lib.opencode import (
-    apply_opencode_base_url,
     apply_opencode_config_file,
+    default_opencode_config_path,
     uninstall_opencode_config_file,
 )
 from modeio_middleware.cli.setup_lib.openclaw import (
-    OPENCLAW_MODEL_ID,
-    OPENCLAW_MODEL_REF,
-    OPENCLAW_PROVIDER_ID,
     apply_openclaw_config_file,
     apply_openclaw_models_cache_file,
-    apply_openclaw_provider_route,
     default_openclaw_config_path,
     default_openclaw_models_cache_path,
     uninstall_openclaw_config_file,
@@ -46,58 +42,6 @@ from modeio_middleware.cli.setup_lib.openclaw import (
 DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:8787/v1"
 DEFAULT_UPSTREAM_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_UPSTREAM_RESPONSES_URL = "https://api.openai.com/v1/responses"
-
-# Backward-compatible module-level aliases for tests and script wrappers.
-_normalize_gateway_base_url = normalize_gateway_base_url
-_derive_health_url = derive_health_url
-
-_default_claude_settings_path = default_claude_settings_path
-_derive_claude_hook_url = derive_claude_hook_url
-_apply_claude_settings_file = apply_claude_settings_file
-_uninstall_claude_settings_file = uninstall_claude_settings_file
-
-_apply_opencode_base_url = apply_opencode_base_url
-_apply_opencode_config_file = apply_opencode_config_file
-_uninstall_opencode_config_file = uninstall_opencode_config_file
-
-_default_openclaw_config_path = default_openclaw_config_path
-_default_openclaw_models_cache_path = default_openclaw_models_cache_path
-_apply_openclaw_provider_route = apply_openclaw_provider_route
-_apply_openclaw_config_file = apply_openclaw_config_file
-_uninstall_openclaw_config_file = uninstall_openclaw_config_file
-_apply_openclaw_models_cache_file = apply_openclaw_models_cache_file
-_uninstall_openclaw_models_cache_file = uninstall_openclaw_models_cache_file
-
-
-def _detect_os_name(os_name: Optional[str] = None) -> str:
-    if os_name:
-        return os_name.strip().lower()
-    return platform.system().strip().lower()
-
-
-def _default_opencode_config_path(
-    *,
-    os_name: Optional[str] = None,
-    env: Optional[Dict[str, str]] = None,
-    home: Optional[Path] = None,
-) -> Path:
-    resolved_env = env or os.environ
-    resolved_home = home or Path.home()
-    system_name = _detect_os_name(os_name)
-
-    if system_name == "windows":
-        app_data = resolved_env.get("APPDATA", "").strip()
-        if app_data:
-            return Path(app_data) / "opencode" / "opencode.json"
-        return resolved_home / "AppData" / "Roaming" / "opencode" / "opencode.json"
-
-    if system_name == "darwin":
-        return resolved_home / ".config" / "opencode" / "opencode.json"
-
-    xdg_home = resolved_env.get("XDG_CONFIG_HOME", "").strip()
-    if xdg_home:
-        return Path(xdg_home) / "opencode" / "opencode.json"
-    return resolved_home / ".config" / "opencode" / "opencode.json"
 
 
 def _detect_shell(os_name: str, env: Optional[Dict[str, str]] = None) -> str:
@@ -114,7 +58,7 @@ def _detect_shell(os_name: str, env: Optional[Dict[str, str]] = None) -> str:
 
 
 def _codex_env_command(shell: str, gateway_base_url: str) -> str:
-    normalized = _normalize_gateway_base_url(gateway_base_url)
+    normalized = normalize_gateway_base_url(gateway_base_url)
     if shell == "powershell":
         return f'$env:OPENAI_BASE_URL = "{normalized}"'
     if shell == "cmd":
@@ -194,7 +138,7 @@ def _check_gateway_health(health_url: str, timeout_seconds: int) -> HealthCheckR
 
 
 def _build_start_command(gateway_base_url: str) -> str:
-    normalized = _normalize_gateway_base_url(gateway_base_url)
+    normalized = normalize_gateway_base_url(gateway_base_url)
     host = "127.0.0.1"
     port = 8787
     if normalized.startswith("http://"):
@@ -215,10 +159,10 @@ def _build_start_command(gateway_base_url: str) -> str:
 
 
 def _build_report(args: argparse.Namespace) -> Dict[str, Any]:
-    gateway_base_url = _normalize_gateway_base_url(args.gateway_base_url)
-    os_name = _detect_os_name(args.os_name)
+    gateway_base_url = normalize_gateway_base_url(args.gateway_base_url)
+    os_name = detect_os_name(args.os_name)
     shell = args.shell if args.shell != "auto" else _detect_shell(os_name)
-    health_url = args.health_url.strip() or _derive_health_url(gateway_base_url)
+    health_url = args.health_url.strip() or derive_health_url(gateway_base_url)
 
     report: Dict[str, Any] = {
         "success": True,
@@ -243,7 +187,7 @@ def _build_report(args: argparse.Namespace) -> Dict[str, Any]:
         "claude": None,
         "commands": {
             "startGateway": _build_start_command(gateway_base_url),
-            "claudeHookUrl": _derive_claude_hook_url(gateway_base_url),
+            "claudeHookUrl": derive_claude_hook_url(gateway_base_url),
         },
     }
 
@@ -260,16 +204,16 @@ def _build_report(args: argparse.Namespace) -> Dict[str, Any]:
         config_path = (
             Path(args.opencode_config_path).expanduser()
             if args.opencode_config_path
-            else _default_opencode_config_path(os_name=os_name)
+            else default_opencode_config_path(os_name=os_name)
         )
         if args.uninstall:
-            report["opencode"] = _uninstall_opencode_config_file(
+            report["opencode"] = uninstall_opencode_config_file(
                 config_path=config_path,
                 gateway_base_url=gateway_base_url,
                 force_remove=args.force_remove_opencode_base_url,
             )
         else:
-            report["opencode"] = _apply_opencode_config_file(
+            report["opencode"] = apply_opencode_config_file(
                 config_path=config_path,
                 gateway_base_url=gateway_base_url,
                 create_if_missing=args.create_opencode_config,
@@ -279,32 +223,32 @@ def _build_report(args: argparse.Namespace) -> Dict[str, Any]:
         config_path = (
             Path(args.openclaw_config_path).expanduser()
             if args.openclaw_config_path
-            else _default_openclaw_config_path(os_name=os_name)
+            else default_openclaw_config_path(os_name=os_name)
         )
         models_cache_path = (
             Path(args.openclaw_models_cache_path).expanduser()
             if args.openclaw_models_cache_path
-            else _default_openclaw_models_cache_path(config_path=config_path)
+            else default_openclaw_models_cache_path(config_path=config_path)
         )
         if args.uninstall:
-            openclaw_report = _uninstall_openclaw_config_file(
+            openclaw_report = uninstall_openclaw_config_file(
                 config_path=config_path,
                 gateway_base_url=gateway_base_url,
                 force_remove=args.force_remove_openclaw_provider,
             )
-            openclaw_report["modelsCache"] = _uninstall_openclaw_models_cache_file(
+            openclaw_report["modelsCache"] = uninstall_openclaw_models_cache_file(
                 models_cache_path=models_cache_path,
                 gateway_base_url=gateway_base_url,
                 force_remove=args.force_remove_openclaw_provider,
             )
             report["openclaw"] = openclaw_report
         else:
-            openclaw_report = _apply_openclaw_config_file(
+            openclaw_report = apply_openclaw_config_file(
                 config_path=config_path,
                 gateway_base_url=gateway_base_url,
                 create_if_missing=args.create_openclaw_config,
             )
-            openclaw_report["modelsCache"] = _apply_openclaw_models_cache_file(
+            openclaw_report["modelsCache"] = apply_openclaw_models_cache_file(
                 models_cache_path=models_cache_path,
                 gateway_base_url=gateway_base_url,
             )
@@ -314,16 +258,16 @@ def _build_report(args: argparse.Namespace) -> Dict[str, Any]:
         claude_path = (
             Path(args.claude_settings_path).expanduser()
             if args.claude_settings_path
-            else _default_claude_settings_path()
+            else default_claude_settings_path()
         )
         if args.uninstall:
-            report["claude"] = _uninstall_claude_settings_file(
+            report["claude"] = uninstall_claude_settings_file(
                 config_path=claude_path,
                 gateway_base_url=gateway_base_url,
                 force_remove=args.force_remove_claude_hook_url,
             )
         else:
-            report["claude"] = _apply_claude_settings_file(
+            report["claude"] = apply_claude_settings_file(
                 config_path=claude_path,
                 gateway_base_url=gateway_base_url,
                 create_if_missing=args.create_claude_settings,

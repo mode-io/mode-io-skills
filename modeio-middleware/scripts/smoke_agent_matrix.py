@@ -2,14 +2,22 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Tuple
+
+try:  # Python 3.14+
+    from compression import zstd as _zstd_codec
+except Exception:  # pragma: no cover
+    _zstd_codec = None
 
 from smoke_matrix.agents import build_agent_command as _build_agent_command
 from smoke_matrix.common import (
@@ -196,6 +204,244 @@ def _run_agent_check(
     }
 
 
+def _request_with_bytes(
+    *,
+    method: str,
+    url: str,
+    body: Optional[bytes],
+    headers: Dict[str, str],
+    timeout_seconds: int,
+) -> Dict[str, object]:
+    request = urllib.request.Request(
+        url,
+        data=body,
+        method=method,
+        headers=headers,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            raw = response.read()
+            status = int(response.status)
+            response_headers = dict(response.headers.items())
+    except urllib.error.HTTPError as error:
+        raw = error.read()
+        status = int(error.code)
+        response_headers = dict(error.headers.items()) if error.headers else {}
+
+    body_text = raw.decode("utf-8", errors="replace")
+    payload = None
+    try:
+        parsed = json.loads(body_text)
+        if isinstance(parsed, dict):
+            payload = parsed
+    except ValueError:
+        payload = None
+
+    return {
+        "status": status,
+        "headers": response_headers,
+        "bodyText": body_text,
+        "payload": payload,
+    }
+
+
+def _run_gateway_smoke_checks(
+    *,
+    gateway_base_url: str,
+    model: str,
+    run_id: str,
+    timeout_seconds: int,
+    tap_jsonl_path: Path,
+) -> Sequence[Dict[str, object]]:
+    checks = []
+
+    def _append(name: str, ok: bool, details: Dict[str, object]) -> None:
+        checks.append({"name": name, "ok": ok, **details})
+
+    gateway_root = gateway_base_url.rsplit("/v1", 1)[0]
+
+    health_result = _request_with_bytes(
+        method="GET",
+        url=f"{gateway_root}/healthz",
+        body=None,
+        headers={},
+        timeout_seconds=timeout_seconds,
+    )
+    health_payload = health_result.get("payload")
+    health_ok = bool(
+        health_result.get("status") == 200
+        and isinstance(health_payload, dict)
+        and health_payload.get("ok") is True
+    )
+    _append(
+        "gateway-healthz",
+        health_ok,
+        {
+            "status": health_result.get("status"),
+        },
+    )
+
+    before_count = len(_load_tap_events(tap_jsonl_path))
+    route_result = _request_with_bytes(
+        method="POST",
+        url=f"{gateway_base_url}/not-a-real-route",
+        body=json.dumps({"probe": run_id}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        timeout_seconds=timeout_seconds,
+    )
+    after_count = len(_load_tap_events(tap_jsonl_path))
+    route_payload = route_result.get("payload")
+    route_ok = bool(
+        route_result.get("status") == 404
+        and isinstance(route_payload, dict)
+        and isinstance(route_payload.get("error"), dict)
+        and route_payload["error"].get("code") == "MODEIO_ROUTE_NOT_FOUND"
+        and after_count == before_count
+    )
+    _append(
+        "route-not-found-no-upstream",
+        route_ok,
+        {
+            "status": route_result.get("status"),
+            "tapEventDelta": after_count - before_count,
+        },
+    )
+
+    unsupported_raw = json.dumps(
+        {
+            "model": model,
+            "input": f"SMOKE_UNSUPPORTED_ENCODING_{run_id}",
+            "modeio": {"profile": "dev"},
+        }
+    ).encode("utf-8")
+    before_count = len(_load_tap_events(tap_jsonl_path))
+    unsupported_result = _request_with_bytes(
+        method="POST",
+        url=f"{gateway_base_url}/responses",
+        body=unsupported_raw,
+        headers={
+            "Content-Type": "application/json",
+            "Content-Encoding": "snappy",
+        },
+        timeout_seconds=timeout_seconds,
+    )
+    after_count = len(_load_tap_events(tap_jsonl_path))
+    unsupported_payload = unsupported_result.get("payload")
+    unsupported_ok = bool(
+        unsupported_result.get("status") == 400
+        and isinstance(unsupported_payload, dict)
+        and isinstance(unsupported_payload.get("error"), dict)
+        and unsupported_payload["error"].get("code") == "MODEIO_VALIDATION_ERROR"
+        and after_count == before_count
+    )
+    _append(
+        "unsupported-encoding-no-upstream",
+        unsupported_ok,
+        {
+            "status": unsupported_result.get("status"),
+            "tapEventDelta": after_count - before_count,
+        },
+    )
+
+    gzip_raw = json.dumps(
+        {
+            "model": model,
+            "input": f"SMOKE_GZIP_{run_id}",
+            "modeio": {"profile": "dev"},
+        }
+    ).encode("utf-8")
+    before_count = len(_load_tap_events(tap_jsonl_path))
+    gzip_result = _request_with_bytes(
+        method="POST",
+        url=f"{gateway_base_url}/responses",
+        body=gzip.compress(gzip_raw),
+        headers={
+            "Content-Type": "application/json",
+            "Content-Encoding": "gzip",
+        },
+        timeout_seconds=timeout_seconds,
+    )
+    new_events = _load_tap_events(tap_jsonl_path)[before_count:]
+    gzip_window = _tap_window_metrics(new_events)
+    gzip_headers = {
+        str(key).lower(): str(value)
+        for key, value in dict(gzip_result.get("headers") or {}).items()
+    }
+    gzip_ok = bool(
+        gzip_result.get("status") == 200
+        and gzip_headers.get("x-modeio-contract-version")
+        and gzip_headers.get("x-modeio-request-id")
+        and gzip_headers.get("x-modeio-upstream-called") == "true"
+        and int(gzip_window.get("eventCount", 0)) >= 1
+        and int(gzip_window.get("successCount", 0)) >= 1
+    )
+    _append(
+        "gzip-encoded-responses-request",
+        gzip_ok,
+        {
+            "status": gzip_result.get("status"),
+            "tapEvents": gzip_window.get("eventCount"),
+            "tap2xx": gzip_window.get("successCount"),
+            "paths": gzip_window.get("paths"),
+        },
+    )
+
+    if _zstd_codec is None:
+        _append(
+            "zstd-encoded-responses-request",
+            True,
+            {
+                "skipped": True,
+                "reason": "compression.zstd unavailable",
+            },
+        )
+        return checks
+
+    zstd_raw = json.dumps(
+        {
+            "model": model,
+            "input": f"SMOKE_ZSTD_{run_id}",
+            "modeio": {"profile": "dev"},
+        }
+    ).encode("utf-8")
+    before_count = len(_load_tap_events(tap_jsonl_path))
+    zstd_result = _request_with_bytes(
+        method="POST",
+        url=f"{gateway_base_url}/responses",
+        body=_zstd_codec.compress(zstd_raw),
+        headers={
+            "Content-Type": "application/json",
+            "Content-Encoding": "zstd",
+        },
+        timeout_seconds=timeout_seconds,
+    )
+    zstd_events = _load_tap_events(tap_jsonl_path)[before_count:]
+    zstd_window = _tap_window_metrics(zstd_events)
+    zstd_headers = {
+        str(key).lower(): str(value)
+        for key, value in dict(zstd_result.get("headers") or {}).items()
+    }
+    zstd_ok = bool(
+        zstd_result.get("status") == 200
+        and zstd_headers.get("x-modeio-contract-version")
+        and zstd_headers.get("x-modeio-request-id")
+        and zstd_headers.get("x-modeio-upstream-called") == "true"
+        and int(zstd_window.get("eventCount", 0)) >= 1
+        and int(zstd_window.get("successCount", 0)) >= 1
+    )
+    _append(
+        "zstd-encoded-responses-request",
+        zstd_ok,
+        {
+            "status": zstd_result.get("status"),
+            "tapEvents": zstd_window.get("eventCount"),
+            "tap2xx": zstd_window.get("successCount"),
+            "paths": zstd_window.get("paths"),
+        },
+    )
+    return checks
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run isolated live smoke tests via codex/opencode/openclaw through modeio-middleware."
@@ -287,6 +533,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "stdoutPath": str(tap_stdout_path),
         },
         "setup": None,
+        "gatewayChecks": [],
         "agents": [],
         "error": None,
     }
@@ -412,6 +659,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             model_id=args.model,
         )
 
+        report["gatewayChecks"] = list(
+            _run_gateway_smoke_checks(
+                gateway_base_url=gateway_base_url,
+                model=args.model,
+                run_id=run_id,
+                timeout_seconds=args.command_timeout_seconds,
+                tap_jsonl_path=tap_jsonl_path,
+            )
+        )
+
         for index, agent in enumerate(agents, start=1):
             report["agents"].append(
                 _run_agent_check(
@@ -427,7 +684,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
 
-        report["success"] = all(bool(agent.get("ok")) for agent in report["agents"])
+        gateway_checks_ok = all(bool(item.get("ok")) for item in report.get("gatewayChecks", []))
+        report["success"] = gateway_checks_ok and all(bool(agent.get("ok")) for agent in report["agents"])
     except Exception as error:
         report["success"] = False
         report["error"] = str(error)
@@ -455,6 +713,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             "[smoke-agent-matrix] "
             f"{agent_report.get('name')}: ok={agent_report.get('ok')} "
             f"exit={agent_report.get('exitCode')} tapEvents={event_count} tap2xx={success_count}"
+        )
+
+    for check in report.get("gatewayChecks", []):
+        if not isinstance(check, dict):
+            continue
+        print(
+            "[smoke-agent-matrix] "
+            f"check {check.get('name')}: ok={check.get('ok')} "
+            f"status={check.get('status')}"
         )
 
     if report.get("error"):

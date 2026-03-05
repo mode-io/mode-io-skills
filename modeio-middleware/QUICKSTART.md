@@ -8,7 +8,8 @@ export MODEIO_GATEWAY_UPSTREAM_API_KEY="<your-upstream-key>"
 python modeio-middleware/scripts/middleware_gateway.py \
   --host 127.0.0.1 \
   --port 8787 \
-  --upstream-url "https://api.openai.com/v1/chat/completions"
+  --upstream-chat-url "https://api.openai.com/v1/chat/completions" \
+  --upstream-responses-url "https://api.openai.com/v1/responses"
 ```
 
 ## 2) Configure client routing

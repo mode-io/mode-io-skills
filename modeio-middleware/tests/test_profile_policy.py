@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
 
-import sys
 import unittest
-from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS_DIR = REPO_ROOT / "modeio-middleware" / "scripts"
-
-sys.path.insert(0, str(SCRIPTS_DIR))
-import middleware_gateway as gateway  # noqa: E402
 
 from modeio_middleware.core.errors import MiddlewareError  # noqa: E402
 from modeio_middleware.core.profiles import (  # noqa: E402

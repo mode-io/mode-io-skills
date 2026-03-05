@@ -12,12 +12,14 @@ from modeio_middleware.cli.setup_lib.claude import (
 from modeio_middleware.cli.setup_lib.common import (
     HealthCheckResult,
     SetupError,
+    detect_os_name,
     derive_health_url,
     normalize_gateway_base_url,
 )
 from modeio_middleware.cli.setup_lib.opencode import (
     apply_opencode_base_url,
     apply_opencode_config_file,
+    default_opencode_config_path,
     remove_opencode_base_url,
     uninstall_opencode_config_file,
 )
@@ -47,9 +49,11 @@ __all__ = [
     "apply_openclaw_config_file",
     "apply_openclaw_models_cache_file",
     "apply_openclaw_provider_route",
+    "default_opencode_config_path",
     "default_claude_settings_path",
     "default_openclaw_config_path",
     "default_openclaw_models_cache_path",
+    "detect_os_name",
     "derive_claude_hook_url",
     "derive_health_url",
     "normalize_gateway_base_url",

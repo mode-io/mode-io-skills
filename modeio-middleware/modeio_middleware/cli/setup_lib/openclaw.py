@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import copy
 import os
-import platform
 import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 from modeio_middleware.cli.setup_lib.common import (
     SetupError,
+    detect_os_name,
     ensure_object,
     normalize_gateway_base_url,
     read_json_file,
@@ -30,14 +30,6 @@ OPENCLAW_CONFIG_FILENAMES = {
     "moltbot.json",
     "moldbot.json",
 }
-
-
-def _detect_os_name(os_name: Optional[str] = None) -> str:
-    if os_name:
-        return os_name.strip().lower()
-    return platform.system().strip().lower()
-
-
 def default_openclaw_config_path(
     *,
     os_name: Optional[str] = None,
@@ -50,7 +42,7 @@ def default_openclaw_config_path(
         return Path(override).expanduser()
 
     resolved_home = home or Path.home()
-    system_name = _detect_os_name(os_name)
+    system_name = detect_os_name(os_name)
     if system_name == "windows":
         app_data = resolved_env.get("APPDATA", "").strip()
         if app_data:

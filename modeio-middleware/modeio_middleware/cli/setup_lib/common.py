@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import platform
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +35,12 @@ def normalize_gateway_base_url(raw: str) -> str:
     if not (value.startswith("http://") or value.startswith("https://")):
         raise SetupError("gateway base URL must start with http:// or https://")
     return value.rstrip("/")
+
+
+def detect_os_name(os_name: Optional[str] = None) -> str:
+    if os_name:
+        return os_name.strip().lower()
+    return platform.system().strip().lower()
 
 
 def derive_health_url(gateway_base_url: str) -> str:
