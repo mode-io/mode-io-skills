@@ -458,7 +458,7 @@ Run a Skill Safety Assessment before install for this repo: <repo_url_or_local_p
 Expected output (shape):
 
 ```text
-Verdict: ALLOW|WARN|BLOCK|UNVERIFIED
+Decision: reject|caution|approve
 Risk Score: <0-100>
 Top Findings:
 - file:line + exact snippet + fix + evidence refs (E-xxx)
@@ -541,10 +541,23 @@ python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com" --l
 python modeio-guardrail/scripts/safety.py -i "Delete all log files"
 python modeio-guardrail/scripts/safety.py -i "Modify database permissions" -c '{"environment":"production","operation_intent":"permission-change","scope":"single-resource","data_sensitivity":"regulated","rollback":"partial","change_control":"ticket:SEC-118"}' -t "/var/lib/mysql" --json
 
-# Skill Safety Assessment (script-enhanced)
+# Skill Safety Assessment (v2 layered evaluator)
+python modeio-guardrail/scripts/skill_safety_assessment.py evaluate --target-repo /path/to/skill-repo --json > /tmp/skill_scan.json
+python modeio-guardrail/scripts/skill_safety_assessment.py evaluate --target-repo /path/to/skill-repo --context-profile '{"environment":"ci","execution_mode":"build-test","risk_tolerance":"balanced","data_sensitivity":"internal"}' --json > /tmp/skill_scan.json
+
+# (compat) legacy alias still supported
 python modeio-guardrail/scripts/skill_safety_assessment.py scan --target-repo /path/to/skill-repo --json > /tmp/skill_scan.json
+
+# Build prompt payload for model analysis
 python modeio-guardrail/scripts/skill_safety_assessment.py prompt --target-repo /path/to/skill-repo --scan-file /tmp/skill_scan.json
+
+# Validate model output against evidence references and score/decision consistency
 python modeio-guardrail/scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
+python modeio-guardrail/scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --target-repo /path/to/skill-repo --rescan-on-validate --json
+
+# Context-aware adjudication bridge (LLM interprets context; engine keeps deterministic decision)
+python modeio-guardrail/scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json > /tmp/adjudication_prompt.md
+python modeio-guardrail/scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json --assessment-file /tmp/adjudication.json --json
 
 # Generic middleware gateway (Codex/OpenCode/Claude)
 python modeio-middleware/scripts/setup_middleware_gateway.py --health-check
