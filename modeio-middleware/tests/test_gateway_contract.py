@@ -8,6 +8,11 @@ import urllib.request
 import unittest
 from pathlib import Path
 
+try:
+    from compression import zstd as zstd_codec
+except Exception:  # pragma: no cover
+    zstd_codec = None
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "modeio-middleware" / "scripts"
 TESTS_DIR = REPO_ROOT / "modeio-middleware" / "tests"
@@ -68,6 +73,27 @@ class TestGatewayContract(unittest.TestCase):
             try:
                 body = json.loads(error.read().decode("utf-8"))
                 return error.code, error.headers, body
+            finally:
+                error.close()
+
+    def _post_raw(self, gateway_url, path, body, headers=None):
+        request_headers = {"Content-Type": "application/json"}
+        if headers:
+            request_headers.update(headers)
+        request = urllib.request.Request(
+            f"{gateway_url}{path}",
+            data=body,
+            headers=request_headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                return response.status, response.headers, payload
+        except urllib.error.HTTPError as error:
+            try:
+                payload = json.loads(error.read().decode("utf-8"))
+                return error.code, error.headers, payload
             finally:
                 error.close()
 
@@ -191,6 +217,58 @@ class TestGatewayContract(unittest.TestCase):
             )
             self.assertEqual(status, 400)
             self.assertEqual(payload["error"]["code"], "MODEIO_VALIDATION_ERROR")
+        finally:
+            gateway_stub.stop()
+            upstream.stop()
+
+    @unittest.skipIf(zstd_codec is None, "compression.zstd unavailable")
+    def test_responses_accepts_zstd_encoded_request_body(self):
+        upstream, gateway_stub = self._start_pair(
+            lambda _path, payload: responses_payload(str(payload.get("input", "")))
+        )
+        try:
+            raw_payload = json.dumps(
+                {
+                    "model": "gpt-test",
+                    "input": "hello zstd",
+                    "modeio": {"profile": "dev"},
+                }
+            ).encode("utf-8")
+            encoded = zstd_codec.compress(raw_payload)
+
+            status, _headers, payload = self._post_raw(
+                gateway_stub.base_url,
+                "/v1/responses",
+                encoded,
+                headers={"Content-Encoding": "zstd"},
+            )
+            self.assertEqual(status, 200)
+            self.assertIn("output_text", payload)
+            self.assertEqual(upstream.requests[-1]["body"]["input"], "hello zstd")
+        finally:
+            gateway_stub.stop()
+            upstream.stop()
+
+    def test_rejects_unknown_content_encoding(self):
+        upstream, gateway_stub = self._start_pair(
+            lambda _path, payload: responses_payload(str(payload.get("input", "")))
+        )
+        try:
+            raw_payload = json.dumps(
+                {
+                    "model": "gpt-test",
+                    "input": "hello",
+                }
+            ).encode("utf-8")
+            status, _headers, payload = self._post_raw(
+                gateway_stub.base_url,
+                "/v1/responses",
+                raw_payload,
+                headers={"Content-Encoding": "snappy"},
+            )
+            self.assertEqual(status, 400)
+            self.assertEqual(payload["error"]["code"], "MODEIO_VALIDATION_ERROR")
+            self.assertIn("unsupported Content-Encoding", payload["error"]["message"])
         finally:
             gateway_stub.stop()
             upstream.stop()

@@ -4,13 +4,20 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import os
 import sys
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 from urllib.parse import urlsplit
+
+try:  # Python 3.14+
+    from compression import zstd as _zstd_codec
+except Exception:  # pragma: no cover
+    _zstd_codec = None
 
 from modeio_middleware.connectors.claude_hooks import CLAUDE_HOOK_CONNECTOR_PATH
 from modeio_middleware.core.config_resolver import load_preset_registry
@@ -39,6 +46,50 @@ PATH_TO_ENDPOINT_KIND = {
 }
 
 
+def _decode_content_encoded_body(body_bytes: bytes, content_encoding: str) -> bytes:
+    decoded = body_bytes
+    encodings = [item.strip().lower() for item in content_encoding.split(",") if item.strip()]
+    if not encodings:
+        return decoded
+
+    for encoding in reversed(encodings):
+        if encoding == "identity":
+            continue
+
+        try:
+            if encoding in {"gzip", "x-gzip"}:
+                decoded = gzip.decompress(decoded)
+            elif encoding == "deflate":
+                try:
+                    decoded = zlib.decompress(decoded)
+                except zlib.error:
+                    decoded = zlib.decompress(decoded, -zlib.MAX_WBITS)
+            elif encoding in {"zstd", "x-zstd"}:
+                if _zstd_codec is None:
+                    raise MiddlewareError(
+                        400,
+                        "MODEIO_VALIDATION_ERROR",
+                        "content encoding 'zstd' is not supported in this Python runtime",
+                    )
+                decoded = _zstd_codec.decompress(decoded)
+            else:
+                raise MiddlewareError(
+                    400,
+                    "MODEIO_VALIDATION_ERROR",
+                    f"unsupported Content-Encoding '{encoding}'",
+                )
+        except MiddlewareError:
+            raise
+        except Exception as error:
+            raise MiddlewareError(
+                400,
+                "MODEIO_VALIDATION_ERROR",
+                f"failed to decode request body with Content-Encoding '{encoding}'",
+            ) from error
+
+    return decoded
+
+
 def _read_json_body(handler: BaseHTTPRequestHandler) -> Dict[str, Any]:
     raw_length = handler.headers.get("Content-Length")
     if raw_length is None:
@@ -53,6 +104,10 @@ def _read_json_body(handler: BaseHTTPRequestHandler) -> Dict[str, Any]:
         raise MiddlewareError(400, "MODEIO_VALIDATION_ERROR", "request body must not be empty")
 
     body_bytes = handler.rfile.read(length)
+    content_encoding = str(handler.headers.get("Content-Encoding", "")).strip()
+    if content_encoding:
+        body_bytes = _decode_content_encoded_body(body_bytes, content_encoding)
+
     try:
         payload = json.loads(body_bytes.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as error:

@@ -30,6 +30,18 @@ from modeio_middleware.cli.setup_lib.opencode import (
     apply_opencode_config_file,
     uninstall_opencode_config_file,
 )
+from modeio_middleware.cli.setup_lib.openclaw import (
+    OPENCLAW_MODEL_ID,
+    OPENCLAW_MODEL_REF,
+    OPENCLAW_PROVIDER_ID,
+    apply_openclaw_config_file,
+    apply_openclaw_models_cache_file,
+    apply_openclaw_provider_route,
+    default_openclaw_config_path,
+    default_openclaw_models_cache_path,
+    uninstall_openclaw_config_file,
+    uninstall_openclaw_models_cache_file,
+)
 
 DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:8787/v1"
 DEFAULT_UPSTREAM_CHAT_URL = "https://api.openai.com/v1/chat/completions"
@@ -47,6 +59,14 @@ _uninstall_claude_settings_file = uninstall_claude_settings_file
 _apply_opencode_base_url = apply_opencode_base_url
 _apply_opencode_config_file = apply_opencode_config_file
 _uninstall_opencode_config_file = uninstall_opencode_config_file
+
+_default_openclaw_config_path = default_openclaw_config_path
+_default_openclaw_models_cache_path = default_openclaw_models_cache_path
+_apply_openclaw_provider_route = apply_openclaw_provider_route
+_apply_openclaw_config_file = apply_openclaw_config_file
+_uninstall_openclaw_config_file = uninstall_openclaw_config_file
+_apply_openclaw_models_cache_file = apply_openclaw_models_cache_file
+_uninstall_openclaw_models_cache_file = uninstall_openclaw_models_cache_file
 
 
 def _detect_os_name(os_name: Optional[str] = None) -> str:
@@ -219,6 +239,7 @@ def _build_report(args: argparse.Namespace) -> Dict[str, Any]:
             "unsetCommand": _codex_unset_env_command(shell),
         },
         "opencode": None,
+        "openclaw": None,
         "claude": None,
         "commands": {
             "startGateway": _build_start_command(gateway_base_url),
@@ -253,6 +274,41 @@ def _build_report(args: argparse.Namespace) -> Dict[str, Any]:
                 gateway_base_url=gateway_base_url,
                 create_if_missing=args.create_opencode_config,
             )
+
+    if args.apply_openclaw:
+        config_path = (
+            Path(args.openclaw_config_path).expanduser()
+            if args.openclaw_config_path
+            else _default_openclaw_config_path(os_name=os_name)
+        )
+        models_cache_path = (
+            Path(args.openclaw_models_cache_path).expanduser()
+            if args.openclaw_models_cache_path
+            else _default_openclaw_models_cache_path(config_path=config_path)
+        )
+        if args.uninstall:
+            openclaw_report = _uninstall_openclaw_config_file(
+                config_path=config_path,
+                gateway_base_url=gateway_base_url,
+                force_remove=args.force_remove_openclaw_provider,
+            )
+            openclaw_report["modelsCache"] = _uninstall_openclaw_models_cache_file(
+                models_cache_path=models_cache_path,
+                gateway_base_url=gateway_base_url,
+                force_remove=args.force_remove_openclaw_provider,
+            )
+            report["openclaw"] = openclaw_report
+        else:
+            openclaw_report = _apply_openclaw_config_file(
+                config_path=config_path,
+                gateway_base_url=gateway_base_url,
+                create_if_missing=args.create_openclaw_config,
+            )
+            openclaw_report["modelsCache"] = _apply_openclaw_models_cache_file(
+                models_cache_path=models_cache_path,
+                gateway_base_url=gateway_base_url,
+            )
+            report["openclaw"] = openclaw_report
 
     if args.apply_claude:
         claude_path = (
@@ -305,6 +361,25 @@ def _print_human_report(report: Dict[str, Any]) -> None:
         if opencode.get("reason"):
             print(f"  reason: {opencode.get('reason')}")
 
+    openclaw = report.get("openclaw")
+    if openclaw is not None:
+        print("- OpenClaw config:")
+        print(f"  path: {openclaw.get('path')}")
+        print(f"  changed: {openclaw.get('changed')}")
+        if openclaw.get("backupPath"):
+            print(f"  backup: {openclaw.get('backupPath')}")
+        if openclaw.get("reason"):
+            print(f"  reason: {openclaw.get('reason')}")
+        models_cache = openclaw.get("modelsCache")
+        if isinstance(models_cache, dict):
+            print("  models cache:")
+            print(f"    path: {models_cache.get('path')}")
+            print(f"    changed: {models_cache.get('changed')}")
+            if models_cache.get("backupPath"):
+                print(f"    backup: {models_cache.get('backupPath')}")
+            if models_cache.get("reason"):
+                print(f"    reason: {models_cache.get('reason')}")
+
     claude = report.get("claude")
     if claude is not None:
         print("- Claude hooks config:")
@@ -324,7 +399,7 @@ def _print_human_report(report: Dict[str, Any]) -> None:
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Set up local middleware routing for Codex/OpenCode/Claude hooks. "
+            "Set up local middleware routing for Codex/OpenCode/OpenClaw/Claude hooks. "
             "Optional but recommended for request/response middleware control."
         )
     )
@@ -356,6 +431,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Apply Claude hooks config update (~/.claude/settings.json by default)",
     )
     parser.add_argument(
+        "--apply-openclaw",
+        action="store_true",
+        help="Apply OpenClaw config update (models.providers + default model routing)",
+    )
+    parser.add_argument(
         "--uninstall",
         action="store_true",
         help="Run uninstall mode (print unset guidance and optional client rollback)",
@@ -371,6 +451,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Create Claude settings file if missing (requires --apply-claude)",
     )
     parser.add_argument(
+        "--create-openclaw-config",
+        action="store_true",
+        help="Create OpenClaw config if missing (requires --apply-openclaw)",
+    )
+    parser.add_argument(
         "--force-remove-opencode-base-url",
         action="store_true",
         help="In uninstall mode, remove OpenCode baseURL even when it differs from --gateway-base-url",
@@ -383,7 +468,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             "from --gateway-base-url"
         ),
     )
+    parser.add_argument(
+        "--force-remove-openclaw-provider",
+        action="store_true",
+        help=(
+            "In uninstall mode, remove OpenClaw modeio-middleware provider even when baseUrl "
+            "differs from --gateway-base-url"
+        ),
+    )
     parser.add_argument("--opencode-config-path", default="", help="OpenCode config path override")
+    parser.add_argument("--openclaw-config-path", default="", help="OpenClaw config path override")
+    parser.add_argument(
+        "--openclaw-models-cache-path",
+        default="",
+        help="OpenClaw generated models cache path override (default: infer from OpenClaw state/config)",
+    )
     parser.add_argument("--claude-settings-path", default="", help="Claude settings path override")
     parser.add_argument(
         "--shell",
@@ -408,10 +507,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         validation_message = "--create-claude-settings requires --apply-claude"
     elif args.create_claude_settings and args.uninstall:
         validation_message = "--create-claude-settings cannot be used with --uninstall"
+    elif args.create_openclaw_config and not args.apply_openclaw:
+        validation_message = "--create-openclaw-config requires --apply-openclaw"
+    elif args.create_openclaw_config and args.uninstall:
+        validation_message = "--create-openclaw-config cannot be used with --uninstall"
     elif args.force_remove_opencode_base_url and not args.uninstall:
         validation_message = "--force-remove-opencode-base-url requires --uninstall"
     elif args.force_remove_claude_hook_url and not args.uninstall:
         validation_message = "--force-remove-claude-hook-url requires --uninstall"
+    elif args.force_remove_openclaw_provider and not args.uninstall:
+        validation_message = "--force-remove-openclaw-provider requires --uninstall"
 
     if validation_message:
         if args.json:

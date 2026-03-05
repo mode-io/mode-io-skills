@@ -57,6 +57,12 @@ class HealthServer:
 
 
 class TestSetupGateway(unittest.TestCase):
+    def _run_main_json(self, extra_args):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = setup_gateway.main(["--json", *extra_args])
+        return code, json.loads(out.getvalue())
+
     def test_normalize_gateway_base_url(self):
         self.assertEqual(
             setup_gateway._normalize_gateway_base_url("http://127.0.0.1:8787/v1/"),
@@ -132,6 +138,83 @@ class TestSetupGateway(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
             self.assertNotIn("baseURL", payload["provider"]["openai"]["options"])
 
+    def test_default_openclaw_config_path_honors_env_override(self):
+        path = setup_gateway._default_openclaw_config_path(
+            os_name="linux",
+            env={"OPENCLAW_CONFIG_PATH": "/tmp/custom-openclaw.json"},
+            home=Path("/home/test"),
+        )
+        self.assertEqual(path, Path("/tmp/custom-openclaw.json"))
+
+    def test_default_openclaw_models_cache_path_from_config_parent(self):
+        config_path = Path("/tmp/custom/openclaw.json")
+        path = setup_gateway._default_openclaw_models_cache_path(
+            config_path=config_path,
+            env={},
+            home=Path("/home/test"),
+        )
+        self.assertEqual(path, Path("/tmp/custom/agents/main/agent/models.json"))
+
+    def test_apply_openclaw_provider_route_updates_expected_keys(self):
+        updated, changed = setup_gateway._apply_openclaw_provider_route(
+            {},
+            "http://127.0.0.1:8787/v1",
+        )
+        self.assertTrue(changed)
+        provider = updated["models"]["providers"][setup_gateway.OPENCLAW_PROVIDER_ID]
+        self.assertEqual(provider["baseUrl"], "http://127.0.0.1:8787/v1")
+        self.assertEqual(provider["api"], "openai-completions")
+        self.assertEqual(provider["apiKey"], "modeio-middleware")
+        self.assertFalse(provider["authHeader"])
+        self.assertEqual(provider["models"][0]["id"], setup_gateway.OPENCLAW_MODEL_ID)
+        self.assertEqual(
+            updated["agents"]["defaults"]["model"]["primary"],
+            setup_gateway.OPENCLAW_MODEL_REF,
+        )
+
+    def test_apply_and_uninstall_openclaw_config_file(self):
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "openclaw.json"
+            apply_result = setup_gateway._apply_openclaw_config_file(
+                config_path=path,
+                gateway_base_url="http://127.0.0.1:8787/v1",
+                create_if_missing=True,
+            )
+            self.assertTrue(apply_result["changed"])
+            self.assertTrue(path.exists())
+
+            uninstall_result = setup_gateway._uninstall_openclaw_config_file(
+                config_path=path,
+                gateway_base_url="http://127.0.0.1:8787/v1",
+                force_remove=False,
+            )
+            self.assertTrue(uninstall_result["changed"])
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            providers = payload.get("models", {}).get("providers", {})
+            self.assertNotIn(setup_gateway.OPENCLAW_PROVIDER_ID, providers)
+
+    def test_apply_and_uninstall_openclaw_models_cache_file(self):
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "agents" / "main" / "agent" / "models.json"
+            apply_result = setup_gateway._apply_openclaw_models_cache_file(
+                models_cache_path=path,
+                gateway_base_url="http://127.0.0.1:8787/v1",
+            )
+            self.assertTrue(apply_result["changed"])
+            self.assertTrue(path.exists())
+
+            uninstall_result = setup_gateway._uninstall_openclaw_models_cache_file(
+                models_cache_path=path,
+                gateway_base_url="http://127.0.0.1:8787/v1",
+                force_remove=False,
+            )
+            self.assertTrue(uninstall_result["changed"])
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertNotIn(
+                setup_gateway.OPENCLAW_PROVIDER_ID,
+                payload.get("models", {}).get("providers", {}),
+            )
+
     def test_apply_and_uninstall_claude_settings_file(self):
         with TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "settings.json"
@@ -187,6 +270,29 @@ class TestSetupGateway(unittest.TestCase):
         payload = json.loads(out.getvalue())
         self.assertFalse(payload["success"])
         self.assertEqual(payload["error"]["type"], "validation_error")
+
+    def test_main_json_validation_error_for_openclaw_create(self):
+        code, payload = self._run_main_json(["--create-openclaw-config"])
+        self.assertEqual(code, 2)
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error"]["type"], "validation_error")
+
+    def test_main_json_openclaw_apply_uses_explicit_temp_path(self):
+        with TemporaryDirectory() as temp_dir:
+            openclaw_path = Path(temp_dir) / "openclaw.json"
+            code, payload = self._run_main_json(
+                [
+                    "--apply-openclaw",
+                    "--create-openclaw-config",
+                    "--openclaw-config-path",
+                    str(openclaw_path),
+                ]
+            )
+            self.assertEqual(code, 0)
+            self.assertTrue(payload["success"])
+            self.assertIsNotNone(payload["openclaw"])
+            self.assertTrue(openclaw_path.exists())
+            self.assertIsNotNone(payload["openclaw"].get("modelsCache"))
 
 
 if __name__ == "__main__":
