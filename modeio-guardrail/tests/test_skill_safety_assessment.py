@@ -67,6 +67,7 @@ class TestSkillSafetyAssessmentV2(unittest.TestCase):
                 "tool",
                 "target_repo",
                 "run",
+                "precheck",
                 "context_profile",
                 "integrity",
                 "layers",
@@ -256,6 +257,21 @@ class TestSkillSafetyAssessmentV2(unittest.TestCase):
             finding = self._find_by_rule(payload, "C_PRIVILEGED_FILESYSTEM_OPERATION")
             self.assertIsNotNone(finding)
 
+    def test_evaluate_ignores_privileged_keyword_lists_in_detector_code(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir)
+            (repo / "detector_logic.py").write_text(
+                "if \"sudo\" in lowered or any(token in lowered for token in (\"debugfs\", \"losetup\", \"fsck\")):\n",
+                encoding="utf-8",
+            )
+
+            result = self._run_cli(["evaluate", "--target-repo", str(repo), "--json"])
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+
+            finding = self._find_by_rule(payload, "C_PRIVILEGED_FILESYSTEM_OPERATION")
+            self.assertIsNone(finding)
+
     def test_evaluate_downgrades_literal_safe_execsync(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             repo = Path(tmpdir)
@@ -370,6 +386,38 @@ class TestSkillSafetyAssessmentV2(unittest.TestCase):
             finding = self._find_by_rule(payload, "D_PROMPT_STEGANOGRAPHY_CONTENT")
             self.assertIsNotNone(finding)
             self.assertEqual(payload["scoring"]["suggested_decision"], "reject")
+
+    def test_evaluate_ignores_detector_meta_lines_for_unicode_patterns(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir)
+            (repo / "detector_meta.py").write_text(
+                textwrap.dedent(
+                    r'''
+                    import re
+
+                    UNICODE_TAG_BUILD_PATTERN = re.compile(
+                        r"(chr\s*\(\s*0xE0000\s*\+|fromCodePoint\s*\(\s*0xE0000)",
+                        re.IGNORECASE,
+                    )
+
+                    def is_tag_line(raw_line):
+                        stripped = raw_line.strip()
+                        if stripped.startswith(("r\"", "r'", '"', "'")) and "0xE0000" in stripped:
+                            return True
+                        has_tag_chars = any(0xE0000 <= ord(ch) <= 0xE007F for ch in raw_line)
+                        return has_tag_chars
+                    '''
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = self._run_cli(["evaluate", "--target-repo", str(repo), "--json"])
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+
+            unicode_finding = self._find_by_rule(payload, "D_UNICODE_TAG_SMUGGLING")
+            self.assertIsNone(unicode_finding)
 
     def test_scan_alias_matches_evaluate_shape(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -914,6 +962,24 @@ class TestSkillSafetyAssessmentV2(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 2)
             self.assertIn("context.environment", result.stderr)
+
+    def test_evaluate_runs_github_osint_precheck_by_default(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir)
+            (repo / "README.md").write_text("safe content\n", encoding="utf-8")
+
+            result = self._run_cli(
+                [
+                    "evaluate",
+                    "--target-repo",
+                    str(repo),
+                    "--json",
+                ]
+            )
+            self.assertEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+            self.assertIn("precheck", payload)
+            self.assertEqual(payload["precheck"].get("decision"), "not_applicable")
 
 
 if __name__ == "__main__":

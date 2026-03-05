@@ -25,6 +25,22 @@ from ..finding import add_finding, mark_layer_executed
 from ..models import FileRecord, Finding, LayerState
 
 
+def _is_detection_meta_line(raw_line: str) -> bool:
+    stripped = raw_line.strip()
+    lowered = stripped.lower()
+    if stripped.startswith(("r\"", "r'", '"', "'")) and "0xE0000" in stripped:
+        return True
+    if "0xe0000" in lowered and "stripped" in lowered:
+        return True
+    if "for ch in raw_line" in lowered and "0xe0000" in lowered:
+        return True
+    if "pattern.search(raw_line)" in lowered:
+        return True
+    if any(token in lowered for token in ("rule_id=", "why=", "fix=", "add_finding(")):
+        return True
+    return False
+
+
 def _scan_multiline_subprocess_shell_true(
     rel_path: str,
     lines: Sequence[str],
@@ -153,6 +169,8 @@ def _scan_unicode_tag_smuggling(
     layer_state: LayerState,
 ) -> None:
     for idx, raw_line in enumerate(lines, start=1):
+        if is_non_runtime_line(raw_line) or _is_detection_meta_line(raw_line):
+            continue
         has_tag_chars = any(0xE0000 <= ord(ch) <= 0xE007F for ch in raw_line)
         if has_tag_chars or UNICODE_TAG_BUILD_PATTERN.search(raw_line) or UNICODE_TAG_RANGE_PATTERN.search(raw_line):
             add_finding(
@@ -186,6 +204,8 @@ def _scan_prompt_steganography_content(
     technique_lines: list[int] = []
 
     for idx, raw_line in enumerate(lines, start=1):
+        if _is_detection_meta_line(raw_line):
+            continue
         if PROMPT_STEGO_PATTERN.search(raw_line):
             prompt_lines.append(idx)
         if STEGO_TECHNIQUE_PATTERN.search(raw_line):
@@ -242,7 +262,7 @@ def scan_exec_and_evasion(
         _scan_node_exec_alias_usage(rel_path, lines, findings, dedupe, layer_state)
 
     for idx, raw_line in enumerate(lines, start=1):
-        if is_non_runtime_line(raw_line):
+        if is_non_runtime_line(raw_line) or _is_detection_meta_line(raw_line):
             continue
 
         for pattern, layer, rule_id, severity, confidence, why, fix in EXEC_RULES:

@@ -10,6 +10,7 @@ from .collector import collect_file_records
 from .common import canonical_json, git_commit_sha, now_utc_iso
 from .constants import (
     LAYER_EVASION,
+    LAYER_SUPPLY,
     MAX_FILE_BYTES,
     SCAN_VERSION,
     TOOL_NAME,
@@ -17,8 +18,9 @@ from .constants import (
     POLICY_VERSION,
 )
 from .context import ContextProfile, classify_finding_surface, context_multiplier
-from .finding import initial_layer_state
-from .models import Finding
+from .finding import add_finding, initial_layer_state
+from .models import Finding, ScanStats
+from .repo_intel import run_github_osint_precheck
 from .scanners import (
     scan_capability_contract_mismatch,
     scan_docs_command_risk,
@@ -42,25 +44,86 @@ def scan_repository(
     target_repo: Path,
     max_findings: int = 120,
     context_profile: Optional[ContextProfile] = None,
+    github_osint_timeout: float = 6.0,
 ) -> dict:
     target_repo = target_repo.resolve()
     profile = context_profile or ContextProfile()
 
-    records, stats, file_hash_tokens = collect_file_records(target_repo)
     findings: list[Finding] = []
     dedupe: Set[Tuple[str, str, int, str]] = set()
     layer_state = initial_layer_state()
 
-    for record in records:
-        if record["is_prompt_surface"]:
-            scan_prompt_semantics(record, findings, dedupe, layer_state)
-            scan_docs_command_risk(record, findings, dedupe, layer_state)
-        if record["is_executable_surface"]:
-            scan_exec_and_evasion(record, findings, dedupe, layer_state)
-            scan_secret_exfiltration(record, findings, dedupe, layer_state)
+    skip_local_scan = False
 
-    scan_supply_chain(records, findings, dedupe, layer_state)
-    scan_capability_contract_mismatch(records, findings, dedupe, layer_state)
+    precheck = run_github_osint_precheck(target_repo=target_repo, timeout_seconds=github_osint_timeout)
+    if precheck.get("decision") == "reject":
+        repo_slug = str(precheck.get("repository") or "unknown")
+        signals_value = precheck.get("signals")
+        signals = signals_value if isinstance(signals_value, list) else []
+        if not signals:
+            signals = [
+                {
+                    "source": "github.osint",
+                    "term": "high-risk signal",
+                    "snippet": str(precheck.get("reason") or "GitHub OSINT precheck marked repository as high-risk."),
+                }
+            ]
+
+        for idx, signal in enumerate(signals[:5], start=1):
+            source = str(signal.get("source") or "github.osint")
+            term = str(signal.get("term") or "high-risk signal")
+            snippet = str(signal.get("snippet") or term)
+            add_finding(
+                findings,
+                dedupe,
+                layer_state,
+                layer=LAYER_SUPPLY,
+                rule_id="E_GITHUB_OSINT_HIGH_RISK_SIGNAL",
+                category="E",
+                severity="high",
+                confidence="medium",
+                file_path=f"github:{repo_slug}",
+                line=idx,
+                snippet=snippet,
+                why=(
+                    "GitHub OSINT precheck flagged high-risk repository signal "
+                    f"({source}: {term})."
+                ),
+                fix=(
+                    "Reject installation and require manual security review in an isolated sandbox "
+                    "before any execution."
+                ),
+                tags=["github-osint", "precheck", "external-reputation"],
+                exploitability=0.95,
+                reach=0.95,
+            )
+        skip_local_scan = True
+
+    if skip_local_scan:
+        records = []
+        stats: ScanStats = {
+            "total_files_seen": 0,
+            "candidate_files": 0,
+            "files_scanned": 0,
+            "skipped_large_files": 0,
+            "skipped_unreadable_files": 0,
+            "skipped_large_executable_files": 0,
+            "skipped_unreadable_executable_files": 0,
+        }
+        file_hash_tokens: list[str] = []
+    else:
+        records, stats, file_hash_tokens = collect_file_records(target_repo)
+
+        for record in records:
+            if record["is_prompt_surface"]:
+                scan_prompt_semantics(record, findings, dedupe, layer_state)
+                scan_docs_command_risk(record, findings, dedupe, layer_state)
+            if record["is_executable_surface"]:
+                scan_exec_and_evasion(record, findings, dedupe, layer_state)
+                scan_secret_exfiltration(record, findings, dedupe, layer_state)
+
+        scan_supply_chain(records, findings, dedupe, layer_state)
+        scan_capability_contract_mismatch(records, findings, dedupe, layer_state)
 
     for finding in findings:
         surface = classify_finding_surface(str(finding.get("file", "")), finding.get("tags", []))
@@ -133,6 +196,9 @@ def scan_repository(
         coverage_penalty += min(30, len(missing_layers) * 15)
         coverage_notes.append("Missing required layer execution: " + ", ".join(missing_layers))
 
+    if skip_local_scan:
+        coverage_notes.append("GitHub OSINT precheck triggered hard reject; skipped local file scan.")
+
     if not coverage_notes:
         coverage_notes.append("Coverage complete for configured file classes and applicable layers.")
 
@@ -191,6 +257,7 @@ def scan_repository(
         "tool": TOOL_NAME,
         "target_repo": str(target_repo),
         "run": run,
+        "precheck": precheck,
         "context_profile": profile.to_dict(),
         "integrity": {
             "repo_fingerprint": repo_fingerprint,

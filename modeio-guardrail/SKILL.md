@@ -104,6 +104,7 @@ python scripts/safety.py -i "List all running containers and display their resou
 ### `scripts/skill_safety_assessment.py`
 
 - `evaluate`: authoritative v2 layered evaluator with deterministic evidence IDs, integrity fingerprinting, and risk scoring
+  - Native first-layer gate: GitHub metadata/README/issue-search precheck runs by default and hard-rejects on high-risk attack-demo/malware signals before local file scan.
 - `scan`: compatibility alias to `evaluate` for existing automation
 - `prompt`: renders prompt payload with script highlights and structured scan JSON
 - `validate`: validates model output against scan evidence IDs (`evidence_refs`), required highlights, and score/decision consistency checks
@@ -124,6 +125,7 @@ Context profile (optional, no user identity required):
 # 1) Deterministic layered evaluation (v2)
 python scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --json > /tmp/skill_scan.json
 python scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --context-profile '{"environment":"ci","execution_mode":"build-test","risk_tolerance":"balanced","data_sensitivity":"internal"}' --json > /tmp/skill_scan.json
+python scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --github-osint-timeout 8 --json > /tmp/skill_scan.json
 
 # (compat) legacy alias still supported
 python scripts/skill_safety_assessment.py scan --target-repo /path/to/repo --json > /tmp/skill_scan.json

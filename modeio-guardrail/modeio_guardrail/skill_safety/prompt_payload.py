@@ -23,6 +23,7 @@ def build_prompt_payload(
         "context_profile": scan_result.get("context_profile", {}),
         "script_scan_summary": scan_result.get("summary", {}),
         "script_scan_scoring": scan_result.get("scoring", {}),
+        "script_scan_precheck": scan_result.get("precheck", {}),
         "script_scan_integrity": scan_result.get("integrity", {}),
         "script_scan_layers": scan_result.get("layers", {}),
         "required_highlight_evidence_ids": required_refs,
