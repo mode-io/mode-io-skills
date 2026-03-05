@@ -143,6 +143,32 @@ class TestGatewayContract(unittest.TestCase):
             gateway_stub.stop()
             upstream.stop()
 
+    def test_invalid_modeio_plugin_preset_returns_validation_error(self):
+        upstream, gateway_stub = self._start_pair(
+            lambda _path, payload: completion_payload(payload["messages"][0]["content"])
+        )
+        try:
+            status, _headers, payload = self._post_json(
+                gateway_stub.base_url,
+                "/v1/chat/completions",
+                {
+                    "model": "gpt-test",
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "modeio": {
+                        "plugins": {
+                            "guardrail": {
+                                "preset": True,
+                            }
+                        }
+                    },
+                },
+            )
+            self.assertEqual(status, 400)
+            self.assertEqual(payload["error"]["code"], "MODEIO_VALIDATION_ERROR")
+        finally:
+            gateway_stub.stop()
+            upstream.stop()
+
     def test_chat_stream_is_passed_through(self):
         def stream_factory(_path, payload):
             content = payload["messages"][0]["content"]
@@ -338,6 +364,102 @@ class TestGatewayContract(unittest.TestCase):
             self.assertEqual(payload["error"]["code"], "MODEIO_PLUGIN_BLOCKED")
             self.assertEqual(headers["x-modeio-upstream-called"], "false")
             self.assertEqual(len(upstream.requests), 0)
+        finally:
+            gateway_stub.stop()
+            upstream.stop()
+
+    def test_profile_plugin_override_can_enable_guardrail_only_preset(self):
+        module_name = "modeio_middleware.tests.plugins.blocker_profile_enabled"
+        _register_blocker_plugin_module(module_name)
+
+        plugins = {
+            "blocker": {
+                "enabled": False,
+                "module": module_name,
+            }
+        }
+        profiles = {
+            "guardrail_quiet": {
+                "on_plugin_error": "warn",
+                "plugins": ["blocker"],
+                "plugin_overrides": {
+                    "blocker": {
+                        "enabled": True,
+                    }
+                },
+            }
+        }
+
+        upstream, gateway_stub = self._start_pair(
+            lambda _path, payload: completion_payload(payload["messages"][0]["content"]),
+            plugins=plugins,
+            profiles=profiles,
+        )
+        try:
+            status, _headers, payload = self._post_json(
+                gateway_stub.base_url,
+                "/v1/chat/completions",
+                {
+                    "model": "gpt-test",
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "modeio": {
+                        "profile": "guardrail_quiet",
+                    },
+                },
+            )
+            self.assertEqual(status, 403)
+            self.assertEqual(payload["error"]["code"], "MODEIO_PLUGIN_BLOCKED")
+            self.assertEqual(len(upstream.requests), 0)
+        finally:
+            gateway_stub.stop()
+            upstream.stop()
+
+    def test_request_plugin_override_wins_over_profile_plugin_override(self):
+        module_name = "modeio_middleware.tests.plugins.blocker_profile_override"
+        _register_blocker_plugin_module(module_name)
+
+        plugins = {
+            "blocker": {
+                "enabled": False,
+                "module": module_name,
+            }
+        }
+        profiles = {
+            "guardrail_quiet": {
+                "on_plugin_error": "warn",
+                "plugins": ["blocker"],
+                "plugin_overrides": {
+                    "blocker": {
+                        "enabled": True,
+                    }
+                },
+            }
+        }
+
+        upstream, gateway_stub = self._start_pair(
+            lambda _path, payload: completion_payload(payload["messages"][0]["content"]),
+            plugins=plugins,
+            profiles=profiles,
+        )
+        try:
+            status, _headers, _payload = self._post_json(
+                gateway_stub.base_url,
+                "/v1/chat/completions",
+                {
+                    "model": "gpt-test",
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "modeio": {
+                        "profile": "guardrail_quiet",
+                        "plugins": {
+                            "blocker": {
+                                "enabled": False,
+                            }
+                        },
+                    },
+                },
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(len(upstream.requests), 1)
         finally:
             gateway_stub.stop()
             upstream.stop()

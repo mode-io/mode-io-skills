@@ -21,6 +21,7 @@ def iter_transformed_sse_stream(
     shared_state: Dict[str, Any],
     on_plugin_error: str,
     degraded: List[str],
+    services: Dict[str, Any] | None = None,
 ) -> Iterator[bytes]:
     runtime_degraded = list(degraded)
     try:
@@ -46,6 +47,7 @@ def iter_transformed_sse_stream(
                 event=parsed_event,
                 shared_state=shared_state,
                 on_plugin_error=on_plugin_error,
+                services=services,
             )
             runtime_degraded.extend(event_result.degraded)
 
@@ -77,6 +79,7 @@ def iter_transformed_sse_stream(
             request_context=request_context,
             shared_state=shared_state,
             on_plugin_error=on_plugin_error,
+            services=services,
         )
         runtime_degraded.extend(end_result.degraded)
         if end_result.blocked:

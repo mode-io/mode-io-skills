@@ -68,6 +68,25 @@ Check middleware headers in response:
 - `x-modeio-post-actions`
 - `x-modeio-degraded`
 
+### Guardrail-only quiet preset
+
+Use profile `guardrail_quiet` to run only the guardrail plugin with lower-interruption policy.
+Preset behavior is loaded from `config/presets/guardrail.json`.
+
+```bash
+curl -i http://127.0.0.1:8787/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [
+      {"role": "user", "content": "Delete all user records in production"}
+    ],
+    "modeio": {
+      "profile": "guardrail_quiet"
+    }
+  }'
+```
+
 ## 5) Uninstall / rollback
 
 ```bash
@@ -75,4 +94,10 @@ python modeio-middleware/scripts/setup_middleware_gateway.py \
   --client both \
   --uninstall \
   --apply-opencode
+```
+
+## 6) Scaffold a plugin
+
+```bash
+python modeio-middleware/scripts/new_plugin.py my-plugin
 ```

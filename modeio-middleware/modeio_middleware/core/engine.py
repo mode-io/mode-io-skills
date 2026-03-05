@@ -16,9 +16,12 @@ from modeio_middleware.core.profiles import (
     DEFAULT_PROFILE,
     normalize_profile_name,
     resolve_plugin_error_policy,
+    resolve_profile_plugin_overrides,
     resolve_profile,
     resolve_profile_plugins,
 )
+from modeio_middleware.core.services.defer_queue import DeferredActionQueue
+from modeio_middleware.core.services.telemetry import PluginTelemetry
 from modeio_middleware.core.stream_relay import iter_transformed_sse_stream
 from modeio_middleware.core.upstream_client import forward_upstream_json, forward_upstream_stream
 
@@ -32,6 +35,8 @@ class GatewayRuntimeConfig:
     default_profile: str = DEFAULT_PROFILE
     profiles: Dict[str, Any] = None  # type: ignore[assignment]
     plugins: Dict[str, Any] = None  # type: ignore[assignment]
+    preset_registry: Dict[str, Any] = None  # type: ignore[assignment]
+    service_config: Dict[str, Any] = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -49,10 +54,30 @@ class StreamProcessResult:
     payload: Optional[Dict[str, Any]] = None
 
 
+def _build_runtime_services(service_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    cfg = service_config if isinstance(service_config, dict) else {}
+
+    defer_cfg = cfg.get("defer_queue", {})
+    defer_path: Optional[str] = None
+    if isinstance(defer_cfg, dict):
+        candidate = defer_cfg.get("path")
+        if isinstance(candidate, str) and candidate.strip():
+            defer_path = candidate.strip()
+
+    return {
+        "defer_queue": DeferredActionQueue(path=defer_path),
+        "telemetry": PluginTelemetry(),
+    }
+
+
 class MiddlewareEngine:
     def __init__(self, runtime_config: GatewayRuntimeConfig):
         self.config = runtime_config
-        self.plugin_manager = PluginManager(runtime_config.plugins or {})
+        self.plugin_manager = PluginManager(
+            runtime_config.plugins or {},
+            preset_registry=runtime_config.preset_registry or {},
+        )
+        self.services = _build_runtime_services(runtime_config.service_config)
 
     def _resolve_plugin_runtime(
         self,
@@ -64,7 +89,12 @@ class MiddlewareEngine:
         profile_config = resolve_profile(self.config.profiles or {}, profile)
         on_plugin_error = resolve_plugin_error_policy(profile_config, on_plugin_error_override)
         plugin_order = resolve_profile_plugins(profile_config)
-        active_plugins = self.plugin_manager.resolve_active_plugins(plugin_order, plugin_overrides)
+        profile_overrides = resolve_profile_plugin_overrides(profile_config)
+        active_plugins = self.plugin_manager.resolve_active_plugins(
+            plugin_order,
+            request_plugin_overrides=plugin_overrides,
+            profile_plugin_overrides=profile_overrides,
+        )
         return on_plugin_error, active_plugins
 
     def _error_process_result(
@@ -142,6 +172,7 @@ class MiddlewareEngine:
                 context=request_context,
                 shared_state=shared_state,
                 on_plugin_error=on_plugin_error,
+                services=self.services,
             )
             pre_actions = pre_result.actions
             degraded.extend(pre_result.degraded)
@@ -193,6 +224,7 @@ class MiddlewareEngine:
                 response_headers={},
                 shared_state=shared_state,
                 on_plugin_error=on_plugin_error,
+                services=self.services,
             )
             post_actions = post_result.actions
             degraded.extend(post_result.degraded)
@@ -273,6 +305,7 @@ class MiddlewareEngine:
             response_context={},
             shared_state=shared_state,
             on_plugin_error=on_plugin_error,
+            services=self.services,
         )
         degraded.extend(post_start_result.degraded)
 
@@ -321,6 +354,7 @@ class MiddlewareEngine:
                 shared_state=shared_state,
                 on_plugin_error=on_plugin_error,
                 degraded=degraded,
+                services=self.services,
             ),
             payload=None,
         )
