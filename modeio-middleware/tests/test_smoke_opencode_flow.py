@@ -112,8 +112,6 @@ class TestSmokeOpenCodeFlow(unittest.TestCase):
 
                 apply_code, apply_payload = _run_setup_json(
                     [
-                        "--client",
-                        "opencode",
                         "--apply-opencode",
                         "--create-opencode-config",
                         "--gateway-base-url",
@@ -184,8 +182,6 @@ class TestSmokeOpenCodeFlow(unittest.TestCase):
 
                 uninstall_code, uninstall_payload = _run_setup_json(
                     [
-                        "--client",
-                        "opencode",
                         "--apply-opencode",
                         "--uninstall",
                         "--force-remove-opencode-base-url",

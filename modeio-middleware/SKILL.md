@@ -33,13 +33,12 @@ python modeio-middleware/scripts/middleware_gateway.py \
 
 ### `scripts/setup_middleware_gateway.py`
 
-Setup/unsetup assistant for Codex/OpenCode routing.
+Setup/unsetup assistant for Codex/OpenCode/Claude routing.
 
 ```bash
-python modeio-middleware/scripts/setup_middleware_gateway.py --client both
+python modeio-middleware/scripts/setup_middleware_gateway.py
 
 python modeio-middleware/scripts/setup_middleware_gateway.py \
-  --client opencode \
   --apply-opencode \
   --create-opencode-config
 
@@ -48,9 +47,9 @@ python modeio-middleware/scripts/setup_middleware_gateway.py \
   --create-claude-settings
 
 python modeio-middleware/scripts/setup_middleware_gateway.py \
-  --client both \
   --uninstall \
-  --apply-opencode
+  --apply-opencode \
+  --apply-claude
 ```
 
 ### `scripts/new_plugin.py`

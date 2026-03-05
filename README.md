@@ -546,13 +546,13 @@ python modeio-guardrail/scripts/skill_safety_assessment.py scan --target-repo /p
 python modeio-guardrail/scripts/skill_safety_assessment.py prompt --target-repo /path/to/skill-repo --scan-file /tmp/skill_scan.json
 python modeio-guardrail/scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
 
-# Generic middleware gateway (Codex/OpenCode)
-python modeio-middleware/scripts/setup_middleware_gateway.py --client both --health-check
+# Generic middleware gateway (Codex/OpenCode/Claude)
+python modeio-middleware/scripts/setup_middleware_gateway.py --health-check
 python modeio-middleware/scripts/middleware_gateway.py --host 127.0.0.1 --port 8787 --upstream-chat-url "https://api.openai.com/v1/chat/completions" --upstream-responses-url "https://api.openai.com/v1/responses"
 # Quickstart: modeio-middleware/QUICKSTART.md
 
-# Middleware one-command uninstall (prints Codex unset and optional OpenCode rollback)
-python modeio-middleware/scripts/setup_middleware_gateway.py --client both --uninstall --apply-opencode
+# Middleware one-command uninstall (prints Codex unset and optional OpenCode/Claude rollback)
+python modeio-middleware/scripts/setup_middleware_gateway.py --uninstall --apply-opencode --apply-claude
 
 # Runtime prompt shielding now belongs to modeio-middleware (not modeio-redact)
 # Start middleware gateway with separate upstream routes
