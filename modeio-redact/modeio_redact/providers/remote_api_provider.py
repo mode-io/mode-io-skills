@@ -40,9 +40,9 @@ class RemoteApiProvider:
         for entry in normalized_entries:
             items.append(
                 ProviderItem(
-                    original=entry.get("original", ""),
-                    placeholder=entry.get("placeholder", ""),
-                    entity_type=entry.get("type", "unknown"),
+                    original=entry.original,
+                    placeholder=entry.placeholder,
+                    entity_type=entry.entity_type,
                 )
             )
 

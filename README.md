@@ -584,11 +584,11 @@ python -m unittest discover modeio-middleware/tests -p "test_*.py"
 # Run redact test suite (focused anonymize/deanonymize and file workflows)
 python -m unittest discover modeio-redact/tests -p "test_*.py"
 
-# Run extensive anonymize/deanonymize smoke matrix
+# Run extensive anonymize/deanonymize smoke matrix (includes real API smoke by default)
 python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
 
-# Optional API smoke (requires network + backend availability)
-MODEIO_REDACT_RUN_API_SMOKE=1 python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
+# Optional: disable API smoke when working fully offline
+MODEIO_REDACT_SKIP_API_SMOKE=1 python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
 
 # Offline local detection (detailed risk scoring)
 python modeio-redact/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json

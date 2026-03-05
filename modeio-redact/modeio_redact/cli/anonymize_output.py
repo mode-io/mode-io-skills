@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from modeio_redact.core.models import InputSource
+from modeio_redact.core.models import InputSource, MapRef, MappingEntry
 from modeio_redact.core.pipeline import RedactionFilePipeline, to_pipeline_input_source
 from modeio_redact.core.policy import AssurancePolicy
 from modeio_redact.workflow.file_workflow import resolve_output_path
@@ -92,8 +92,8 @@ def run_file_pipeline(
     output_arg: Optional[str],
     in_place: bool,
     anonymized_content: str,
-    entries: list,
-    map_ref: Optional[Dict[str, Any]],
+    entries: List[MappingEntry],
+    map_ref: Optional[MapRef],
     data: Dict[str, Any],
 ) -> Tuple[Optional[str], Optional[str], AssurancePolicy]:
     resolved_output_path = persist_output_file(
@@ -124,6 +124,8 @@ def run_file_pipeline(
     if output_path:
         data["outputPath"] = output_path
         if map_ref and sidecar_path:
-            map_ref["sidecarPath"] = sidecar_path
+            map_ref_data = data.get("mapRef")
+            if isinstance(map_ref_data, dict):
+                map_ref_data["sidecarPath"] = sidecar_path
 
     return output_path, sidecar_path, assurance_policy

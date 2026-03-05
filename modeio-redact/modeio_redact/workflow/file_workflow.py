@@ -8,7 +8,9 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
+
+from modeio_redact.core.models import MapRef
 
 from modeio_redact.workflow.file_types import (
     MAP_MARKER_STYLE_HASH,
@@ -124,13 +126,20 @@ def sidecar_map_path_for(content_path: Path) -> Path:
     return content_path.with_suffix(".map.json")
 
 
-def write_sidecar_map(content_path: Path, map_ref: Dict[str, str]) -> Path:
+def _coerce_map_ref(map_ref: Union[MapRef, Dict[str, Any]]) -> MapRef:
+    if isinstance(map_ref, MapRef):
+        return map_ref
+    if isinstance(map_ref, dict):
+        return MapRef.from_dict(map_ref)
+    raise ValueError("map_ref must be MapRef or mapRef-like dict")
+
+
+def write_sidecar_map(content_path: Path, map_ref: Union[MapRef, Dict[str, Any]]) -> Path:
+    normalized_ref = _coerce_map_ref(map_ref)
     sidecar_path = sidecar_map_path_for(content_path)
     payload = {
         "schemaVersion": "1",
-        "mapId": map_ref.get("mapId", ""),
-        "mapPath": map_ref.get("mapPath", ""),
-        "entryCount": map_ref.get("entryCount", 0),
+        **normalized_ref.to_dict(),
     }
     sidecar_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return sidecar_path

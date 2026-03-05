@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence, Tuple
+from typing import List, Sequence, Tuple
 
-from modeio_redact.core.models import PlanSpan
+from modeio_redact.core.models import MappingEntry, PlanSpan
 
 
 def _is_overlapping(start: int, end: int, ranges: Sequence[Tuple[int, int]]) -> bool:
@@ -15,13 +15,13 @@ def _is_overlapping(start: int, end: int, ranges: Sequence[Tuple[int, int]]) -> 
     return False
 
 
-def resolve_plan_spans(canonical_text: str, mapping_entries: Sequence[Dict[str, str]]) -> List[PlanSpan]:
+def resolve_plan_spans(canonical_text: str, mapping_entries: Sequence[MappingEntry]) -> List[PlanSpan]:
     """Resolve non-overlapping spans from mapping entries in canonical text."""
     candidates: List[Tuple[str, str, str]] = []
     for entry in mapping_entries:
-        original = (entry.get("original") or "").strip()
-        placeholder = (entry.get("placeholder") or "").strip()
-        entity_type = (entry.get("type") or "unknown").strip() or "unknown"
+        original = entry.original.strip()
+        placeholder = entry.placeholder.strip()
+        entity_type = entry.entity_type.strip() or "unknown"
         if not original or not placeholder:
             continue
         candidates.append((original, placeholder, entity_type))
