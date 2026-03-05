@@ -20,7 +20,7 @@ Gate risky operations behind a real-time safety assessment. Every instruction th
 1. For executable instructions, use the backend-powered `scripts/safety.py` flow.
 2. For requests like "scan this skill repo" or "is this repo dangerous", run the Skill Safety Assessment contract at `prompts/static_repo_scan.md`.
 3. Skill Safety Assessment is static analysis only. Never execute code, install dependencies, or run hooks in the target repository.
-4. For Skill Safety Assessment, run deterministic script pre-scan first, then pass scan highlights into the prompt contract.
+4. For Skill Safety Assessment, run deterministic script evaluation first (`evaluate`), then pass highlights into the prompt contract.
 
 ## Instruction safety execution policy
 
@@ -103,19 +103,41 @@ python scripts/safety.py -i "List all running containers and display their resou
 
 ### `scripts/skill_safety_assessment.py`
 
-- `scan`: deterministic static pre-scan to gather low-noise evidence and highlight IDs
+- `evaluate`: authoritative v2 layered evaluator with deterministic evidence IDs, integrity fingerprinting, and risk scoring
+- `scan`: compatibility alias to `evaluate` for existing automation
 - `prompt`: renders prompt payload with script highlights and structured scan JSON
-- `validate`: validates model output against scan evidence IDs (`evidence_refs`) and required highlights
+- `validate`: validates model output against scan evidence IDs (`evidence_refs`), required highlights, and score/decision consistency checks
+- `adjudicate`: context-aware LLM adjudication bridge (prompt generation + merge decisions back into deterministic score/decision)
+
+Context profile (optional, no user identity required):
+
+```json
+{
+  "environment": "local-dev|ci|staging|production|unknown",
+  "execution_mode": "read-only|build-test|install|deploy|mutating|unknown",
+  "risk_tolerance": "strict|balanced|permissive",
+  "data_sensitivity": "public|internal|sensitive|regulated|unknown"
+}
+```
 
 ```bash
-# 1) Deterministic pre-scan
+# 1) Deterministic layered evaluation (v2)
+python scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --json > /tmp/skill_scan.json
+python scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --context-profile '{"environment":"ci","execution_mode":"build-test","risk_tolerance":"balanced","data_sensitivity":"internal"}' --json > /tmp/skill_scan.json
+
+# (compat) legacy alias still supported
 python scripts/skill_safety_assessment.py scan --target-repo /path/to/repo --json > /tmp/skill_scan.json
 
 # 2) Build prompt payload with highlights
 python scripts/skill_safety_assessment.py prompt --target-repo /path/to/repo --scan-file /tmp/skill_scan.json
 
-# 3) Validate model output for evidence linkage
+# 3) Validate model output for evidence linkage + integrity
 python scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
+python scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --target-repo /path/to/repo --rescan-on-validate --json
+
+# 4) Optional adjudication bridge (LLM interprets context, engine keeps deterministic control)
+python scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json
+python scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json --assessment-file /tmp/adjudication.json --json
 ```
 
 ## Output contract
@@ -183,12 +205,14 @@ Safety verification failures must never be silently ignored.
 ## Skill Safety Assessment policy (static prompt contract)
 
 1. Use `prompts/static_repo_scan.md` as the strict contract.
-2. Run `scripts/skill_safety_assessment.py scan` first and pass its highlights into prompt input.
+2. Run `scripts/skill_safety_assessment.py evaluate` first (or `scan` compatibility alias) and pass its highlights into prompt input.
 3. Every finding must include `path:line` evidence, exact snippet quote, and `evidence_refs` linked to scan evidence IDs.
 4. Always include all required highlight evidence IDs from scan output in final findings.
-5. Return one of: `ALLOW`, `WARN`, `BLOCK`, or `UNVERIFIED`.
-6. If coverage is partial or evidence is insufficient, return `UNVERIFIED` and treat it operationally as `WARN`.
-7. Include a prioritized remediation plan so users can fix and re-scan quickly.
+5. Keep decision/score consistent with referenced evidence severity and coverage constraints.
+6. Use `adjudicate` when context interpretation is required (docs/examples/tests vs runtime/install paths).
+7. Return one of: `reject`, `caution`, or `approve`.
+8. If coverage is partial or evidence is insufficient, return `caution` with explicit coverage note.
+9. Include a prioritized remediation plan so users can fix and re-scan quickly.
 
 ## When NOT to use
 
@@ -200,8 +224,18 @@ Safety verification failures must never be silently ignored.
 
 - `modeio_guardrail/cli/safety.py`: modular safety client implementation (importable core)
 - `scripts/safety.py`: compatibility wrapper entrypoint for CLI usage
-- `modeio_guardrail/cli/skill_safety_assessment.py`: deterministic scan, prompt payload, and output validator for skill-repo safety assessment
-- `scripts/skill_safety_assessment.py`: compatibility wrapper entrypoint for assessment scan/prompt/validate commands
+- `modeio_guardrail/cli/skill_safety_assessment.py`: thin CLI router for evaluate/scan/prompt/validate/adjudicate
+- `modeio_guardrail/skill_safety/engine.py`: layered v2 evaluator orchestration and report builder
+- `modeio_guardrail/skill_safety/scanners/`: concern-specific scanner modules (prompt, execution/evasion, secret-egress, supply-chain, capability)
+- `modeio_guardrail/skill_safety/collector.py`: repository file collection + scan-surface classification
+- `modeio_guardrail/skill_safety/scoring.py`: scoring + decision policy + finding kind classification
+- `modeio_guardrail/skill_safety/validation.py`: strict validator + integrity re-scan checks
+- `modeio_guardrail/skill_safety/prompt_payload.py`: SCRIPT_SCAN prompt payload renderer
+- `modeio_guardrail/skill_safety/context.py`: context profile parser + context-aware risk multipliers
+- `modeio_guardrail/skill_safety/adjudication.py`: adjudication prompt builder + deterministic merge logic
+- `benchmarks/run_repo_set.py`: repeatable benchmark runner over repo-set manifests
+- `benchmarks/repo_sets/*.json`: curated fresh benchmark manifests (good + risky)
+- `scripts/skill_safety_assessment.py`: compatibility wrapper entrypoint for assessment evaluate/scan/prompt/validate/adjudicate commands
 - `prompts/static_repo_scan.md`: Skill Safety Assessment prompt contract for pre-install skill-repo risk scanning
 - `SAFETY_API_URL`: optional environment override for custom endpoint routing
 - `ARCHITECTURE.md`: package boundaries and compatibility notes
