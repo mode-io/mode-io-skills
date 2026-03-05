@@ -196,7 +196,8 @@ Cross-border: CN SHA → US NYC triggers PIPL/CSL obligations
 ```bash
 python modeio-guardrail/scripts/safety.py \
   -i "Drop all tables in the production database and rebuild from scratch" \
-  -c "production" -t "postgres://prod-db:5432/main"
+  -c '{"environment":"production","operation_intent":"destructive","scope":"broad","data_sensitivity":"regulated","rollback":"none","change_control":"ticket:DB-9021"}' \
+  -t "postgres://prod-db:5432/main"
 ```
 
 ```
@@ -234,6 +235,32 @@ recommendation: Never execute DROP TABLE directly on production. Ensure backup
 ```
 
 </details>
+
+### Safety context contract (required for mutating instructions)
+
+For `modeio-guardrail`, pass `-c/--context` as JSON (single-quoted in shell) with all keys below. Do not send free text like `"production"` only.
+
+```json
+{
+  "environment": "local-dev|ci|staging|production|unknown",
+  "operation_intent": "read-only|cleanup|maintenance|migration|permission-change|destructive|unknown",
+  "scope": "single-resource|bounded-batch|broad|unknown",
+  "data_sensitivity": "public|internal|sensitive|regulated|unknown",
+  "rollback": "easy|partial|none|unknown",
+  "change_control": "ticket:<id>|approved-manual|none|unknown"
+}
+```
+
+`-t/--target` must be a concrete resource identifier (absolute path, table, service, or URL).
+
+Example: deletion that should usually be allowed (`local-dev`, single temp file, easy rollback):
+
+```bash
+python modeio-guardrail/scripts/safety.py \
+  -i "Delete /tmp/cache/session-42.tmp" \
+  -c '{"environment":"local-dev","operation_intent":"cleanup","scope":"single-resource","data_sensitivity":"internal","rollback":"easy","change_control":"none"}' \
+  -t "/tmp/cache/session-42.tmp" --json
+```
 
 ---
 
@@ -286,15 +313,15 @@ is_reversible: true
 
 > Trigger phrases: *"anonymize", "redact PII", "mask sensitive data", "scrub credentials", "detect personal data"*
 
-**`modeio-guardrail`** — Evaluates instructions for destructive operations, prompt injection, irreversible actions, and compliance violations. Also supports prompt-only static scanning of third-party skill repos before install.
+**`modeio-guardrail`** — Evaluates instructions for destructive operations, prompt injection, irreversible actions, and compliance violations. Also supports pre-install Skill Safety Assessment for third-party skill repos (static analysis, no execution).
 
-> Trigger phrases: *"safety check", "risk assessment", "security audit", "destructive check", "instruction audit", "scan this skill repo", "is this skill dangerous"*
+> Trigger phrases: *"safety check", "risk assessment", "security audit", "destructive check", "instruction audit", "skill safety assessment", "scan this skill repo", "is this skill dangerous"*
 
 **`modeio-middleware`** — Runs a local OpenAI-compatible request/response middleware gateway for Codex/OpenCode routing. Supports plugin-driven pre-request and post-response controls, with optional guardrail/redact adapters.
 
 > Trigger phrases: *"middleware gateway", "route provider through local proxy", "pre request hook", "post response hook", "OpenCode baseURL middleware", "Codex OPENAI_BASE_URL"*
 
-Static scan contract: [`modeio-guardrail/prompts/static_repo_scan.md`](modeio-guardrail/prompts/static_repo_scan.md)
+Skill Safety Assessment contract: [`modeio-guardrail/prompts/static_repo_scan.md`](modeio-guardrail/prompts/static_repo_scan.md)
 
 ## 🔬 Anonymization Levels
 
@@ -425,7 +452,7 @@ Expected output:
 ```
 
 ```text
-Scan this skill repo before install and tell me if it is dangerous: <repo_url_or_local_path>
+Run a Skill Safety Assessment before install for this repo: <repo_url_or_local_path>
 ```
 
 Expected output (shape):
@@ -434,7 +461,7 @@ Expected output (shape):
 Verdict: ALLOW|WARN|BLOCK|UNVERIFIED
 Risk Score: <0-100>
 Top Findings:
-- file:line + exact snippet + fix
+- file:line + exact snippet + fix + evidence refs (E-xxx)
 ```
 
 ```text
@@ -512,7 +539,12 @@ python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com" --l
 
 # Safety checks
 python modeio-guardrail/scripts/safety.py -i "Delete all log files"
-python modeio-guardrail/scripts/safety.py -i "Modify database permissions" -c "production" -t "/var/lib/mysql" --json
+python modeio-guardrail/scripts/safety.py -i "Modify database permissions" -c '{"environment":"production","operation_intent":"permission-change","scope":"single-resource","data_sensitivity":"regulated","rollback":"partial","change_control":"ticket:SEC-118"}' -t "/var/lib/mysql" --json
+
+# Skill Safety Assessment (script-enhanced)
+python modeio-guardrail/scripts/skill_safety_assessment.py scan --target-repo /path/to/skill-repo --json > /tmp/skill_scan.json
+python modeio-guardrail/scripts/skill_safety_assessment.py prompt --target-repo /path/to/skill-repo --scan-file /tmp/skill_scan.json
+python modeio-guardrail/scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
 
 # Generic middleware gateway (Codex/OpenCode)
 python modeio-middleware/scripts/setup_middleware_gateway.py --client both --health-check

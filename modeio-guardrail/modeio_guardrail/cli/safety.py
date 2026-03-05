@@ -22,6 +22,19 @@ TOOL_NAME = "modeio-guardrail"
 MAX_RETRIES = 2
 RETRY_BACKOFF = 1.0  # seconds; doubles each retry
 
+CONTEXT_HELP = (
+    "Execution context JSON for state-changing instructions. Required keys: "
+    "environment, operation_intent, scope, data_sensitivity, rollback, change_control. "
+    "Example: '{\"environment\":\"local-dev\",\"operation_intent\":\"cleanup\","
+    "\"scope\":\"single-resource\",\"data_sensitivity\":\"internal\","
+    "\"rollback\":\"easy\",\"change_control\":\"none\"}'"
+)
+
+TARGET_HELP = (
+    "Concrete operation target (absolute file path, table, service name, or URL). "
+    "Required for state-changing instructions."
+)
+
 
 def _post_with_retry(url, json_payload, timeout=60):
     """POST with simple exponential-backoff retry on transient failures."""
@@ -94,8 +107,8 @@ def main():
         description="Evaluate instructions for safety risks (destructive ops, risk level, reversibility, etc.)"
     )
     parser.add_argument("-i", "--input", type=str, required=True, help="Instruction or operation description to evaluate")
-    parser.add_argument("-c", "--context", type=str, default=None, help="Execution context (optional)")
-    parser.add_argument("-t", "--target", type=str, default=None, help="Operation target such as file path, table name, or service (optional)")
+    parser.add_argument("-c", "--context", type=str, default=None, help=CONTEXT_HELP)
+    parser.add_argument("-t", "--target", type=str, default=None, help=TARGET_HELP)
     parser.add_argument("--json", action="store_true", help="Output unified JSON contract for machine consumption.")
     args = parser.parse_args()
 
