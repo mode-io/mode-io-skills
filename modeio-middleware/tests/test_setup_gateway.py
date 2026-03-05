@@ -73,6 +73,12 @@ class TestSetupGateway(unittest.TestCase):
             "http://127.0.0.1:8787/healthz",
         )
 
+    def test_derive_claude_hook_url(self):
+        self.assertEqual(
+            setup_gateway._derive_claude_hook_url("http://127.0.0.1:8787/v1"),
+            "http://127.0.0.1:8787/connectors/claude/hooks",
+        )
+
     def test_codex_env_command_variants(self):
         url = "http://127.0.0.1:8787/v1"
         self.assertEqual(
@@ -126,6 +132,33 @@ class TestSetupGateway(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
             self.assertNotIn("baseURL", payload["provider"]["openai"]["options"])
 
+    def test_apply_and_uninstall_claude_settings_file(self):
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "settings.json"
+            apply_result = setup_gateway._apply_claude_settings_file(
+                config_path=path,
+                gateway_base_url="http://127.0.0.1:8787/v1",
+                create_if_missing=True,
+            )
+            self.assertTrue(apply_result["changed"])
+            self.assertTrue(path.exists())
+
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            hooks = payload["hooks"]
+            self.assertIn("UserPromptSubmit", hooks)
+            self.assertIn("Stop", hooks)
+
+            uninstall_result = setup_gateway._uninstall_claude_settings_file(
+                config_path=path,
+                gateway_base_url="http://127.0.0.1:8787/v1",
+                force_remove=False,
+            )
+            self.assertTrue(uninstall_result["changed"])
+            self.assertEqual(uninstall_result["removedHooks"], 2)
+
+            payload_after = json.loads(path.read_text(encoding="utf-8"))
+            self.assertNotIn("hooks", payload_after)
+
     def test_health_check_reports_healthy(self):
         server = HealthServer()
         server.start()
@@ -141,6 +174,15 @@ class TestSetupGateway(unittest.TestCase):
         out = io.StringIO()
         with redirect_stdout(out):
             code = setup_gateway.main(["--json", "--create-opencode-config"])
+        self.assertEqual(code, 2)
+        payload = json.loads(out.getvalue())
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error"]["type"], "validation_error")
+
+    def test_main_json_validation_error_for_claude_create(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = setup_gateway.main(["--json", "--create-claude-settings"])
         self.assertEqual(code, 2)
         payload = json.loads(out.getvalue())
         self.assertFalse(payload["success"])

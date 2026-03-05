@@ -28,6 +28,17 @@ python modeio-middleware/scripts/setup_middleware_gateway.py \
   --create-opencode-config
 ```
 
+### Claude Code hooks
+
+```bash
+python modeio-middleware/scripts/setup_middleware_gateway.py \
+  --apply-claude \
+  --create-claude-settings
+```
+
+This writes `~/.claude/settings.json` hook entries for `UserPromptSubmit` and `Stop`
+to `POST http://127.0.0.1:8787/connectors/claude/hooks`.
+
 ## 3) Health check
 
 ```bash

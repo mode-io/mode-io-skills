@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 from urllib.parse import urlsplit
 
+from modeio_middleware.connectors.claude_hooks import CLAUDE_HOOK_CONNECTOR_PATH
 from modeio_middleware.core.config_resolver import load_preset_registry
 from modeio_middleware.core.contracts import ENDPOINT_CHAT_COMPLETIONS, ENDPOINT_RESPONSES
 from modeio_middleware.core.engine import GatewayRuntimeConfig, MiddlewareEngine, ProcessResult, StreamProcessResult
@@ -170,6 +171,37 @@ def build_handler(engine: MiddlewareEngine):
         def do_POST(self) -> None:
             request_id = new_request_id()
             request_path = urlsplit(self.path).path
+
+            if request_path == CLAUDE_HOOK_CONNECTOR_PATH:
+                try:
+                    body = _read_json_body(self)
+                except MiddlewareError as error:
+                    headers = contract_headers(
+                        request_id,
+                        profile=engine.config.default_profile,
+                        pre_actions=[],
+                        post_actions=[],
+                        degraded=[],
+                        upstream_called=False,
+                    )
+                    payload = error_payload(
+                        request_id,
+                        error.code,
+                        error.message,
+                        retryable=error.retryable,
+                        details=error.details,
+                    )
+                    self._send_json(error.status, payload, headers)
+                    return
+
+                result = engine.process_claude_hook(
+                    request_id=request_id,
+                    payload=body,
+                    incoming_headers=dict(self.headers.items()),
+                )
+                self._send_json(result.status, result.payload, result.headers)
+                return
+
             endpoint_kind = PATH_TO_ENDPOINT_KIND.get(request_path)
 
             if endpoint_kind is None:
@@ -270,7 +302,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run local modeio-middleware gateway for Codex/OpenCode provider routing. "
-            "Contract: POST /v1/chat/completions and /v1/responses (stream supported), GET /healthz"
+            "Contract: POST /v1/chat/completions, /v1/responses, /connectors/claude/hooks, GET /healthz"
         )
     )
     parser.add_argument("--host", default=DEFAULT_HOST, help=f"Listen host (default: {DEFAULT_HOST})")

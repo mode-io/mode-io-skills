@@ -100,6 +100,7 @@ class StdioJsonRpcRuntime(PluginRuntime):
             "request_id",
             "endpoint_kind",
             "profile",
+            "context",
             "plugin_config",
             "request_body",
             "request_headers",
@@ -109,6 +110,10 @@ class StdioJsonRpcRuntime(PluginRuntime):
             "response_context",
             "event",
             "plugin_state",
+            "source",
+            "source_event",
+            "surface_capabilities",
+            "native_event",
         }
         return {
             key: self._to_jsonable(value)

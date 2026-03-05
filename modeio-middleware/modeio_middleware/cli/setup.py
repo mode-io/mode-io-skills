@@ -17,9 +17,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
+from modeio_middleware.connectors.claude_hooks import CLAUDE_HOOK_CONNECTOR_PATH
+
 DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:8787/v1"
 DEFAULT_UPSTREAM_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_UPSTREAM_RESPONSES_URL = "https://api.openai.com/v1/responses"
+CLAUDE_HOOK_EVENTS = ("UserPromptSubmit", "Stop")
 
 
 class SetupError(RuntimeError):
@@ -85,6 +88,21 @@ def _default_opencode_config_path(
     if xdg_home:
         return Path(xdg_home) / "opencode" / "opencode.json"
     return resolved_home / ".config" / "opencode" / "opencode.json"
+
+
+def _default_claude_settings_path(
+    *,
+    home: Optional[Path] = None,
+) -> Path:
+    resolved_home = home or Path.home()
+    return resolved_home / ".claude" / "settings.json"
+
+
+def _derive_claude_hook_url(gateway_base_url: str) -> str:
+    normalized = _normalize_gateway_base_url(gateway_base_url)
+    if normalized.endswith("/v1"):
+        normalized = normalized[:-3]
+    return normalized + CLAUDE_HOOK_CONNECTOR_PATH
 
 
 def _detect_shell(os_name: str, env: Optional[Dict[str, str]] = None) -> str:
@@ -181,6 +199,203 @@ def _remove_opencode_base_url(
     provider_obj["openai"] = openai_obj
     updated["provider"] = provider_obj
     return updated, True, raw_base_url, "removed"
+
+
+def _is_claude_http_hook_entry(entry: Any, *, hook_url: str, force_remove: bool) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    hook_type = str(entry.get("type", "")).strip().lower()
+    if hook_type != "http":
+        return False
+
+    raw_url = entry.get("url")
+    if not isinstance(raw_url, str) or not raw_url.strip():
+        return False
+    normalized_url = raw_url.strip().rstrip("/")
+
+    if force_remove:
+        return normalized_url.endswith(CLAUDE_HOOK_CONNECTOR_PATH)
+
+    return normalized_url == hook_url.rstrip("/")
+
+
+def _apply_claude_hook_config(config: Dict[str, Any], *, hook_url: str) -> Tuple[Dict[str, Any], bool]:
+    updated = copy.deepcopy(config)
+    hooks_obj = _ensure_object(updated.get("hooks"), "hooks")
+    changed = False
+
+    for event_name in CLAUDE_HOOK_EVENTS:
+        event_groups = hooks_obj.get(event_name)
+        if event_groups is None:
+            event_groups = []
+        if not isinstance(event_groups, list):
+            raise SetupError(f"hooks.{event_name} must be an array in Claude settings")
+
+        has_modeio_hook = False
+        normalized_groups = []
+        for index, group in enumerate(event_groups):
+            if not isinstance(group, dict):
+                raise SetupError(f"hooks.{event_name}[{index}] must be an object in Claude settings")
+            group_hooks = group.get("hooks")
+            if not isinstance(group_hooks, list):
+                raise SetupError(f"hooks.{event_name}[{index}].hooks must be an array in Claude settings")
+            for hook in group_hooks:
+                if _is_claude_http_hook_entry(hook, hook_url=hook_url, force_remove=False):
+                    has_modeio_hook = True
+            normalized_groups.append(group)
+
+        if not has_modeio_hook:
+            normalized_groups.append(
+                {
+                    "hooks": [
+                        {
+                            "type": "http",
+                            "url": hook_url,
+                            "timeout": 30,
+                        }
+                    ]
+                }
+            )
+            changed = True
+
+        hooks_obj[event_name] = normalized_groups
+
+    updated["hooks"] = hooks_obj
+    return updated, changed
+
+
+def _remove_claude_hook_config(
+    config: Dict[str, Any],
+    *,
+    hook_url: str,
+    force_remove: bool,
+) -> Tuple[Dict[str, Any], bool, int, str]:
+    updated = copy.deepcopy(config)
+    hooks_obj = updated.get("hooks")
+    if not isinstance(hooks_obj, dict):
+        return updated, False, 0, "hooks_missing"
+
+    removed_count = 0
+    changed = False
+    for event_name in CLAUDE_HOOK_EVENTS:
+        event_groups = hooks_obj.get(event_name)
+        if event_groups is None:
+            continue
+        if not isinstance(event_groups, list):
+            raise SetupError(f"hooks.{event_name} must be an array in Claude settings")
+
+        kept_groups = []
+        for index, group in enumerate(event_groups):
+            if not isinstance(group, dict):
+                raise SetupError(f"hooks.{event_name}[{index}] must be an object in Claude settings")
+
+            group_hooks = group.get("hooks")
+            if not isinstance(group_hooks, list):
+                raise SetupError(f"hooks.{event_name}[{index}].hooks must be an array in Claude settings")
+
+            kept_hooks = []
+            for hook in group_hooks:
+                if _is_claude_http_hook_entry(hook, hook_url=hook_url, force_remove=force_remove):
+                    removed_count += 1
+                    changed = True
+                    continue
+                kept_hooks.append(hook)
+
+            if kept_hooks:
+                group_copy = dict(group)
+                group_copy["hooks"] = kept_hooks
+                kept_groups.append(group_copy)
+
+        if kept_groups:
+            hooks_obj[event_name] = kept_groups
+        elif event_name in hooks_obj:
+            del hooks_obj[event_name]
+            changed = True
+
+    if not hooks_obj:
+        updated.pop("hooks", None)
+
+    if removed_count > 0:
+        return updated, changed, removed_count, "removed"
+    if force_remove:
+        return updated, changed, removed_count, "modeio_hook_not_found"
+    return updated, changed, removed_count, "hook_url_not_found"
+
+
+def _apply_claude_settings_file(
+    *,
+    config_path: Path,
+    gateway_base_url: str,
+    create_if_missing: bool,
+) -> Dict[str, Any]:
+    existed = config_path.exists()
+    if not existed and not create_if_missing:
+        raise SetupError(
+            f"Claude settings not found: {config_path}. Use --create-claude-settings to create it."
+        )
+
+    config_data: Dict[str, Any] = {}
+    if existed:
+        config_data = _read_json_file(config_path)
+
+    hook_url = _derive_claude_hook_url(gateway_base_url)
+    updated, changed = _apply_claude_hook_config(config_data, hook_url=hook_url)
+
+    backup_path = None
+    if changed:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        if existed:
+            backup_path = config_path.with_name(f"{config_path.name}.bak.{_utc_timestamp()}")
+            shutil.copy2(config_path, backup_path)
+        _write_json_file(config_path, updated)
+
+    return {
+        "path": str(config_path),
+        "changed": changed,
+        "created": (not existed) and changed,
+        "backupPath": str(backup_path) if backup_path else None,
+        "hookUrl": hook_url,
+    }
+
+
+def _uninstall_claude_settings_file(
+    *,
+    config_path: Path,
+    gateway_base_url: str,
+    force_remove: bool,
+) -> Dict[str, Any]:
+    hook_url = _derive_claude_hook_url(gateway_base_url)
+    if not config_path.exists():
+        return {
+            "path": str(config_path),
+            "changed": False,
+            "backupPath": None,
+            "reason": "config_not_found",
+            "hookUrl": hook_url,
+            "removedHooks": 0,
+        }
+
+    config_data = _read_json_file(config_path)
+    updated, changed, removed_count, reason = _remove_claude_hook_config(
+        config_data,
+        hook_url=hook_url,
+        force_remove=force_remove,
+    )
+
+    backup_path = None
+    if changed:
+        backup_path = config_path.with_name(f"{config_path.name}.bak.{_utc_timestamp()}")
+        shutil.copy2(config_path, backup_path)
+        _write_json_file(config_path, updated)
+
+    return {
+        "path": str(config_path),
+        "changed": changed,
+        "backupPath": str(backup_path) if backup_path else None,
+        "reason": reason,
+        "hookUrl": hook_url,
+        "removedHooks": removed_count,
+    }
 
 
 def _read_json_file(path: Path) -> Dict[str, Any]:
@@ -379,8 +594,10 @@ def _build_report(args: argparse.Namespace) -> Dict[str, Any]:
             "unsetCommand": _codex_unset_env_command(shell),
         },
         "opencode": None,
+        "claude": None,
         "commands": {
             "startGateway": _build_start_command(gateway_base_url),
+            "claudeHookUrl": _derive_claude_hook_url(gateway_base_url),
         },
     }
 
@@ -410,6 +627,25 @@ def _build_report(args: argparse.Namespace) -> Dict[str, Any]:
                 config_path=config_path,
                 gateway_base_url=gateway_base_url,
                 create_if_missing=args.create_opencode_config,
+            )
+
+    if args.apply_claude:
+        claude_path = (
+            Path(args.claude_settings_path).expanduser()
+            if args.claude_settings_path
+            else _default_claude_settings_path()
+        )
+        if args.uninstall:
+            report["claude"] = _uninstall_claude_settings_file(
+                config_path=claude_path,
+                gateway_base_url=gateway_base_url,
+                force_remove=args.force_remove_claude_hook_url,
+            )
+        else:
+            report["claude"] = _apply_claude_settings_file(
+                config_path=claude_path,
+                gateway_base_url=gateway_base_url,
+                create_if_missing=args.create_claude_settings,
             )
 
     return report
@@ -444,6 +680,18 @@ def _print_human_report(report: Dict[str, Any]) -> None:
         if opencode.get("reason"):
             print(f"  reason: {opencode.get('reason')}")
 
+    claude = report.get("claude")
+    if claude is not None:
+        print("- Claude hooks config:")
+        print(f"  path: {claude.get('path')}")
+        print(f"  changed: {claude.get('changed')}")
+        if claude.get("hookUrl"):
+            print(f"  hookUrl: {claude.get('hookUrl')}")
+        if claude.get("backupPath"):
+            print(f"  backup: {claude.get('backupPath')}")
+        if claude.get("reason"):
+            print(f"  reason: {claude.get('reason')}")
+
     print("- Start gateway command:")
     print(f"  {report['commands']['startGateway']}")
 
@@ -451,7 +699,7 @@ def _print_human_report(report: Dict[str, Any]) -> None:
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Set up local middleware routing for Codex/OpenCode. "
+            "Set up local middleware routing for Codex/OpenCode/Claude hooks. "
             "Optional but recommended for request/response middleware control."
         )
     )
@@ -488,6 +736,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Apply OpenCode config update (provider.openai.options.baseURL)",
     )
     parser.add_argument(
+        "--apply-claude",
+        action="store_true",
+        help="Apply Claude hooks config update (~/.claude/settings.json by default)",
+    )
+    parser.add_argument(
         "--uninstall",
         action="store_true",
         help="Run uninstall mode (print unset guidance and optional OpenCode rollback)",
@@ -498,14 +751,32 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Create OpenCode config if missing (requires --apply-opencode)",
     )
     parser.add_argument(
+        "--create-claude-settings",
+        action="store_true",
+        help="Create Claude settings file if missing (requires --apply-claude)",
+    )
+    parser.add_argument(
         "--force-remove-opencode-base-url",
         action="store_true",
         help="In uninstall mode, remove OpenCode baseURL even when it differs from --gateway-base-url",
     )
     parser.add_argument(
+        "--force-remove-claude-hook-url",
+        action="store_true",
+        help=(
+            "In uninstall mode, remove Claude ModeIO hook endpoints even when URL host/port differs "
+            "from --gateway-base-url"
+        ),
+    )
+    parser.add_argument(
         "--opencode-config-path",
         default="",
         help="OpenCode config path override",
+    )
+    parser.add_argument(
+        "--claude-settings-path",
+        default="",
+        help="Claude settings path override",
     )
     parser.add_argument(
         "--shell",
@@ -534,8 +805,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         validation_message = "--create-opencode-config requires --apply-opencode"
     elif args.create_opencode_config and args.uninstall:
         validation_message = "--create-opencode-config cannot be used with --uninstall"
+    elif args.create_claude_settings and not args.apply_claude:
+        validation_message = "--create-claude-settings requires --apply-claude"
+    elif args.create_claude_settings and args.uninstall:
+        validation_message = "--create-claude-settings cannot be used with --uninstall"
     elif args.force_remove_opencode_base_url and not args.uninstall:
         validation_message = "--force-remove-opencode-base-url requires --uninstall"
+    elif args.force_remove_claude_hook_url and not args.uninstall:
+        validation_message = "--force-remove-claude-hook-url requires --uninstall"
 
     if validation_message:
         if args.json:

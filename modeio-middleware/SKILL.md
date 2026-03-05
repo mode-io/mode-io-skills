@@ -14,6 +14,7 @@ Use this skill when you need runtime request/response control in a local proxy.
 
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
+- `POST /connectors/claude/hooks`
 - `GET /healthz`
 
 ## Scripts
@@ -41,6 +42,10 @@ python modeio-middleware/scripts/setup_middleware_gateway.py \
   --client opencode \
   --apply-opencode \
   --create-opencode-config
+
+python modeio-middleware/scripts/setup_middleware_gateway.py \
+  --apply-claude \
+  --create-claude-settings
 
 python modeio-middleware/scripts/setup_middleware_gateway.py \
   --client both \
@@ -84,6 +89,7 @@ python modeio-middleware/scripts/run_plugin_conformance.py /path/to/manifest.jso
 - Runtime modes: `observe`, `assist`, `enforce`.
 - Plugins receive shared runtime services in `hook_input["services"]` (telemetry, defer queue).
 - Stream pipeline supports `post_stream_start`, `post_stream_event`, and `post_stream_end` hooks.
+- Claude hooks connector uses native Claude hook transport but maps decisions through the same plugin runtime/protocol.
 
 ## Contract highlights
 
