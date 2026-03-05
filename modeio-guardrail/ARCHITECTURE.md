@@ -28,6 +28,7 @@ modeio-guardrail/
       json_utils.py
       context.py
       adjudication.py
+      repo_intel.py
       scanners/
         prompt.py
         execution.py
@@ -40,6 +41,7 @@ modeio-guardrail/
   tests/
     test_safety_contract.py
     test_skill_safety_assessment.py
+    test_skill_safety_precheck.py
   benchmarks/
     run_repo_set.py
     repo_sets/
@@ -68,6 +70,7 @@ modeio-guardrail/
 - `modeio_guardrail/skill_safety/prompt_payload.py` owns prompt payload rendering.
 - `modeio_guardrail/skill_safety/context.py` owns context profile parsing and context-aware score multipliers.
 - `modeio_guardrail/skill_safety/adjudication.py` owns adjudication prompt generation and deterministic merge of LLM evidence decisions.
+- `modeio_guardrail/skill_safety/repo_intel.py` owns default-on GitHub OSINT precheck (metadata/README/issue search) before repository file scanning.
 - `scripts/skill_safety_assessment.py` should stay thin and avoid scan/validation business logic.
 
 ## Regression Checklist

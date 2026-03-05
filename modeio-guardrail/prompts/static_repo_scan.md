@@ -9,6 +9,7 @@ Always run deterministic layered evaluation first, then feed its evidence into t
 ```bash
 # 1) Run deterministic layered evaluation (v2)
 python scripts/skill_safety_assessment.py evaluate --target-repo <repo_path> --json > /tmp/skill_scan.json
+# Note: GitHub OSINT precheck is default-on for GitHub repos and runs before local file scanning.
 
 # (compat) legacy alias still supported
 python scripts/skill_safety_assessment.py scan --target-repo <repo_path> --json > /tmp/skill_scan.json

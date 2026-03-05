@@ -36,6 +36,7 @@ def _print_scan_text(scan_result: Dict[str, Any]) -> None:
     summary = scan_result.get("summary", {})
     scoring = scan_result.get("scoring", {})
     run = scan_result.get("run", {})
+    precheck = scan_result.get("precheck", {})
 
     print("Skill Safety Assessment v2 complete")
     print(f"Target: {scan_result.get('target_repo')}")
@@ -53,6 +54,12 @@ def _print_scan_text(scan_result: Dict[str, Any]) -> None:
         f"confidence={scoring.get('confidence', 'low')} "
         f"decision={scoring.get('suggested_decision', 'caution')}"
     )
+    if precheck.get("enabled"):
+        print(
+            "Precheck: "
+            f"decision={precheck.get('decision', 'unavailable')} "
+            f"reason={precheck.get('reason', 'n/a')}"
+        )
 
     highlights = scan_result.get("highlights", [])
     if not highlights:
@@ -93,6 +100,12 @@ def _add_scan_args(scan_parser: argparse.ArgumentParser) -> None:
         "--context-profile-file",
         default=None,
         help="Optional file path containing context profile JSON.",
+    )
+    scan_parser.add_argument(
+        "--github-osint-timeout",
+        type=float,
+        default=6.0,
+        help="Per-request timeout in seconds for default GitHub OSINT precheck calls.",
     )
     scan_parser.add_argument("--json", action="store_true", help="Emit JSON output.")
     scan_parser.add_argument("--output", default=None, help="Optional file path to write JSON output.")
@@ -142,6 +155,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--context-profile-file",
         default=None,
         help="Optional context profile JSON file used when inline evaluate runs.",
+    )
+    prompt_parser.add_argument(
+        "--github-osint-timeout",
+        type=float,
+        default=6.0,
+        help="Per-request timeout in seconds for default GitHub OSINT precheck calls.",
     )
 
     validate_parser = subparsers.add_parser("validate", help="Validate assessment output against scan evidence.")
@@ -213,6 +232,7 @@ def _run_scan_command(args: argparse.Namespace) -> int:
         target_repo=target_repo,
         max_findings=max(0, int(args.max_findings)),
         context_profile=profile,
+        github_osint_timeout=max(1.0, float(args.github_osint_timeout)),
     )
     if args.output:
         output_path = Path(args.output).expanduser().resolve()
@@ -248,6 +268,7 @@ def _run_prompt_command(args: argparse.Namespace) -> int:
             target_repo=target_repo,
             max_findings=max(0, int(args.max_findings)),
             context_profile=profile,
+            github_osint_timeout=max(1.0, float(args.github_osint_timeout)),
         )
 
     prompt_text = build_prompt_payload(

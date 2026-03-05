@@ -313,7 +313,7 @@ UNICODE_TAG_BUILD_PATTERN = re.compile(
     r"(chr\s*\(\s*0xE0000\s*\+|fromCodePoint\s*\(\s*0xE0000)",
     re.IGNORECASE,
 )
-UNICODE_TAG_RANGE_PATTERN = re.compile(r"(U\+E0000|unicode\s+tags?)", re.IGNORECASE)
+UNICODE_TAG_RANGE_PATTERN = re.compile(r"(U\+E0{3}[0-9A-F]{1,2}|0xE0{3}[0-9A-F]{1,2}|\\uE0{3}[0-9A-F]{1,2})", re.IGNORECASE)
 PROMPT_STEGO_PATTERN = re.compile(r"\b(embed|extract|hide)_?prompt\b", re.IGNORECASE)
 STEGO_TECHNIQUE_PATTERN = re.compile(
     r"(least\s+significant\s+bits|steganograph|zero-width|hidden\s+prompt)",
@@ -494,17 +494,20 @@ ATTACK_CONTENT_DECLARATION_RULES: Sequence[Tuple[re.Pattern[str], str, str, str,
 
 PRIVILEGED_OPERATION_RULES: Sequence[Tuple[re.Pattern[str], str, str]] = [
     (
-        re.compile(r"\bsudo\b[^\n]*\b(mount|umount|losetup|debugfs|fsck(\.[a-z0-9_]+)?)\b", re.IGNORECASE),
+        re.compile(
+            r"\bsudo\s+(?:-[a-zA-Z-]+\s+)*(mount|umount|losetup|debugfs|fsck(\.[a-z0-9_]+)?)\b\s+",
+            re.IGNORECASE,
+        ),
         "C_PRIVILEGED_FILESYSTEM_OPERATION",
         "Privileged filesystem administration command detected.",
     ),
     (
-        re.compile(r"\b(mount|umount|losetup|debugfs|fsck(\.[a-z0-9_]+)?)\b", re.IGNORECASE),
+        re.compile(r"(^|\s)(mount|umount|losetup|debugfs|fsck(\.[a-z0-9_]+)?)\b\s+", re.IGNORECASE),
         "C_PRIVILEGED_FILESYSTEM_OPERATION",
         "Filesystem administration command detected and may require elevated privilege.",
     ),
     (
-        re.compile(r"\bsudo\b[^\n]*\b(chroot|modprobe|insmod)\b", re.IGNORECASE),
+        re.compile(r"\bsudo\s+(?:-[a-zA-Z-]+\s+)*(chroot|modprobe|insmod)\b\s+", re.IGNORECASE),
         "C_PRIVILEGED_SYSTEM_OPERATION",
         "Privileged host/system command detected.",
     ),
@@ -543,6 +546,7 @@ ATTACK_SURFACE_RULE_IDS = {
     "B_PROMPT_NETWORK_EXFIL_ENDPOINT",
     "A_PROMPT_INJECTION_ATTACK_CONTENT",
     "E_SUPPLY_CHAIN_ATTACK_DEMO_CONTENT",
+    "E_GITHUB_OSINT_HIGH_RISK_SIGNAL",
     "D_PROMPT_STEGANOGRAPHY_CONTENT",
 }
 
