@@ -288,15 +288,18 @@ Required capabilities:
 
 Suggested CLI flags:
 
-- `--client codex|opencode|both` (required)
 - `--gateway-base-url http://127.0.0.1:8787/v1`
 - `--apply-opencode`
+- `--apply-claude`
 - `--create-opencode-config`
+- `--create-claude-settings`
 - `--opencode-config-path <path>`
+- `--claude-settings-path <path>`
 - `--health-check`
 - `--json`
 - `--uninstall`
 - `--force-remove-opencode-base-url`
+- `--force-remove-claude-hook-url`
 
 ## 7.2 Setup JSON report contract
 

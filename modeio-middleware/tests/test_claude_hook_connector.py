@@ -51,6 +51,44 @@ class _ClaudeWarnPlugin(MiddlewarePlugin):
         }
 
 
+class _ClaudeMetadataPlugin(MiddlewarePlugin):
+    name = "claude_metadata"
+
+    def pre_request(self, hook_input):
+        context = hook_input.get("context")
+        request_context = hook_input.get("request_context")
+        if not isinstance(context, dict):
+            return {"action": "block", "message": "missing pre context"}
+        if not isinstance(request_context, dict):
+            return {"action": "block", "message": "missing mirrored pre request_context"}
+        if context.get("source") != "claude_hooks":
+            return {"action": "block", "message": "invalid pre source context"}
+        if context.get("source_event") != "UserPromptSubmit":
+            return {"action": "block", "message": "invalid pre source_event context"}
+        if hook_input.get("source") != "claude_hooks":
+            return {"action": "block", "message": "missing pre top-level source"}
+        if hook_input.get("source_event") != "UserPromptSubmit":
+            return {"action": "block", "message": "missing pre top-level source_event"}
+        return {"action": "allow"}
+
+    def post_response(self, hook_input):
+        context = hook_input.get("context")
+        request_context = hook_input.get("request_context")
+        if not isinstance(context, dict):
+            return {"action": "block", "message": "missing post context"}
+        if not isinstance(request_context, dict):
+            return {"action": "block", "message": "missing post request_context"}
+        if request_context.get("source") != "claude_hooks":
+            return {"action": "block", "message": "invalid post source request_context"}
+        if request_context.get("source_event") != "Stop":
+            return {"action": "block", "message": "invalid post source_event request_context"}
+        if hook_input.get("source") != "claude_hooks":
+            return {"action": "block", "message": "missing post top-level source"}
+        if hook_input.get("source_event") != "Stop":
+            return {"action": "block", "message": "missing post top-level source_event"}
+        return {"action": "allow"}
+
+
 def _register_plugin(module_name: str, plugin_cls):
     module = types.ModuleType(module_name)
     module.Plugin = plugin_cls
@@ -229,6 +267,54 @@ class TestClaudeHookConnector(unittest.TestCase):
             )
             self.assertEqual(status, 400)
             self.assertEqual(payload["error"]["code"], "MODEIO_VALIDATION_ERROR")
+        finally:
+            gateway.stop()
+            upstream.stop()
+
+    def test_connector_metadata_is_available_on_pre_and_post_hooks(self):
+        module_name = "modeio_middleware.tests.plugins.claude_metadata"
+        _register_plugin(module_name, _ClaudeMetadataPlugin)
+
+        upstream, gateway = self._start_pair(
+            plugins={
+                "claude_metadata": {
+                    "enabled": True,
+                    "module": module_name,
+                }
+            },
+            profiles={
+                "dev": {
+                    "on_plugin_error": "warn",
+                    "plugins": ["claude_metadata"],
+                }
+            },
+        )
+        try:
+            pre_status, pre_headers, pre_payload = _post_json(
+                gateway.base_url,
+                "/connectors/claude/hooks",
+                {
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": "metadata check",
+                    "modeio": {"profile": "dev"},
+                },
+            )
+            self.assertEqual(pre_status, 200)
+            self.assertEqual(pre_payload, {})
+            self.assertIn("claude_metadata:allow", pre_headers["x-modeio-pre-actions"])
+
+            post_status, post_headers, post_payload = _post_json(
+                gateway.base_url,
+                "/connectors/claude/hooks",
+                {
+                    "hook_event_name": "Stop",
+                    "status": "completed",
+                    "modeio": {"profile": "dev"},
+                },
+            )
+            self.assertEqual(post_status, 200)
+            self.assertEqual(post_payload, {})
+            self.assertIn("claude_metadata:allow", post_headers["x-modeio-post-actions"])
         finally:
             gateway.stop()
             upstream.stop()

@@ -16,6 +16,7 @@ from modeio_middleware.core.contracts import (
 from modeio_middleware.core.errors import MiddlewareError
 from modeio_middleware.core.http_contract import contract_headers, error_payload
 from modeio_middleware.core.plugin_manager import ActivePlugin, PluginManager
+from modeio_middleware.core.pipeline_session import PipelineSession
 from modeio_middleware.core.profiles import (
     DEFAULT_PROFILE,
     normalize_profile_name,
@@ -103,33 +104,33 @@ class MiddlewareEngine:
         )
         return on_plugin_error, active_plugins
 
-    def _error_process_result(
-        self,
-        *,
-        request_id: str,
-        profile: str,
-        pre_actions: List[str],
-        post_actions: List[str],
-        degraded: List[str],
-        upstream_called: bool,
-        error: MiddlewareError,
-    ) -> ProcessResult:
+    def _new_session(self, *, request_id: str) -> PipelineSession:
+        return PipelineSession(request_id=request_id, profile=self.config.default_profile)
+
+    def _session_headers(self, session: PipelineSession) -> Dict[str, str]:
+        return contract_headers(
+            session.request_id,
+            profile=session.profile,
+            pre_actions=session.pre_actions,
+            post_actions=session.post_actions,
+            degraded=session.degraded,
+            upstream_called=session.upstream_called,
+        )
+
+    def _error_process_result(self, session: PipelineSession, error: MiddlewareError) -> ProcessResult:
         payload = error_payload(
-            request_id,
+            session.request_id,
             error.code,
             error.message,
             retryable=error.retryable,
             details=error.details,
         )
-        headers = contract_headers(
-            request_id,
-            profile=profile,
-            pre_actions=pre_actions,
-            post_actions=post_actions,
-            degraded=degraded,
-            upstream_called=upstream_called,
-        )
+        headers = self._session_headers(session)
         return ProcessResult(status=error.status, payload=payload, headers=headers)
+
+    def _shutdown_session_plugins(self, session: PipelineSession) -> None:
+        if session.release_plugins and session.active_plugins:
+            self.plugin_manager.shutdown_active_plugins(session.active_plugins)
 
     def process_request(
         self,
@@ -139,13 +140,7 @@ class MiddlewareEngine:
         request_body: Dict[str, Any],
         incoming_headers: Dict[str, str],
     ) -> Union[ProcessResult, StreamProcessResult]:
-        upstream_called = False
-        pre_actions: List[str] = []
-        post_actions: List[str] = []
-        degraded: List[str] = []
-        profile = self.config.default_profile
-        active_plugins: List[ActivePlugin] = []
-        release_plugins = True
+        session = self._new_session(request_id=request_id)
 
         try:
             stream_enabled = validate_endpoint_payload(endpoint_kind, request_body)
@@ -154,10 +149,10 @@ class MiddlewareEngine:
                 request_body,
                 default_profile=self.config.default_profile,
             )
-            profile = normalize_profile_name(options.profile, default_profile=self.config.default_profile)
+            session.profile = normalize_profile_name(options.profile, default_profile=self.config.default_profile)
 
-            on_plugin_error, active_plugins = self._resolve_plugin_runtime(
-                profile=profile,
+            on_plugin_error, session.active_plugins = self._resolve_plugin_runtime(
+                profile=session.profile,
                 on_plugin_error_override=options.on_plugin_error,
                 plugin_overrides=options.plugin_overrides,
             )
@@ -178,10 +173,10 @@ class MiddlewareEngine:
             }
 
             pre_result = self.plugin_manager.apply_pre_request(
-                active_plugins,
-                request_id=request_id,
+                session.active_plugins,
+                request_id=session.request_id,
                 endpoint_kind=endpoint_kind,
-                profile=profile,
+                profile=session.profile,
                 request_body=request_body,
                 request_headers=incoming_headers,
                 context=request_context,
@@ -189,8 +184,8 @@ class MiddlewareEngine:
                 on_plugin_error=on_plugin_error,
                 services=self.services,
             )
-            pre_actions = pre_result.actions
-            degraded.extend(pre_result.degraded)
+            session.pre_actions = pre_result.actions
+            session.degraded.extend(pre_result.degraded)
             if pre_result.blocked:
                 raise MiddlewareError(
                     403,
@@ -203,10 +198,8 @@ class MiddlewareEngine:
             if stream_enabled:
                 stream_result = self._process_stream_request(
                     endpoint_kind=endpoint_kind,
-                    request_id=request_id,
-                    profile=profile,
+                    session=session,
                     on_plugin_error=on_plugin_error,
-                    active_plugins=active_plugins,
                     shared_state=shared_state,
                     request_context={
                         **request_context,
@@ -214,14 +207,12 @@ class MiddlewareEngine:
                     },
                     upstream_payload=pre_result.body,
                     upstream_headers=pre_result.headers,
-                    pre_actions=pre_actions,
-                    degraded=degraded,
                 )
                 if isinstance(stream_result, StreamProcessResult) and stream_result.stream is not None:
-                    release_plugins = False
+                    session.release_plugins = False
                 return stream_result
 
-            upstream_called = True
+            session.upstream_called = True
             upstream_payload = forward_upstream_json(
                 config=self.config,
                 endpoint_kind=endpoint_kind,
@@ -230,10 +221,10 @@ class MiddlewareEngine:
             )
 
             post_result = self.plugin_manager.apply_post_response(
-                active_plugins,
-                request_id=request_id,
+                session.active_plugins,
+                request_id=session.request_id,
                 endpoint_kind=endpoint_kind,
-                profile=profile,
+                profile=session.profile,
                 request_context={
                     **request_context,
                     "preFindings": pre_result.findings,
@@ -244,8 +235,8 @@ class MiddlewareEngine:
                 on_plugin_error=on_plugin_error,
                 services=self.services,
             )
-            post_actions = post_result.actions
-            degraded.extend(post_result.degraded)
+            session.post_actions = post_result.actions
+            session.degraded.extend(post_result.degraded)
             if post_result.blocked:
                 raise MiddlewareError(
                     403,
@@ -255,26 +246,11 @@ class MiddlewareEngine:
                     details={"phase": "post_response"},
                 )
 
-            headers = contract_headers(
-                request_id,
-                profile=profile,
-                pre_actions=pre_actions,
-                post_actions=post_actions,
-                degraded=degraded,
-                upstream_called=upstream_called,
-            )
+            headers = self._session_headers(session)
             return ProcessResult(status=200, payload=post_result.body, headers=headers)
 
         except MiddlewareError as error:
-            return self._error_process_result(
-                request_id=request_id,
-                profile=profile,
-                pre_actions=pre_actions,
-                post_actions=post_actions,
-                degraded=degraded,
-                upstream_called=upstream_called,
-                error=error,
-            )
+            return self._error_process_result(session, error)
         except Exception:
             error = MiddlewareError(
                 503,
@@ -282,18 +258,9 @@ class MiddlewareEngine:
                 "unexpected internal error",
                 retryable=False,
             )
-            return self._error_process_result(
-                request_id=request_id,
-                profile=profile,
-                pre_actions=pre_actions,
-                post_actions=post_actions,
-                degraded=degraded,
-                upstream_called=upstream_called,
-                error=error,
-            )
+            return self._error_process_result(session, error)
         finally:
-            if release_plugins and active_plugins:
-                self.plugin_manager.shutdown_active_plugins(active_plugins)
+            self._shutdown_session_plugins(session)
 
     def process_claude_hook(
         self,
@@ -302,25 +269,20 @@ class MiddlewareEngine:
         payload: Dict[str, Any],
         incoming_headers: Dict[str, str],
     ) -> ProcessResult:
-        upstream_called = False
-        pre_actions: List[str] = []
-        post_actions: List[str] = []
-        degraded: List[str] = []
-        profile = self.config.default_profile
-        active_plugins: List[ActivePlugin] = []
+        session = self._new_session(request_id=request_id)
 
         try:
             invocation = parse_claude_hook_invocation(
                 payload,
                 default_profile=self.config.default_profile,
             )
-            profile = normalize_profile_name(
+            session.profile = normalize_profile_name(
                 invocation.profile,
                 default_profile=self.config.default_profile,
             )
 
-            on_plugin_error, active_plugins = self._resolve_plugin_runtime(
-                profile=profile,
+            on_plugin_error, session.active_plugins = self._resolve_plugin_runtime(
+                profile=session.profile,
                 on_plugin_error_override=invocation.on_plugin_error,
                 plugin_overrides=invocation.plugin_overrides,
             )
@@ -334,10 +296,10 @@ class MiddlewareEngine:
 
             if invocation.phase == "pre_request":
                 pre_result = self.plugin_manager.apply_pre_request(
-                    active_plugins,
-                    request_id=request_id,
+                    session.active_plugins,
+                    request_id=session.request_id,
                     endpoint_kind=invocation.endpoint_kind,
-                    profile=profile,
+                    profile=session.profile,
                     request_body=invocation.request_body,
                     request_headers=incoming_headers,
                     context=connector_context,
@@ -346,8 +308,8 @@ class MiddlewareEngine:
                     services=self.services,
                     connector_capabilities=invocation.connector_capabilities,
                 )
-                pre_actions = pre_result.actions
-                degraded.extend(pre_result.degraded)
+                session.pre_actions = pre_result.actions
+                session.degraded.extend(pre_result.degraded)
                 response_payload = build_claude_hook_response(
                     source_event=invocation.source_event,
                     blocked=pre_result.blocked,
@@ -356,10 +318,10 @@ class MiddlewareEngine:
                 )
             else:
                 post_result = self.plugin_manager.apply_post_response(
-                    active_plugins,
-                    request_id=request_id,
+                    session.active_plugins,
+                    request_id=session.request_id,
                     endpoint_kind=invocation.endpoint_kind,
-                    profile=profile,
+                    profile=session.profile,
                     request_context=connector_context,
                     response_body=invocation.response_body,
                     response_headers={},
@@ -368,8 +330,8 @@ class MiddlewareEngine:
                     services=self.services,
                     connector_capabilities=invocation.connector_capabilities,
                 )
-                post_actions = post_result.actions
-                degraded.extend(post_result.degraded)
+                session.post_actions = post_result.actions
+                session.degraded.extend(post_result.degraded)
                 response_payload = build_claude_hook_response(
                     source_event=invocation.source_event,
                     blocked=post_result.blocked,
@@ -377,26 +339,11 @@ class MiddlewareEngine:
                     findings=post_result.findings,
                 )
 
-            headers = contract_headers(
-                request_id,
-                profile=profile,
-                pre_actions=pre_actions,
-                post_actions=post_actions,
-                degraded=degraded,
-                upstream_called=upstream_called,
-            )
+            headers = self._session_headers(session)
             return ProcessResult(status=200, payload=response_payload, headers=headers)
 
         except MiddlewareError as error:
-            return self._error_process_result(
-                request_id=request_id,
-                profile=profile,
-                pre_actions=pre_actions,
-                post_actions=post_actions,
-                degraded=degraded,
-                upstream_called=upstream_called,
-                error=error,
-            )
+            return self._error_process_result(session, error)
         except Exception:
             error = MiddlewareError(
                 503,
@@ -404,33 +351,20 @@ class MiddlewareEngine:
                 "unexpected internal error",
                 retryable=False,
             )
-            return self._error_process_result(
-                request_id=request_id,
-                profile=profile,
-                pre_actions=pre_actions,
-                post_actions=post_actions,
-                degraded=degraded,
-                upstream_called=upstream_called,
-                error=error,
-            )
+            return self._error_process_result(session, error)
         finally:
-            if active_plugins:
-                self.plugin_manager.shutdown_active_plugins(active_plugins)
+            self._shutdown_session_plugins(session)
 
     def _process_stream_request(
         self,
         *,
         endpoint_kind: str,
-        request_id: str,
-        profile: str,
+        session: PipelineSession,
         on_plugin_error: str,
-        active_plugins: List[ActivePlugin],
         shared_state: Dict[str, Any],
         request_context: Dict[str, Any],
         upstream_payload: Dict[str, Any],
         upstream_headers: Dict[str, str],
-        pre_actions: List[str],
-        degraded: List[str],
     ) -> Union[ProcessResult, StreamProcessResult]:
         upstream_response = forward_upstream_stream(
             config=self.config,
@@ -440,28 +374,25 @@ class MiddlewareEngine:
         )
 
         post_start_result = self.plugin_manager.apply_post_stream_start(
-            active_plugins,
-            request_id=request_id,
+            session.active_plugins,
+            request_id=session.request_id,
             endpoint_kind=endpoint_kind,
-            profile=profile,
+            profile=session.profile,
             request_context=request_context,
             response_context={},
             shared_state=shared_state,
             on_plugin_error=on_plugin_error,
             services=self.services,
         )
-        degraded.extend(post_start_result.degraded)
+        session.degraded.extend(post_start_result.degraded)
+        session.post_actions = list(post_start_result.actions)
 
         if post_start_result.blocked:
             upstream_response.close()
+            session.upstream_called = True
             return self._error_process_result(
-                request_id=request_id,
-                profile=profile,
-                pre_actions=pre_actions,
-                post_actions=post_start_result.actions,
-                degraded=degraded,
-                upstream_called=True,
-                error=MiddlewareError(
+                session,
+                MiddlewareError(
                     403,
                     "MODEIO_PLUGIN_BLOCKED",
                     post_start_result.block_message,
@@ -471,13 +402,15 @@ class MiddlewareEngine:
             )
 
         post_actions_seed = list(post_start_result.actions)
+        session.post_actions = post_actions_seed or ["stream"]
+        session.upstream_called = True
         headers = contract_headers(
-            request_id,
-            profile=profile,
-            pre_actions=pre_actions,
-            post_actions=post_actions_seed or ["stream"],
-            degraded=degraded,
-            upstream_called=True,
+            session.request_id,
+            profile=session.profile,
+            pre_actions=session.pre_actions,
+            post_actions=session.post_actions,
+            degraded=session.degraded,
+            upstream_called=session.upstream_called,
         )
         headers["Content-Type"] = upstream_response.headers.get("Content-Type", "text/event-stream")
         headers["Cache-Control"] = "no-cache"
@@ -489,16 +422,16 @@ class MiddlewareEngine:
             stream=iter_transformed_sse_stream(
                 upstream_response=upstream_response,
                 plugin_manager=self.plugin_manager,
-                active_plugins=active_plugins,
-                request_id=request_id,
+                active_plugins=session.active_plugins,
+                request_id=session.request_id,
                 endpoint_kind=endpoint_kind,
-                profile=profile,
+                profile=session.profile,
                 request_context=request_context,
                 shared_state=shared_state,
                 on_plugin_error=on_plugin_error,
-                degraded=degraded,
+                degraded=session.degraded,
                 services=self.services,
-                on_finish=lambda: self.plugin_manager.shutdown_active_plugins(active_plugins),
+                on_finish=lambda: self.plugin_manager.shutdown_active_plugins(session.active_plugins),
             ),
             payload=None,
         )

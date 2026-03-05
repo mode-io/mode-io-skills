@@ -23,7 +23,6 @@ export OPENAI_BASE_URL="http://127.0.0.1:8787/v1"
 
 ```bash
 python modeio-middleware/scripts/setup_middleware_gateway.py \
-  --client opencode \
   --apply-opencode \
   --create-opencode-config
 ```
@@ -113,9 +112,9 @@ python modeio-middleware/scripts/run_plugin_conformance.py plugins_external/exam
 
 ```bash
 python modeio-middleware/scripts/setup_middleware_gateway.py \
-  --client both \
   --uninstall \
-  --apply-opencode
+  --apply-opencode \
+  --apply-claude
 ```
 
 ## 7) Scaffold a plugin

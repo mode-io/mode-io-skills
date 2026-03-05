@@ -4,59 +4,63 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import os
 import platform
-import shutil
 import sys
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence
 
-from modeio_middleware.connectors.claude_hooks import CLAUDE_HOOK_CONNECTOR_PATH
+from modeio_middleware.cli.setup_lib.claude import (
+    apply_claude_hook_config,
+    apply_claude_settings_file,
+    default_claude_settings_path,
+    derive_claude_hook_url,
+    remove_claude_hook_config,
+    uninstall_claude_settings_file,
+)
+from modeio_middleware.cli.setup_lib.common import (
+    HealthCheckResult,
+    SetupError,
+    derive_health_url,
+    ensure_object,
+    normalize_gateway_base_url,
+    read_json_file,
+    utc_timestamp,
+    write_json_file,
+)
+from modeio_middleware.cli.setup_lib.opencode import (
+    apply_opencode_base_url,
+    apply_opencode_config_file,
+    remove_opencode_base_url,
+    uninstall_opencode_config_file,
+)
 
 DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:8787/v1"
 DEFAULT_UPSTREAM_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_UPSTREAM_RESPONSES_URL = "https://api.openai.com/v1/responses"
-CLAUDE_HOOK_EVENTS = ("UserPromptSubmit", "Stop")
 
+# Backward-compatible module-level aliases for tests and script wrappers.
+_utc_timestamp = utc_timestamp
+_normalize_gateway_base_url = normalize_gateway_base_url
+_derive_health_url = derive_health_url
+_ensure_object = ensure_object
+_read_json_file = read_json_file
+_write_json_file = write_json_file
 
-class SetupError(RuntimeError):
-    pass
+_default_claude_settings_path = default_claude_settings_path
+_derive_claude_hook_url = derive_claude_hook_url
+_apply_claude_hook_config = apply_claude_hook_config
+_remove_claude_hook_config = remove_claude_hook_config
+_apply_claude_settings_file = apply_claude_settings_file
+_uninstall_claude_settings_file = uninstall_claude_settings_file
 
-
-@dataclass(frozen=True)
-class HealthCheckResult:
-    checked: bool
-    ok: bool
-    status_code: Optional[int]
-    message: str
-
-
-def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-
-
-def _normalize_gateway_base_url(raw: str) -> str:
-    if not isinstance(raw, str):
-        raise SetupError("gateway base URL must be a string")
-    value = raw.strip()
-    if not value:
-        raise SetupError("gateway base URL cannot be empty")
-    if not (value.startswith("http://") or value.startswith("https://")):
-        raise SetupError("gateway base URL must start with http:// or https://")
-    return value.rstrip("/")
-
-
-def _derive_health_url(gateway_base_url: str) -> str:
-    normalized = _normalize_gateway_base_url(gateway_base_url)
-    if normalized.endswith("/v1"):
-        return normalized[:-3] + "/healthz"
-    return normalized + "/healthz"
+_apply_opencode_base_url = apply_opencode_base_url
+_remove_opencode_base_url = remove_opencode_base_url
+_apply_opencode_config_file = apply_opencode_config_file
+_uninstall_opencode_config_file = uninstall_opencode_config_file
 
 
 def _detect_os_name(os_name: Optional[str] = None) -> str:
@@ -88,21 +92,6 @@ def _default_opencode_config_path(
     if xdg_home:
         return Path(xdg_home) / "opencode" / "opencode.json"
     return resolved_home / ".config" / "opencode" / "opencode.json"
-
-
-def _default_claude_settings_path(
-    *,
-    home: Optional[Path] = None,
-) -> Path:
-    resolved_home = home or Path.home()
-    return resolved_home / ".claude" / "settings.json"
-
-
-def _derive_claude_hook_url(gateway_base_url: str) -> str:
-    normalized = _normalize_gateway_base_url(gateway_base_url)
-    if normalized.endswith("/v1"):
-        normalized = normalized[:-3]
-    return normalized + CLAUDE_HOOK_CONNECTOR_PATH
 
 
 def _detect_shell(os_name: str, env: Optional[Dict[str, str]] = None) -> str:
@@ -137,356 +126,6 @@ def _codex_unset_env_command(shell: str) -> str:
     if shell == "fish":
         return "set -e OPENAI_BASE_URL"
     return "unset OPENAI_BASE_URL"
-
-
-def _ensure_object(value: Any, label: str) -> Dict[str, Any]:
-    if value is None:
-        return {}
-    if isinstance(value, dict):
-        return value
-    raise SetupError(f"{label} must be an object in OpenCode config")
-
-
-def _apply_opencode_base_url(config: Dict[str, Any], gateway_base_url: str) -> Tuple[Dict[str, Any], bool]:
-    updated = copy.deepcopy(config)
-    provider_obj = _ensure_object(updated.get("provider"), "provider")
-    openai_obj = _ensure_object(provider_obj.get("openai"), "provider.openai")
-    options_obj = _ensure_object(openai_obj.get("options"), "provider.openai.options")
-
-    normalized = _normalize_gateway_base_url(gateway_base_url)
-    current_base_url = options_obj.get("baseURL")
-    changed = current_base_url != normalized
-
-    options_obj["baseURL"] = normalized
-    openai_obj["options"] = options_obj
-    provider_obj["openai"] = openai_obj
-    updated["provider"] = provider_obj
-    return updated, changed
-
-
-def _remove_opencode_base_url(
-    config: Dict[str, Any],
-    gateway_base_url: str,
-    *,
-    force_remove: bool,
-) -> Tuple[Dict[str, Any], bool, Optional[str], str]:
-    updated = copy.deepcopy(config)
-
-    provider_obj = updated.get("provider")
-    if not isinstance(provider_obj, dict):
-        return updated, False, None, "provider_missing"
-
-    openai_obj = provider_obj.get("openai")
-    if not isinstance(openai_obj, dict):
-        return updated, False, None, "openai_provider_missing"
-
-    options_obj = openai_obj.get("options")
-    if not isinstance(options_obj, dict):
-        return updated, False, None, "openai_options_missing"
-
-    raw_base_url = options_obj.get("baseURL")
-    if not isinstance(raw_base_url, str) or not raw_base_url.strip():
-        return updated, False, None, "base_url_not_set"
-
-    normalized_target = _normalize_gateway_base_url(gateway_base_url)
-    normalized_current = raw_base_url.rstrip("/")
-
-    if not force_remove and normalized_current != normalized_target:
-        return updated, False, raw_base_url, "base_url_mismatch"
-
-    del options_obj["baseURL"]
-    openai_obj["options"] = options_obj
-    provider_obj["openai"] = openai_obj
-    updated["provider"] = provider_obj
-    return updated, True, raw_base_url, "removed"
-
-
-def _is_claude_http_hook_entry(entry: Any, *, hook_url: str, force_remove: bool) -> bool:
-    if not isinstance(entry, dict):
-        return False
-    hook_type = str(entry.get("type", "")).strip().lower()
-    if hook_type != "http":
-        return False
-
-    raw_url = entry.get("url")
-    if not isinstance(raw_url, str) or not raw_url.strip():
-        return False
-    normalized_url = raw_url.strip().rstrip("/")
-
-    if force_remove:
-        return normalized_url.endswith(CLAUDE_HOOK_CONNECTOR_PATH)
-
-    return normalized_url == hook_url.rstrip("/")
-
-
-def _apply_claude_hook_config(config: Dict[str, Any], *, hook_url: str) -> Tuple[Dict[str, Any], bool]:
-    updated = copy.deepcopy(config)
-    hooks_obj = _ensure_object(updated.get("hooks"), "hooks")
-    changed = False
-
-    for event_name in CLAUDE_HOOK_EVENTS:
-        event_groups = hooks_obj.get(event_name)
-        if event_groups is None:
-            event_groups = []
-        if not isinstance(event_groups, list):
-            raise SetupError(f"hooks.{event_name} must be an array in Claude settings")
-
-        has_modeio_hook = False
-        normalized_groups = []
-        for index, group in enumerate(event_groups):
-            if not isinstance(group, dict):
-                raise SetupError(f"hooks.{event_name}[{index}] must be an object in Claude settings")
-            group_hooks = group.get("hooks")
-            if not isinstance(group_hooks, list):
-                raise SetupError(f"hooks.{event_name}[{index}].hooks must be an array in Claude settings")
-            for hook in group_hooks:
-                if _is_claude_http_hook_entry(hook, hook_url=hook_url, force_remove=False):
-                    has_modeio_hook = True
-            normalized_groups.append(group)
-
-        if not has_modeio_hook:
-            normalized_groups.append(
-                {
-                    "hooks": [
-                        {
-                            "type": "http",
-                            "url": hook_url,
-                            "timeout": 30,
-                        }
-                    ]
-                }
-            )
-            changed = True
-
-        hooks_obj[event_name] = normalized_groups
-
-    updated["hooks"] = hooks_obj
-    return updated, changed
-
-
-def _remove_claude_hook_config(
-    config: Dict[str, Any],
-    *,
-    hook_url: str,
-    force_remove: bool,
-) -> Tuple[Dict[str, Any], bool, int, str]:
-    updated = copy.deepcopy(config)
-    hooks_obj = updated.get("hooks")
-    if not isinstance(hooks_obj, dict):
-        return updated, False, 0, "hooks_missing"
-
-    removed_count = 0
-    changed = False
-    for event_name in CLAUDE_HOOK_EVENTS:
-        event_groups = hooks_obj.get(event_name)
-        if event_groups is None:
-            continue
-        if not isinstance(event_groups, list):
-            raise SetupError(f"hooks.{event_name} must be an array in Claude settings")
-
-        kept_groups = []
-        for index, group in enumerate(event_groups):
-            if not isinstance(group, dict):
-                raise SetupError(f"hooks.{event_name}[{index}] must be an object in Claude settings")
-
-            group_hooks = group.get("hooks")
-            if not isinstance(group_hooks, list):
-                raise SetupError(f"hooks.{event_name}[{index}].hooks must be an array in Claude settings")
-
-            kept_hooks = []
-            for hook in group_hooks:
-                if _is_claude_http_hook_entry(hook, hook_url=hook_url, force_remove=force_remove):
-                    removed_count += 1
-                    changed = True
-                    continue
-                kept_hooks.append(hook)
-
-            if kept_hooks:
-                group_copy = dict(group)
-                group_copy["hooks"] = kept_hooks
-                kept_groups.append(group_copy)
-
-        if kept_groups:
-            hooks_obj[event_name] = kept_groups
-        elif event_name in hooks_obj:
-            del hooks_obj[event_name]
-            changed = True
-
-    if not hooks_obj:
-        updated.pop("hooks", None)
-
-    if removed_count > 0:
-        return updated, changed, removed_count, "removed"
-    if force_remove:
-        return updated, changed, removed_count, "modeio_hook_not_found"
-    return updated, changed, removed_count, "hook_url_not_found"
-
-
-def _apply_claude_settings_file(
-    *,
-    config_path: Path,
-    gateway_base_url: str,
-    create_if_missing: bool,
-) -> Dict[str, Any]:
-    existed = config_path.exists()
-    if not existed and not create_if_missing:
-        raise SetupError(
-            f"Claude settings not found: {config_path}. Use --create-claude-settings to create it."
-        )
-
-    config_data: Dict[str, Any] = {}
-    if existed:
-        config_data = _read_json_file(config_path)
-
-    hook_url = _derive_claude_hook_url(gateway_base_url)
-    updated, changed = _apply_claude_hook_config(config_data, hook_url=hook_url)
-
-    backup_path = None
-    if changed:
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        if existed:
-            backup_path = config_path.with_name(f"{config_path.name}.bak.{_utc_timestamp()}")
-            shutil.copy2(config_path, backup_path)
-        _write_json_file(config_path, updated)
-
-    return {
-        "path": str(config_path),
-        "changed": changed,
-        "created": (not existed) and changed,
-        "backupPath": str(backup_path) if backup_path else None,
-        "hookUrl": hook_url,
-    }
-
-
-def _uninstall_claude_settings_file(
-    *,
-    config_path: Path,
-    gateway_base_url: str,
-    force_remove: bool,
-) -> Dict[str, Any]:
-    hook_url = _derive_claude_hook_url(gateway_base_url)
-    if not config_path.exists():
-        return {
-            "path": str(config_path),
-            "changed": False,
-            "backupPath": None,
-            "reason": "config_not_found",
-            "hookUrl": hook_url,
-            "removedHooks": 0,
-        }
-
-    config_data = _read_json_file(config_path)
-    updated, changed, removed_count, reason = _remove_claude_hook_config(
-        config_data,
-        hook_url=hook_url,
-        force_remove=force_remove,
-    )
-
-    backup_path = None
-    if changed:
-        backup_path = config_path.with_name(f"{config_path.name}.bak.{_utc_timestamp()}")
-        shutil.copy2(config_path, backup_path)
-        _write_json_file(config_path, updated)
-
-    return {
-        "path": str(config_path),
-        "changed": changed,
-        "backupPath": str(backup_path) if backup_path else None,
-        "reason": reason,
-        "hookUrl": hook_url,
-        "removedHooks": removed_count,
-    }
-
-
-def _read_json_file(path: Path) -> Dict[str, Any]:
-    try:
-        content = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise SetupError(f"failed to read config file: {path}") from error
-
-    try:
-        parsed = json.loads(content)
-    except ValueError as error:
-        raise SetupError(f"invalid JSON in config file: {path}") from error
-
-    if not isinstance(parsed, dict):
-        raise SetupError(f"config root must be an object: {path}")
-    return parsed
-
-
-def _write_json_file(path: Path, payload: Dict[str, Any]) -> None:
-    body = json.dumps(payload, ensure_ascii=False, indent=2)
-    path.write_text(body + "\n", encoding="utf-8")
-
-
-def _apply_opencode_config_file(
-    *,
-    config_path: Path,
-    gateway_base_url: str,
-    create_if_missing: bool,
-) -> Dict[str, Any]:
-    existed = config_path.exists()
-    if not existed and not create_if_missing:
-        raise SetupError(
-            f"OpenCode config not found: {config_path}. Use --create-opencode-config to create it."
-        )
-
-    config_data: Dict[str, Any] = {}
-    if existed:
-        config_data = _read_json_file(config_path)
-
-    updated, changed = _apply_opencode_base_url(config_data, gateway_base_url)
-    backup_path = None
-    if changed:
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        if existed:
-            backup_path = config_path.with_name(f"{config_path.name}.bak.{_utc_timestamp()}")
-            shutil.copy2(config_path, backup_path)
-        _write_json_file(config_path, updated)
-
-    return {
-        "path": str(config_path),
-        "changed": changed,
-        "created": (not existed) and changed,
-        "backupPath": str(backup_path) if backup_path else None,
-    }
-
-
-def _uninstall_opencode_config_file(
-    *,
-    config_path: Path,
-    gateway_base_url: str,
-    force_remove: bool,
-) -> Dict[str, Any]:
-    if not config_path.exists():
-        return {
-            "path": str(config_path),
-            "changed": False,
-            "backupPath": None,
-            "reason": "config_not_found",
-            "removedBaseUrl": None,
-        }
-
-    config_data = _read_json_file(config_path)
-    updated, changed, removed_value, reason = _remove_opencode_base_url(
-        config_data,
-        gateway_base_url,
-        force_remove=force_remove,
-    )
-
-    backup_path = None
-    if changed:
-        backup_path = config_path.with_name(f"{config_path.name}.bak.{_utc_timestamp()}")
-        shutil.copy2(config_path, backup_path)
-        _write_json_file(config_path, updated)
-
-    return {
-        "path": str(config_path),
-        "changed": changed,
-        "backupPath": str(backup_path) if backup_path else None,
-        "reason": reason,
-        "removedBaseUrl": removed_value,
-    }
 
 
 def _check_gateway_health(health_url: str, timeout_seconds: int) -> HealthCheckResult:
@@ -704,12 +343,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         )
     )
     parser.add_argument(
-        "--client",
-        choices=("codex", "opencode", "both"),
-        default="both",
-        help="Target client configuration scope (default: both)",
-    )
-    parser.add_argument(
         "--gateway-base-url",
         default=DEFAULT_GATEWAY_BASE_URL,
         help=f"Gateway base URL (default: {DEFAULT_GATEWAY_BASE_URL})",
@@ -719,11 +352,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default="",
         help="Gateway health URL override (default derived from --gateway-base-url)",
     )
-    parser.add_argument(
-        "--health-check",
-        action="store_true",
-        help="Run gateway /healthz connectivity check",
-    )
+    parser.add_argument("--health-check", action="store_true", help="Run gateway /healthz connectivity check")
     parser.add_argument(
         "--timeout-seconds",
         type=int,
@@ -743,7 +372,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--uninstall",
         action="store_true",
-        help="Run uninstall mode (print unset guidance and optional OpenCode rollback)",
+        help="Run uninstall mode (print unset guidance and optional client rollback)",
     )
     parser.add_argument(
         "--create-opencode-config",
@@ -768,32 +397,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             "from --gateway-base-url"
         ),
     )
-    parser.add_argument(
-        "--opencode-config-path",
-        default="",
-        help="OpenCode config path override",
-    )
-    parser.add_argument(
-        "--claude-settings-path",
-        default="",
-        help="Claude settings path override",
-    )
+    parser.add_argument("--opencode-config-path", default="", help="OpenCode config path override")
+    parser.add_argument("--claude-settings-path", default="", help="Claude settings path override")
     parser.add_argument(
         "--shell",
         choices=("auto", "bash", "zsh", "fish", "powershell", "cmd"),
         default="auto",
         help="Shell used to print Codex OPENAI_BASE_URL command",
     )
-    parser.add_argument(
-        "--os-name",
-        default="",
-        help="Override OS detection for testing/debugging",
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Output machine-readable JSON report",
-    )
+    parser.add_argument("--os-name", default="", help="Override OS detection for testing/debugging")
+    parser.add_argument("--json", action="store_true", help="Output machine-readable JSON report")
     return parser.parse_args(argv)
 
 

@@ -28,17 +28,21 @@ modeio-middleware/
     cli/
       gateway.py
       setup.py
+      setup_lib/
+        common.py
+        opencode.py
+        claude.py
     connectors/
       base.py
       claude_hooks.py
     core/
       config_resolver.py
-      context_extractor.py
       contracts.py
       decision.py
       engine.py
       errors.py
       http_contract.py
+      pipeline_session.py
       plugin_manager.py
       profiles.py
       services/
@@ -62,6 +66,7 @@ modeio-middleware/
       base.py
       redact.py
   tests/
+    test_claude_hook_connector.py
     test_config_resolver.py
     test_gateway_contract.py
     test_protocol_manifest.py

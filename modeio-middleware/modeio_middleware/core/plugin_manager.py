@@ -196,12 +196,91 @@ class PluginManager:
 
         return effective_action
 
-    def _normalize_hook_result(self, plugin_name: str, payload: Any) -> Dict[str, Any]:
-        _ = plugin_name
+    def _normalize_hook_result(self, payload: Any) -> Dict[str, Any]:
         return normalize_decision_payload(payload, stream=False)
 
     def _normalize_stream_hook_result(self, payload: Any) -> Dict[str, Any]:
         return normalize_decision_payload(payload, stream=True)
+
+    def _extract_connector_metadata(
+        self,
+        *,
+        context: Optional[Dict[str, Any]],
+        request_context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        source_context: Optional[Dict[str, Any]] = None
+        if isinstance(context, dict):
+            source_context = context
+        elif isinstance(request_context, dict):
+            source_context = request_context
+
+        if source_context is None:
+            return {}
+
+        metadata: Dict[str, Any] = {}
+        for key in ("source", "source_event", "surface_capabilities", "native_event"):
+            if key in source_context:
+                metadata[key] = source_context[key]
+        return metadata
+
+    def _build_hook_input(
+        self,
+        *,
+        active: ActivePlugin,
+        request_id: str,
+        endpoint_kind: str,
+        profile: str,
+        shared_state: Dict[str, Any],
+        services: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]] = None,
+        request_context: Optional[Dict[str, Any]] = None,
+        response_context: Optional[Dict[str, Any]] = None,
+        request_body: Optional[Dict[str, Any]] = None,
+        request_headers: Optional[Dict[str, str]] = None,
+        response_body: Optional[Dict[str, Any]] = None,
+        response_headers: Optional[Dict[str, str]] = None,
+        event: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        plugin_state = shared_state.setdefault(active.name, {})
+        hook_input: Dict[str, Any] = {
+            "request_id": request_id,
+            "endpoint_kind": endpoint_kind,
+            "profile": profile,
+            "plugin_config": active.config,
+            "state": shared_state,
+            "plugin_state": plugin_state,
+            "services": services or {},
+        }
+
+        if context is not None:
+            hook_input["context"] = context
+        if request_context is not None:
+            hook_input["request_context"] = request_context
+        if context is None and request_context is not None:
+            hook_input["context"] = request_context
+        if request_context is None and context is not None:
+            hook_input["request_context"] = context
+
+        if response_context is not None:
+            hook_input["response_context"] = response_context
+        if request_body is not None:
+            hook_input["request_body"] = request_body
+        if request_headers is not None:
+            hook_input["request_headers"] = request_headers
+        if response_body is not None:
+            hook_input["response_body"] = response_body
+        if response_headers is not None:
+            hook_input["response_headers"] = response_headers
+        if event is not None:
+            hook_input["event"] = event
+
+        hook_input.update(
+            self._extract_connector_metadata(
+                context=context,
+                request_context=request_context,
+            )
+        )
+        return hook_input
 
     def _record_telemetry(
         self,
@@ -280,19 +359,16 @@ class PluginManager:
         for active in reversed(list(active_plugins)):
             if hook_name not in active.supported_hooks:
                 continue
-            plugin_state = shared_state.setdefault(active.name, {})
-            hook_input = {
-                "request_id": request_id,
-                "endpoint_kind": endpoint_kind,
-                "profile": profile,
-                "request_context": request_context,
-                "plugin_config": active.config,
-                "state": shared_state,
-                "plugin_state": plugin_state,
-                "services": services or {},
-            }
-            if response_context is not None:
-                hook_input["response_context"] = response_context
+            hook_input = self._build_hook_input(
+                active=active,
+                request_id=request_id,
+                endpoint_kind=endpoint_kind,
+                profile=profile,
+                shared_state=shared_state,
+                services=services,
+                request_context=request_context,
+                response_context=response_context,
+            )
 
             start = time.perf_counter()
             try:
@@ -363,24 +439,22 @@ class PluginManager:
         for active in active_plugins:
             if "pre_request" not in active.supported_hooks:
                 continue
-            plugin_state = shared_state.setdefault(active.name, {})
-            hook_input = {
-                "request_id": request_id,
-                "endpoint_kind": endpoint_kind,
-                "profile": profile,
-                "request_body": result.body,
-                "request_headers": result.headers,
-                "context": context,
-                "plugin_config": active.config,
-                "state": shared_state,
-                "plugin_state": plugin_state,
-                "services": services or {},
-            }
+            hook_input = self._build_hook_input(
+                active=active,
+                request_id=request_id,
+                endpoint_kind=endpoint_kind,
+                profile=profile,
+                shared_state=shared_state,
+                services=services,
+                context=context,
+                request_body=result.body,
+                request_headers=result.headers,
+            )
 
             start = time.perf_counter()
             try:
                 payload = active.runtime.invoke("pre_request", hook_input)
-                normalized = self._normalize_hook_result(active.name, payload)
+                normalized = self._normalize_hook_result(payload)
             except Exception as error:
                 duration_ms = (time.perf_counter() - start) * 1000
                 self._record_telemetry(
@@ -465,24 +539,22 @@ class PluginManager:
         for active in reversed(list(active_plugins)):
             if "post_response" not in active.supported_hooks:
                 continue
-            plugin_state = shared_state.setdefault(active.name, {})
-            hook_input = {
-                "request_id": request_id,
-                "endpoint_kind": endpoint_kind,
-                "profile": profile,
-                "request_context": request_context,
-                "response_body": result.body,
-                "response_headers": result.headers,
-                "plugin_config": active.config,
-                "state": shared_state,
-                "plugin_state": plugin_state,
-                "services": services or {},
-            }
+            hook_input = self._build_hook_input(
+                active=active,
+                request_id=request_id,
+                endpoint_kind=endpoint_kind,
+                profile=profile,
+                shared_state=shared_state,
+                services=services,
+                request_context=request_context,
+                response_body=result.body,
+                response_headers=result.headers,
+            )
 
             start = time.perf_counter()
             try:
                 payload = active.runtime.invoke("post_response", hook_input)
-                normalized = self._normalize_hook_result(active.name, payload)
+                normalized = self._normalize_hook_result(payload)
             except Exception as error:
                 duration_ms = (time.perf_counter() - start) * 1000
                 self._record_telemetry(
@@ -595,18 +667,16 @@ class PluginManager:
         for active in reversed(list(active_plugins)):
             if "post_stream_event" not in active.supported_hooks:
                 continue
-            plugin_state = shared_state.setdefault(active.name, {})
-            hook_input = {
-                "request_id": request_id,
-                "endpoint_kind": endpoint_kind,
-                "profile": profile,
-                "request_context": request_context,
-                "event": result.event,
-                "plugin_config": active.config,
-                "state": shared_state,
-                "plugin_state": plugin_state,
-                "services": services or {},
-            }
+            hook_input = self._build_hook_input(
+                active=active,
+                request_id=request_id,
+                endpoint_kind=endpoint_kind,
+                profile=profile,
+                shared_state=shared_state,
+                services=services,
+                request_context=request_context,
+                event=result.event,
+            )
 
             start = time.perf_counter()
             try:
