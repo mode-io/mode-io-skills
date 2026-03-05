@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Any, Dict
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SCRIPTS_DIR = REPO_ROOT / "modeio-middleware" / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+PACKAGE_DIR = REPO_ROOT / "modeio-middleware"
+if str(PACKAGE_DIR) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_DIR))
 
-import middleware_gateway as gateway
+from modeio_middleware.cli import gateway
 
 
 def completion_payload(content: str) -> Dict[str, Any]:

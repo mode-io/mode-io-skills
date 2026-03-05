@@ -3,18 +3,45 @@
 from __future__ import annotations
 
 import copy
+import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from modeio_middleware.cli.setup_lib.common import (
     SetupError,
+    detect_os_name,
     ensure_object,
     normalize_gateway_base_url,
     read_json_file,
     utc_timestamp,
     write_json_file,
 )
+
+
+def default_opencode_config_path(
+    *,
+    os_name: Optional[str] = None,
+    env: Optional[Dict[str, str]] = None,
+    home: Optional[Path] = None,
+) -> Path:
+    resolved_env = env or os.environ
+    resolved_home = home or Path.home()
+    system_name = detect_os_name(os_name)
+
+    if system_name == "windows":
+        app_data = resolved_env.get("APPDATA", "").strip()
+        if app_data:
+            return Path(app_data) / "opencode" / "opencode.json"
+        return resolved_home / "AppData" / "Roaming" / "opencode" / "opencode.json"
+
+    if system_name == "darwin":
+        return resolved_home / ".config" / "opencode" / "opencode.json"
+
+    xdg_home = resolved_env.get("XDG_CONFIG_HOME", "").strip()
+    if xdg_home:
+        return Path(xdg_home) / "opencode" / "opencode.json"
+    return resolved_home / ".config" / "opencode" / "opencode.json"
 
 
 def apply_opencode_base_url(config: Dict[str, Any], gateway_base_url: str) -> Tuple[Dict[str, Any], bool]:

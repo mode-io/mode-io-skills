@@ -154,12 +154,8 @@ def load_runtime_config(args: argparse.Namespace) -> GatewayRuntimeConfig:
     if not isinstance(services, dict):
         raise MiddlewareError(500, "MODEIO_CONFIG_ERROR", "config.services must be an object")
 
-    upstream_chat_url = args.upstream_chat_url
-    if args.upstream_url:
-        upstream_chat_url = args.upstream_url
-
     return GatewayRuntimeConfig(
-        upstream_chat_completions_url=upstream_chat_url,
+        upstream_chat_completions_url=args.upstream_chat_url,
         upstream_responses_url=args.upstream_responses_url,
         upstream_timeout_seconds=args.upstream_timeout,
         upstream_api_key_env=args.upstream_api_key_env,
@@ -366,14 +362,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--host", default=DEFAULT_HOST, help=f"Listen host (default: {DEFAULT_HOST})")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Listen port (default: {DEFAULT_PORT})")
-    parser.add_argument(
-        "--upstream-url",
-        default="",
-        help=(
-            "Deprecated alias for --upstream-chat-url. "
-            "If set, overrides chat-completions upstream URL."
-        ),
-    )
     parser.add_argument(
         "--upstream-chat-url",
         default=os.environ.get("MODEIO_MIDDLEWARE_UPSTREAM_CHAT_URL", DEFAULT_UPSTREAM_CHAT_URL),

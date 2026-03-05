@@ -10,12 +10,12 @@ from tempfile import TemporaryDirectory
 from urllib import request as urllib_request
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS_DIR = REPO_ROOT / "modeio-middleware" / "scripts"
+PACKAGE_DIR = REPO_ROOT / "modeio-middleware"
 HELPERS_DIR = REPO_ROOT / "modeio-middleware" / "tests" / "helpers"
-sys.path.insert(0, str(SCRIPTS_DIR))
+sys.path.insert(0, str(PACKAGE_DIR))
 sys.path.insert(0, str(HELPERS_DIR))
 
-import setup_middleware_gateway as setup_gateway  # noqa: E402
+from modeio_middleware.cli import setup as setup_gateway  # noqa: E402
 from gateway_harness import UpstreamStub, completion_payload, responses_payload  # noqa: E402
 from gateway_harness import GatewayStub  # noqa: E402
 
