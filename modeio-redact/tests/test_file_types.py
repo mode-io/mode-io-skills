@@ -52,9 +52,11 @@ class TestFileTypes(unittest.TestCase):
         self.assertTrue(file_types.supports_deanonymize_for_extension(".docx"))
         self.assertFalse(file_types.supports_deanonymize_for_extension(".pdf"))
 
-    def test_pdf_level_support_is_lite_only(self):
+    def test_pdf_level_support_includes_all_levels(self):
         self.assertTrue(file_types.is_level_supported_for_extension(".pdf", "lite"))
-        self.assertFalse(file_types.is_level_supported_for_extension(".pdf", "dynamic"))
+        self.assertTrue(file_types.is_level_supported_for_extension(".pdf", "dynamic"))
+        self.assertTrue(file_types.is_level_supported_for_extension(".pdf", "strict"))
+        self.assertTrue(file_types.is_level_supported_for_extension(".pdf", "crossborder"))
 
 
 if __name__ == "__main__":

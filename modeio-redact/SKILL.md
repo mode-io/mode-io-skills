@@ -56,7 +56,8 @@ Notes:
 
 - Existing supported file paths are auto-read as file input.
 - `lite` is local-only; non-lite levels call backend anonymize API.
-- `.pdf` anonymization is supported in `lite` only (text-layer PDFs only).
+- `.pdf` anonymization supports all levels for text-layer PDFs; non-lite requires API mapping entries for fail-closed projection.
+- `.pdf` de-anonymization is not supported.
 - Default file output path is `<name>.redacted.<ext>` with collision-safe suffixing.
 - Sidecar map ref file `<output>.map.json` is written for file workflows.
 
@@ -65,6 +66,7 @@ python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic -
 python scripts/anonymize.py --input "Phone 13812345678" --level lite --json
 python scripts/anonymize.py --input ./incident.docx --level lite --json
 python scripts/anonymize.py --input ./incident.pdf --level lite --json
+python scripts/anonymize.py --input ./incident.pdf --level dynamic --json
 ```
 
 ### `scripts/deanonymize.py`

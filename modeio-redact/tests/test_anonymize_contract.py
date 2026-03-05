@@ -331,7 +331,7 @@ class TestAnonymizeContract(unittest.TestCase):
         self.assertIn("unrecognized arguments: --strict-coverage", result.stderr)
 
     @unittest.skipUnless(HAS_FITZ, "PyMuPDF is required")
-    def test_pdf_dynamic_level_is_rejected(self):
+    def test_pdf_dynamic_level_attempts_api_mode(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             file_path = Path(tmpdir) / "incident.pdf"
             document = fitz.open()
@@ -347,13 +347,16 @@ class TestAnonymizeContract(unittest.TestCase):
                     "--level",
                     "dynamic",
                     "--json",
-                ]
+                ],
+                env={"ANONYMIZE_API_URL": "http://127.0.0.1:9"},
             )
 
-            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.returncode, 1)
             payload = json.loads(result.stdout)
             self.assertFalse(payload["success"])
-            self.assertEqual(payload["error"]["type"], "validation_error")
+            self.assertEqual(payload["mode"], "api")
+            self.assertEqual(payload["level"], "dynamic")
+            self.assertIn(payload["error"]["type"], ("network_error", "dependency_error"))
 
     def test_unsupported_file_extension_returns_json_validation_error(self):
         with tempfile.NamedTemporaryFile("w", suffix=".bin", encoding="utf-8", delete=False) as input_file:
@@ -500,6 +503,29 @@ class TestAnonymizeContract(unittest.TestCase):
         )
         self.assertIsNone(map_ref)
         self.assertNotIn("mapRef", data)
+
+    def test_validate_non_text_mapping_rejects_remote_file_redaction_without_entries(self):
+        with self.assertRaises(ValueError):
+            anonymize._validate_non_text_mapping_or_raise(
+                level="dynamic",
+                input_path="/tmp/incident.pdf",
+                input_extension=".pdf",
+                raw_input="Email: alice@example.com",
+                anonymized_content="Email: [EMAIL_1]",
+                has_pii=True,
+                entries=[],
+            )
+
+    def test_validate_non_text_mapping_allows_empty_entries_when_no_pii_detected(self):
+        anonymize._validate_non_text_mapping_or_raise(
+            level="dynamic",
+            input_path="/tmp/incident.pdf",
+            input_extension=".pdf",
+            raw_input="No personal data here.",
+            anonymized_content="No personal data here.",
+            has_pii=False,
+            entries=[],
+        )
 
     def test_maybe_save_map_from_local_detection_items(self):
         with tempfile.TemporaryDirectory() as tmpdir:
