@@ -68,26 +68,37 @@ Check middleware headers in response:
 - `x-modeio-post-actions`
 - `x-modeio-degraded`
 
-### Guardrail-only quiet preset
+## 5) Use external protocol plugins (optional)
 
-Use profile `guardrail_quiet` to run only the guardrail plugin with lower-interruption policy.
-Preset behavior is loaded from `config/presets/guardrail.json`.
+External plugins use `stdio-jsonrpc` and default to non-intrusive `observe` mode.
 
-```bash
-curl -i http://127.0.0.1:8787/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4o-mini",
-    "messages": [
-      {"role": "user", "content": "Delete all user records in production"}
-    ],
-    "modeio": {
-      "profile": "guardrail_quiet"
+Example plugin config entry:
+
+```json
+{
+  "external_policy": {
+    "enabled": false,
+    "runtime": "stdio_jsonrpc",
+    "manifest": "plugins_external/example/manifest.json",
+    "command": ["python3", "plugins_external/example/plugin.py"],
+    "mode": "observe",
+    "capabilities_grant": {
+      "can_patch": false,
+      "can_block": false,
+      "can_defer": false
     }
-  }'
+  }
+}
 ```
 
-## 5) Uninstall / rollback
+Validate and run conformance:
+
+```bash
+python modeio-middleware/scripts/validate_plugin_manifest.py plugins_external/example/manifest.json
+python modeio-middleware/scripts/run_plugin_conformance.py plugins_external/example/manifest.json python3 plugins_external/example/plugin.py
+```
+
+## 6) Uninstall / rollback
 
 ```bash
 python modeio-middleware/scripts/setup_middleware_gateway.py \
@@ -96,8 +107,9 @@ python modeio-middleware/scripts/setup_middleware_gateway.py \
   --apply-opencode
 ```
 
-## 6) Scaffold a plugin
+## 7) Scaffold a plugin
 
 ```bash
 python modeio-middleware/scripts/new_plugin.py my-plugin
+python modeio-middleware/scripts/new_plugin.py my-protocol-plugin --runtime stdio_jsonrpc
 ```

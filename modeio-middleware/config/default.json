@@ -1,57 +1,44 @@
 {
   "version": "0.1",
-  "preset_files": [
-    "presets/guardrail.json"
-  ],
   "profiles": {
     "dev": {
       "on_plugin_error": "fail_open",
       "plugins": [
-        "guardrail",
         "redact"
       ]
     },
     "staging": {
       "on_plugin_error": "warn",
       "plugins": [
-        "guardrail",
         "redact"
       ]
     },
     "prod": {
       "on_plugin_error": "fail_safe",
       "plugins": [
-        "guardrail",
         "redact"
       ]
-    },
-    "guardrail_quiet": {
-      "on_plugin_error": "warn",
-      "plugins": [
-        "guardrail"
-      ],
-      "plugin_overrides": {
-        "guardrail": {
-          "enabled": true,
-          "preset": "quiet"
-        }
-      }
-    }
-  },
-  "services": {
-    "defer_queue": {
-      "path": ".modeio/guardrail/deferred_actions.jsonl"
     }
   },
   "plugins": {
-    "guardrail": {
-      "enabled": false,
-      "module": "modeio_middleware.plugins.guardrail",
-      "preset": "interactive"
-    },
     "redact": {
       "enabled": false,
       "module": "modeio_middleware.plugins.redact"
+    },
+    "external_policy_example": {
+      "enabled": false,
+      "runtime": "stdio_jsonrpc",
+      "manifest": "plugins_external/example/manifest.json",
+      "command": [
+        "python3",
+        "plugins_external/example/plugin.py"
+      ],
+      "mode": "observe",
+      "capabilities_grant": {
+        "can_patch": false,
+        "can_block": false,
+        "can_defer": false
+      }
     }
   }
 }

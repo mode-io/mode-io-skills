@@ -3,26 +3,37 @@
 from __future__ import annotations
 
 import copy
-import importlib
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from modeio_middleware.core.config_resolver import resolve_plugin_runtime_config
 from modeio_middleware.core.contracts import (
     HOOK_ACTION_BLOCK,
+    HOOK_ACTION_DEFER,
     HOOK_ACTION_MODIFY,
+    HOOK_ACTION_WARN,
 )
 from modeio_middleware.core.decision import normalize_decision_payload
 from modeio_middleware.core.errors import MiddlewareError
-from modeio_middleware.plugins.base import MiddlewarePlugin
+from modeio_middleware.registry.loader import create_plugin_runtime
+from modeio_middleware.registry.resolver import (
+    MODE_ASSIST,
+    MODE_OBSERVE,
+    resolve_plugin_runtime_spec,
+)
+from modeio_middleware.runtime.base import PluginRuntime
 
 
 @dataclass(frozen=True)
 class ActivePlugin:
     name: str
-    instance: MiddlewarePlugin
+    runtime: PluginRuntime
     config: Dict[str, Any]
+    mode: str
+    capabilities: Dict[str, bool]
+    supported_hooks: List[str]
 
 
 @dataclass
@@ -54,7 +65,12 @@ def _normalize_header_map(raw: Dict[str, Any]) -> Dict[str, str]:
 
 
 class PluginManager:
-    def __init__(self, plugins_config: Dict[str, Any], preset_registry: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        plugins_config: Dict[str, Any],
+        preset_registry: Optional[Dict[str, Any]] = None,
+        config_base_dir: Optional[str] = None,
+    ):
         if not isinstance(plugins_config, dict):
             raise MiddlewareError(
                 500,
@@ -63,36 +79,10 @@ class PluginManager:
             )
         self._plugins_config = plugins_config
         self._preset_registry = preset_registry or {}
-
-    def _instantiate_plugin(self, name: str, module_path: str) -> MiddlewarePlugin:
-        try:
-            module = importlib.import_module(module_path)
-        except Exception as error:
-            raise MiddlewareError(
-                500,
-                "MODEIO_CONFIG_ERROR",
-                f"failed to import plugin '{name}' module '{module_path}'",
-                details={"plugin": name, "module": module_path},
-            ) from error
-
-        plugin_cls = getattr(module, "Plugin", None)
-        if plugin_cls is None:
-            raise MiddlewareError(
-                500,
-                "MODEIO_CONFIG_ERROR",
-                f"plugin '{name}' module '{module_path}' missing Plugin class",
-                details={"plugin": name, "module": module_path},
-            )
-
-        plugin = plugin_cls()
-        if not isinstance(plugin, MiddlewarePlugin):
-            raise MiddlewareError(
-                500,
-                "MODEIO_CONFIG_ERROR",
-                f"plugin '{name}' must inherit MiddlewarePlugin",
-                details={"plugin": name, "module": module_path},
-            )
-        return plugin
+        if isinstance(config_base_dir, str) and config_base_dir.strip():
+            self._config_base_dir = Path(config_base_dir.strip())
+        else:
+            self._config_base_dir = Path.cwd()
 
     def resolve_active_plugins(
         self,
@@ -132,9 +122,66 @@ class PluginManager:
             if not resolved.enabled:
                 continue
 
-            plugin = self._instantiate_plugin(plugin_name, resolved.module_path)
-            active.append(ActivePlugin(name=plugin_name, instance=plugin, config=resolved.config))
+            spec = resolve_plugin_runtime_spec(
+                resolved=resolved,
+                config_base_dir=self._config_base_dir,
+            )
+            runtime = create_plugin_runtime(spec)
+            active.append(
+                ActivePlugin(
+                    name=plugin_name,
+                    runtime=runtime,
+                    config=spec.hook_config,
+                    mode=spec.mode,
+                    capabilities=spec.capabilities,
+                    supported_hooks=spec.supported_hooks,
+                )
+            )
         return active
+
+    def shutdown_active_plugins(self, active_plugins: Iterable[ActivePlugin]) -> None:
+        for active in reversed(list(active_plugins)):
+            try:
+                active.runtime.shutdown()
+            except Exception:
+                continue
+
+    def _apply_action_controls(
+        self,
+        *,
+        active: ActivePlugin,
+        action: str,
+        result: Any,
+    ) -> str:
+        original_action = action
+        effective_action = action
+
+        can_patch = bool(active.capabilities.get("can_patch", False))
+        can_block = bool(active.capabilities.get("can_block", False))
+        can_defer = bool(active.capabilities.get("can_defer", False))
+
+        if effective_action == HOOK_ACTION_MODIFY and not can_patch:
+            effective_action = HOOK_ACTION_WARN
+        elif effective_action == HOOK_ACTION_BLOCK and not can_block:
+            effective_action = HOOK_ACTION_WARN
+        elif effective_action == HOOK_ACTION_DEFER and not can_defer:
+            effective_action = HOOK_ACTION_WARN
+
+        if active.mode == MODE_OBSERVE and effective_action in {
+            HOOK_ACTION_MODIFY,
+            HOOK_ACTION_BLOCK,
+            HOOK_ACTION_DEFER,
+        }:
+            effective_action = HOOK_ACTION_WARN
+        elif active.mode == MODE_ASSIST and effective_action == HOOK_ACTION_BLOCK:
+            effective_action = HOOK_ACTION_WARN
+
+        if effective_action != original_action:
+            result.degraded.append(
+                f"action_downgraded:{active.name}:{original_action}->{effective_action}:{active.mode}"
+            )
+
+        return effective_action
 
     def _normalize_hook_result(self, plugin_name: str, payload: Any) -> Dict[str, Any]:
         _ = plugin_name
@@ -217,6 +264,8 @@ class PluginManager:
         result = HookPipelineResult(body={}, headers={})
 
         for active in reversed(list(active_plugins)):
+            if hook_name not in active.supported_hooks:
+                continue
             plugin_state = shared_state.setdefault(active.name, {})
             hook_input = {
                 "request_id": request_id,
@@ -233,7 +282,7 @@ class PluginManager:
 
             start = time.perf_counter()
             try:
-                payload = getattr(active.instance, hook_name)(hook_input)
+                payload = active.runtime.invoke(hook_name, hook_input)
                 normalized = self._normalize_stream_hook_result(payload)
             except Exception as error:
                 duration_ms = (time.perf_counter() - start) * 1000
@@ -255,7 +304,11 @@ class PluginManager:
                     return result
                 continue
 
-            action = normalized["action"]
+            action = self._apply_action_controls(
+                active=active,
+                action=normalized["action"],
+                result=result,
+            )
             duration_ms = (time.perf_counter() - start) * 1000
             self._record_telemetry(
                 services,
@@ -292,6 +345,8 @@ class PluginManager:
         result = HookPipelineResult(body=copy.deepcopy(request_body), headers=dict(request_headers))
 
         for active in active_plugins:
+            if "pre_request" not in active.supported_hooks:
+                continue
             plugin_state = shared_state.setdefault(active.name, {})
             hook_input = {
                 "request_id": request_id,
@@ -308,7 +363,7 @@ class PluginManager:
 
             start = time.perf_counter()
             try:
-                payload = active.instance.pre_request(hook_input)
+                payload = active.runtime.invoke("pre_request", hook_input)
                 normalized = self._normalize_hook_result(active.name, payload)
             except Exception as error:
                 duration_ms = (time.perf_counter() - start) * 1000
@@ -330,7 +385,11 @@ class PluginManager:
                     return result
                 continue
 
-            action = normalized["action"]
+            action = self._apply_action_controls(
+                active=active,
+                action=normalized["action"],
+                result=result,
+            )
             duration_ms = (time.perf_counter() - start) * 1000
             self._record_telemetry(
                 services,
@@ -386,6 +445,8 @@ class PluginManager:
         result = HookPipelineResult(body=copy.deepcopy(response_body), headers=dict(response_headers))
 
         for active in reversed(list(active_plugins)):
+            if "post_response" not in active.supported_hooks:
+                continue
             plugin_state = shared_state.setdefault(active.name, {})
             hook_input = {
                 "request_id": request_id,
@@ -402,7 +463,7 @@ class PluginManager:
 
             start = time.perf_counter()
             try:
-                payload = active.instance.post_response(hook_input)
+                payload = active.runtime.invoke("post_response", hook_input)
                 normalized = self._normalize_hook_result(active.name, payload)
             except Exception as error:
                 duration_ms = (time.perf_counter() - start) * 1000
@@ -424,7 +485,11 @@ class PluginManager:
                     return result
                 continue
 
-            action = normalized["action"]
+            action = self._apply_action_controls(
+                active=active,
+                action=normalized["action"],
+                result=result,
+            )
             duration_ms = (time.perf_counter() - start) * 1000
             self._record_telemetry(
                 services,
@@ -506,6 +571,8 @@ class PluginManager:
         result = StreamEventPipelineResult(event=copy.deepcopy(event))
 
         for active in reversed(list(active_plugins)):
+            if "post_stream_event" not in active.supported_hooks:
+                continue
             plugin_state = shared_state.setdefault(active.name, {})
             hook_input = {
                 "request_id": request_id,
@@ -521,7 +588,7 @@ class PluginManager:
 
             start = time.perf_counter()
             try:
-                payload = active.instance.post_stream_event(hook_input)
+                payload = active.runtime.invoke("post_stream_event", hook_input)
                 normalized = self._normalize_stream_hook_result(payload)
             except Exception as error:
                 duration_ms = (time.perf_counter() - start) * 1000
@@ -543,7 +610,11 @@ class PluginManager:
                     return result
                 continue
 
-            action = normalized["action"]
+            action = self._apply_action_controls(
+                active=active,
+                action=normalized["action"],
+                result=result,
+            )
             duration_ms = (time.perf_counter() - start) * 1000
             self._record_telemetry(
                 services,

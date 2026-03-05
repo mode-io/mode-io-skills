@@ -15,7 +15,8 @@ PresetRegistry = Dict[str, Dict[str, Dict[str, Any]]]
 @dataclass(frozen=True)
 class ResolvedPluginConfig:
     name: str
-    module_path: str
+    runtime: str
+    module_path: str | None
     enabled: bool
     config: Dict[str, Any]
 
@@ -201,14 +202,15 @@ def resolve_plugin_runtime_config(
             retryable=False,
         )
 
-    module_path = plugin_config.get("module")
-    if not isinstance(module_path, str) or not module_path.strip():
-        raise MiddlewareError(
-            500,
-            "MODEIO_CONFIG_ERROR",
-            f"plugin '{plugin_name}' module path is missing",
-            retryable=False,
-        )
+    runtime_raw = plugin_config.get("runtime", "legacy_inprocess")
+    runtime = str(runtime_raw or "").strip().lower()
+    if not runtime:
+        runtime = "legacy_inprocess"
+
+    module_path_raw = plugin_config.get("module")
+    module_path: str | None = None
+    if isinstance(module_path_raw, str) and module_path_raw.strip():
+        module_path = module_path_raw.strip()
 
     enabled = bool(plugin_config.get("enabled", False))
     if "enabled" in profile_override:
@@ -219,7 +221,7 @@ def resolve_plugin_runtime_config(
     base_config: Dict[str, Any] = {
         key: value
         for key, value in plugin_config.items()
-        if key not in {"enabled", "module"}
+        if key not in {"enabled", "runtime", "module"}
     }
 
     preset_name = _normalize_preset_candidate(base_config.get("preset"), source=f"plugins.{plugin_name}.preset")
@@ -268,7 +270,8 @@ def resolve_plugin_runtime_config(
 
     return ResolvedPluginConfig(
         name=plugin_name,
-        module_path=module_path.strip(),
+        runtime=runtime,
+        module_path=module_path,
         enabled=enabled,
         config=merged_config,
     )

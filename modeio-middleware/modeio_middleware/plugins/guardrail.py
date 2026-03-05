@@ -1,5 +1,0 @@
-#!/usr/bin/env python3
-
-from modeio_middleware.plugins.guardrail_impl.plugin import Plugin
-
-__all__ = ["Plugin"]

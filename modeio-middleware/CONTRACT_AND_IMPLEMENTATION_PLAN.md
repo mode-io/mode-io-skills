@@ -1,5 +1,7 @@
 # modeio-middleware Contract and Implementation Plan
 
+> Note (2026-03-05): the built-in guardrail adapter and `guardrail_quiet` preset were intentionally removed from default middleware packaging to prioritize protocol-first plugin integration.
+
 Status: draft for implementation kickoff
 Owner: mode-io-skills
 Target users: Codex CLI and OpenCode users who want request/response middleware before and after provider calls

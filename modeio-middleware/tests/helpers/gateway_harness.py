@@ -140,19 +140,16 @@ class GatewayStub:
             upstream_timeout_seconds=5,
             upstream_api_key_env="MODEIO_GATEWAY_UPSTREAM_API_KEY",
             default_profile="dev",
+            config_base_dir=str(REPO_ROOT / "modeio-middleware"),
             profiles=profiles
             or {
                 "dev": {
                     "on_plugin_error": "warn",
-                    "plugins": ["guardrail", "redact"],
+                    "plugins": ["redact"],
                 }
             },
             plugins=plugins
             or {
-                "guardrail": {
-                    "enabled": False,
-                    "module": "modeio_middleware.plugins.guardrail",
-                },
                 "redact": {
                     "enabled": False,
                     "module": "modeio_middleware.plugins.redact",
