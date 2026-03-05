@@ -1,0 +1,23 @@
+{
+  "plugin": "guardrail",
+  "presets": {
+    "interactive": {
+      "warn_risk_levels": [
+        "medium",
+        "high",
+        "critical"
+      ],
+      "block_rule": "high_or_critical_unapproved",
+      "default_block_message": "guardrail plugin blocked high-risk instruction"
+    },
+    "quiet": {
+      "warn_risk_levels": [
+        "medium",
+        "high"
+      ],
+      "block_rule": "critical_or_high_irreversible_destructive_unapproved",
+      "default_block_message": "guardrail quiet preset requires explicit approval",
+      "default_warn_message": "guardrail quiet preset flagged this instruction for review"
+    }
+  }
+}

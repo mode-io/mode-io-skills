@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 from urllib.parse import urlsplit
 
+from modeio_middleware.core.config_resolver import load_preset_registry
 from modeio_middleware.core.contracts import ENDPOINT_CHAT_COMPLETIONS, ENDPOINT_RESPONSES
 from modeio_middleware.core.engine import GatewayRuntimeConfig, MiddlewareEngine, ProcessResult, StreamProcessResult
 from modeio_middleware.core.errors import MiddlewareError
@@ -83,14 +84,19 @@ def _load_runtime_file(path: Path) -> Dict[str, Any]:
 
 
 def load_runtime_config(args: argparse.Namespace) -> GatewayRuntimeConfig:
-    config_payload = _load_runtime_file(Path(args.config).expanduser())
+    config_path = Path(args.config).expanduser()
+    config_payload = _load_runtime_file(config_path)
     profiles = config_payload.get("profiles", {})
     plugins = config_payload.get("plugins", {})
+    services = config_payload.get("services", {})
+    preset_registry = load_preset_registry(config_payload, config_file_path=config_path)
 
     if not isinstance(profiles, dict):
         raise MiddlewareError(500, "MODEIO_CONFIG_ERROR", "config.profiles must be an object")
     if not isinstance(plugins, dict):
         raise MiddlewareError(500, "MODEIO_CONFIG_ERROR", "config.plugins must be an object")
+    if not isinstance(services, dict):
+        raise MiddlewareError(500, "MODEIO_CONFIG_ERROR", "config.services must be an object")
 
     upstream_chat_url = args.upstream_chat_url
     if args.upstream_url:
@@ -104,6 +110,8 @@ def load_runtime_config(args: argparse.Namespace) -> GatewayRuntimeConfig:
         default_profile=normalize_profile_name(args.default_profile, default_profile=DEFAULT_PROFILE),
         profiles=profiles,
         plugins=plugins,
+        preset_registry=preset_registry,
+        service_config=services,
     )
 
 

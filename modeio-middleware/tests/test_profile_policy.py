@@ -14,6 +14,7 @@ from modeio_middleware.core.errors import MiddlewareError  # noqa: E402
 from modeio_middleware.core.profiles import (  # noqa: E402
     normalize_profile_name,
     resolve_plugin_error_policy,
+    resolve_profile_plugin_overrides,
     resolve_profile,
     resolve_profile_plugins,
 )
@@ -44,6 +45,54 @@ class TestProfilePolicy(unittest.TestCase):
     def test_resolve_profile_plugins_requires_string_entries(self):
         with self.assertRaises(MiddlewareError):
             resolve_profile_plugins({"plugins": ["guardrail", 123]})
+
+    def test_resolve_profile_plugin_overrides_returns_mapping(self):
+        overrides = resolve_profile_plugin_overrides(
+            {
+                "plugin_overrides": {
+                    "guardrail": {
+                        "enabled": True,
+                        "preset": "quiet",
+                    }
+                }
+            }
+        )
+        self.assertTrue(overrides["guardrail"]["enabled"])
+        self.assertEqual(overrides["guardrail"]["preset"], "quiet")
+
+    def test_resolve_profile_plugin_overrides_rejects_non_object_override(self):
+        with self.assertRaises(MiddlewareError):
+            resolve_profile_plugin_overrides(
+                {
+                    "plugin_overrides": {
+                        "guardrail": True,
+                    }
+                }
+            )
+
+    def test_resolve_profile_plugin_overrides_rejects_invalid_enabled(self):
+        with self.assertRaises(MiddlewareError):
+            resolve_profile_plugin_overrides(
+                {
+                    "plugin_overrides": {
+                        "guardrail": {
+                            "enabled": "yes",
+                        }
+                    }
+                }
+            )
+
+    def test_resolve_profile_plugin_overrides_rejects_invalid_preset(self):
+        with self.assertRaises(MiddlewareError):
+            resolve_profile_plugin_overrides(
+                {
+                    "plugin_overrides": {
+                        "guardrail": {
+                            "preset": True,
+                        }
+                    }
+                }
+            )
 
 
 if __name__ == "__main__":

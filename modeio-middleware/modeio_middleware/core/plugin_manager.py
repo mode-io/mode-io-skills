@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import copy
 import importlib
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
+from modeio_middleware.core.config_resolver import resolve_plugin_runtime_config
 from modeio_middleware.core.contracts import (
-    HOOK_ACTION_ALLOW,
     HOOK_ACTION_BLOCK,
     HOOK_ACTION_MODIFY,
-    HOOK_ACTION_WARN,
-    VALID_HOOK_ACTIONS,
 )
+from modeio_middleware.core.decision import normalize_decision_payload
 from modeio_middleware.core.errors import MiddlewareError
 from modeio_middleware.plugins.base import MiddlewarePlugin
 
@@ -46,18 +46,6 @@ class StreamEventPipelineResult:
     block_message: str = ""
 
 
-def _coerce_findings(raw: Any) -> List[Dict[str, Any]]:
-    if raw is None:
-        return []
-    if not isinstance(raw, list):
-        raise ValueError("field 'findings' must be an array")
-    findings: List[Dict[str, Any]] = []
-    for finding in raw:
-        if isinstance(finding, dict):
-            findings.append(finding)
-    return findings
-
-
 def _normalize_header_map(raw: Dict[str, Any]) -> Dict[str, str]:
     normalized_headers: Dict[str, str] = {}
     for key, value in raw.items():
@@ -66,7 +54,7 @@ def _normalize_header_map(raw: Dict[str, Any]) -> Dict[str, str]:
 
 
 class PluginManager:
-    def __init__(self, plugins_config: Dict[str, Any]):
+    def __init__(self, plugins_config: Dict[str, Any], preset_registry: Optional[Dict[str, Any]] = None):
         if not isinstance(plugins_config, dict):
             raise MiddlewareError(
                 500,
@@ -74,6 +62,7 @@ class PluginManager:
                 "plugins config must be an object",
             )
         self._plugins_config = plugins_config
+        self._preset_registry = preset_registry or {}
 
     def _instantiate_plugin(self, name: str, module_path: str) -> MiddlewarePlugin:
         try:
@@ -108,113 +97,79 @@ class PluginManager:
     def resolve_active_plugins(
         self,
         plugin_order: Iterable[str],
-        plugin_overrides: Dict[str, Dict[str, Any]],
+        request_plugin_overrides: Dict[str, Dict[str, Any]],
+        profile_plugin_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> List[ActivePlugin]:
+        profile_overrides = profile_plugin_overrides or {}
         active: List[ActivePlugin] = []
         for plugin_name in plugin_order:
             plugin_config = self._plugins_config.get(plugin_name)
-            if not isinstance(plugin_config, dict):
-                raise MiddlewareError(
-                    500,
-                    "MODEIO_CONFIG_ERROR",
-                    f"plugin '{plugin_name}' config is missing or invalid",
-                )
-
-            module_path = plugin_config.get("module")
-            if not isinstance(module_path, str) or not module_path.strip():
-                raise MiddlewareError(
-                    500,
-                    "MODEIO_CONFIG_ERROR",
-                    f"plugin '{plugin_name}' module path is missing",
-                )
-
-            override = plugin_overrides.get(plugin_name, {})
-            if not isinstance(override, dict):
+            request_override = request_plugin_overrides.get(plugin_name, {})
+            if not isinstance(request_override, dict):
                 raise MiddlewareError(
                     400,
                     "MODEIO_VALIDATION_ERROR",
                     f"modeio.plugins.{plugin_name} must be an object",
                 )
 
-            enabled = bool(plugin_config.get("enabled", False))
-            if "enabled" in override:
-                enabled = bool(override["enabled"])
+            profile_override = profile_overrides.get(plugin_name, {})
+            if not isinstance(profile_override, dict):
+                raise MiddlewareError(
+                    500,
+                    "MODEIO_CONFIG_ERROR",
+                    f"profile.plugin_overrides.{plugin_name} must be an object",
+                    retryable=False,
+                )
 
-            merged_config: Dict[str, Any] = {
-                key: value
-                for key, value in plugin_config.items()
-                if key not in {"enabled", "module"}
-            }
-            merged_config.update(
-                {
-                    key: value
-                    for key, value in override.items()
-                    if key != "enabled"
-                }
+            resolved = resolve_plugin_runtime_config(
+                plugin_name=plugin_name,
+                plugin_config=plugin_config,
+                preset_registry=self._preset_registry,
+                profile_override=profile_override,
+                request_override=request_override,
             )
 
-            if not enabled:
+            if not resolved.enabled:
                 continue
 
-            plugin = self._instantiate_plugin(plugin_name, module_path)
-            active.append(ActivePlugin(name=plugin_name, instance=plugin, config=merged_config))
+            plugin = self._instantiate_plugin(plugin_name, resolved.module_path)
+            active.append(ActivePlugin(name=plugin_name, instance=plugin, config=resolved.config))
         return active
 
     def _normalize_hook_result(self, plugin_name: str, payload: Any) -> Dict[str, Any]:
-        if payload is None:
-            return {"action": HOOK_ACTION_ALLOW, "findings": []}
-        if not isinstance(payload, dict):
-            raise ValueError("plugin hook result must be an object")
-
-        action = str(payload.get("action", HOOK_ACTION_ALLOW)).strip().lower()
-        if action not in VALID_HOOK_ACTIONS:
-            raise ValueError(f"unsupported plugin action '{action}'")
-
-        message = payload.get("message")
-        if message is not None and not isinstance(message, str):
-            raise ValueError("field 'message' must be a string")
-
-        normalized: Dict[str, Any] = {
-            "action": action,
-            "findings": _coerce_findings(payload.get("findings")),
-            "message": message,
-        }
-
-        if "request_body" in payload:
-            normalized["request_body"] = payload["request_body"]
-        if "request_headers" in payload:
-            normalized["request_headers"] = payload["request_headers"]
-        if "response_body" in payload:
-            normalized["response_body"] = payload["response_body"]
-        if "response_headers" in payload:
-            normalized["response_headers"] = payload["response_headers"]
-
-        return normalized
+        _ = plugin_name
+        return normalize_decision_payload(payload, stream=False)
 
     def _normalize_stream_hook_result(self, payload: Any) -> Dict[str, Any]:
-        if payload is None:
-            return {"action": HOOK_ACTION_ALLOW, "findings": []}
-        if not isinstance(payload, dict):
-            raise ValueError("plugin stream hook result must be an object")
+        return normalize_decision_payload(payload, stream=True)
 
-        action = str(payload.get("action", HOOK_ACTION_ALLOW)).strip().lower()
-        if action not in VALID_HOOK_ACTIONS:
-            raise ValueError(f"unsupported plugin action '{action}'")
+    def _record_telemetry(
+        self,
+        services: Optional[Dict[str, Any]],
+        *,
+        plugin_name: str,
+        hook_name: str,
+        action: str,
+        duration_ms: float,
+        errored: bool,
+    ) -> None:
+        if not isinstance(services, dict):
+            return
+        telemetry = services.get("telemetry")
+        if telemetry is None:
+            return
 
-        message = payload.get("message")
-        if message is not None and not isinstance(message, str):
-            raise ValueError("field 'message' must be a string")
+        record = getattr(telemetry, "record", None)
+        if not callable(record):
+            return
 
-        normalized: Dict[str, Any] = {
-            "action": action,
-            "findings": _coerce_findings(payload.get("findings")),
-            "message": message,
-        }
-
-        if "event" in payload:
-            normalized["event"] = payload["event"]
-
-        return normalized
+        record(
+            plugin_name=plugin_name,
+            hook_name=hook_name,
+            action=action,
+            duration_ms=duration_ms,
+            errored=errored,
+        )
 
     def _handle_plugin_error(
         self,
@@ -255,6 +210,7 @@ class PluginManager:
         response_context: Optional[Dict[str, Any]],
         shared_state: Dict[str, Any],
         on_plugin_error: str,
+        services: Optional[Dict[str, Any]],
         hook_name: str,
         blocked_message_suffix: str,
     ) -> HookPipelineResult:
@@ -270,14 +226,25 @@ class PluginManager:
                 "plugin_config": active.config,
                 "state": shared_state,
                 "plugin_state": plugin_state,
+                "services": services or {},
             }
             if response_context is not None:
                 hook_input["response_context"] = response_context
 
+            start = time.perf_counter()
             try:
                 payload = getattr(active.instance, hook_name)(hook_input)
                 normalized = self._normalize_stream_hook_result(payload)
             except Exception as error:
+                duration_ms = (time.perf_counter() - start) * 1000
+                self._record_telemetry(
+                    services,
+                    plugin_name=active.name,
+                    hook_name=hook_name,
+                    action="error",
+                    duration_ms=duration_ms,
+                    errored=True,
+                )
                 self._handle_plugin_error(
                     plugin_name=active.name,
                     error=error,
@@ -289,6 +256,15 @@ class PluginManager:
                 continue
 
             action = normalized["action"]
+            duration_ms = (time.perf_counter() - start) * 1000
+            self._record_telemetry(
+                services,
+                plugin_name=active.name,
+                hook_name=hook_name,
+                action=action,
+                duration_ms=duration_ms,
+                errored=False,
+            )
             result.actions.append(f"{active.name}:{action}")
             result.findings.extend(normalized["findings"])
 
@@ -311,6 +287,7 @@ class PluginManager:
         context: Dict[str, Any],
         shared_state: Dict[str, Any],
         on_plugin_error: str,
+        services: Optional[Dict[str, Any]] = None,
     ) -> HookPipelineResult:
         result = HookPipelineResult(body=copy.deepcopy(request_body), headers=dict(request_headers))
 
@@ -326,12 +303,23 @@ class PluginManager:
                 "plugin_config": active.config,
                 "state": shared_state,
                 "plugin_state": plugin_state,
+                "services": services or {},
             }
 
+            start = time.perf_counter()
             try:
                 payload = active.instance.pre_request(hook_input)
                 normalized = self._normalize_hook_result(active.name, payload)
             except Exception as error:
+                duration_ms = (time.perf_counter() - start) * 1000
+                self._record_telemetry(
+                    services,
+                    plugin_name=active.name,
+                    hook_name="pre_request",
+                    action="error",
+                    duration_ms=duration_ms,
+                    errored=True,
+                )
                 self._handle_plugin_error(
                     plugin_name=active.name,
                     error=error,
@@ -343,6 +331,15 @@ class PluginManager:
                 continue
 
             action = normalized["action"]
+            duration_ms = (time.perf_counter() - start) * 1000
+            self._record_telemetry(
+                services,
+                plugin_name=active.name,
+                hook_name="pre_request",
+                action=action,
+                duration_ms=duration_ms,
+                errored=False,
+            )
             result.actions.append(f"{active.name}:{action}")
             result.findings.extend(normalized["findings"])
 
@@ -384,6 +381,7 @@ class PluginManager:
         response_headers: Dict[str, str],
         shared_state: Dict[str, Any],
         on_plugin_error: str,
+        services: Optional[Dict[str, Any]] = None,
     ) -> HookPipelineResult:
         result = HookPipelineResult(body=copy.deepcopy(response_body), headers=dict(response_headers))
 
@@ -399,12 +397,23 @@ class PluginManager:
                 "plugin_config": active.config,
                 "state": shared_state,
                 "plugin_state": plugin_state,
+                "services": services or {},
             }
 
+            start = time.perf_counter()
             try:
                 payload = active.instance.post_response(hook_input)
                 normalized = self._normalize_hook_result(active.name, payload)
             except Exception as error:
+                duration_ms = (time.perf_counter() - start) * 1000
+                self._record_telemetry(
+                    services,
+                    plugin_name=active.name,
+                    hook_name="post_response",
+                    action="error",
+                    duration_ms=duration_ms,
+                    errored=True,
+                )
                 self._handle_plugin_error(
                     plugin_name=active.name,
                     error=error,
@@ -416,6 +425,15 @@ class PluginManager:
                 continue
 
             action = normalized["action"]
+            duration_ms = (time.perf_counter() - start) * 1000
+            self._record_telemetry(
+                services,
+                plugin_name=active.name,
+                hook_name="post_response",
+                action=action,
+                duration_ms=duration_ms,
+                errored=False,
+            )
             result.actions.append(f"{active.name}:{action}")
             result.findings.extend(normalized["findings"])
 
@@ -456,6 +474,7 @@ class PluginManager:
         response_context: Dict[str, Any],
         shared_state: Dict[str, Any],
         on_plugin_error: str,
+        services: Optional[Dict[str, Any]] = None,
     ) -> HookPipelineResult:
         return self._apply_stream_lifecycle_hook(
             active_plugins,
@@ -466,6 +485,7 @@ class PluginManager:
             response_context=response_context,
             shared_state=shared_state,
             on_plugin_error=on_plugin_error,
+            services=services,
             hook_name="post_stream_start",
             blocked_message_suffix="stream",
         )
@@ -481,6 +501,7 @@ class PluginManager:
         event: Dict[str, Any],
         shared_state: Dict[str, Any],
         on_plugin_error: str,
+        services: Optional[Dict[str, Any]] = None,
     ) -> StreamEventPipelineResult:
         result = StreamEventPipelineResult(event=copy.deepcopy(event))
 
@@ -495,12 +516,23 @@ class PluginManager:
                 "plugin_config": active.config,
                 "state": shared_state,
                 "plugin_state": plugin_state,
+                "services": services or {},
             }
 
+            start = time.perf_counter()
             try:
                 payload = active.instance.post_stream_event(hook_input)
                 normalized = self._normalize_stream_hook_result(payload)
             except Exception as error:
+                duration_ms = (time.perf_counter() - start) * 1000
+                self._record_telemetry(
+                    services,
+                    plugin_name=active.name,
+                    hook_name="post_stream_event",
+                    action="error",
+                    duration_ms=duration_ms,
+                    errored=True,
+                )
                 self._handle_plugin_error(
                     plugin_name=active.name,
                     error=error,
@@ -512,6 +544,15 @@ class PluginManager:
                 continue
 
             action = normalized["action"]
+            duration_ms = (time.perf_counter() - start) * 1000
+            self._record_telemetry(
+                services,
+                plugin_name=active.name,
+                hook_name="post_stream_event",
+                action=action,
+                duration_ms=duration_ms,
+                errored=False,
+            )
             result.actions.append(f"{active.name}:{action}")
             result.findings.extend(normalized["findings"])
 
@@ -541,6 +582,7 @@ class PluginManager:
         request_context: Dict[str, Any],
         shared_state: Dict[str, Any],
         on_plugin_error: str,
+        services: Optional[Dict[str, Any]] = None,
     ) -> HookPipelineResult:
         return self._apply_stream_lifecycle_hook(
             active_plugins,
@@ -551,6 +593,7 @@ class PluginManager:
             response_context=None,
             shared_state=shared_state,
             on_plugin_error=on_plugin_error,
+            services=services,
             hook_name="post_stream_end",
             blocked_message_suffix="stream end",
         )

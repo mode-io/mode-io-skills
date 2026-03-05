@@ -48,11 +48,22 @@ python modeio-middleware/scripts/setup_middleware_gateway.py \
   --apply-opencode
 ```
 
+### `scripts/new_plugin.py`
+
+Scaffold a new plugin and a matching unit test.
+
+```bash
+python modeio-middleware/scripts/new_plugin.py my-plugin
+```
+
 ## Behavior notes
 
 - Core middleware is generic; plugin chain is config-driven (`config/default.json`).
 - Default plugin definitions include `guardrail` and `redact`, both disabled by default.
+- Profile `guardrail_quiet` enables guardrail-only execution with the quiet preset.
+- Presets are loaded from `config/presets/*.json` and resolved in core.
 - Profile policy controls plugin-error behavior (`fail_open`, `warn`, `fail_safe`).
+- Plugins receive shared runtime services in `hook_input["services"]` (telemetry, defer queue).
 - Stream pipeline supports `post_stream_start`, `post_stream_event`, and `post_stream_end` hooks.
 
 ## Contract highlights

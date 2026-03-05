@@ -15,11 +15,13 @@ HOOK_ACTION_ALLOW = "allow"
 HOOK_ACTION_MODIFY = "modify"
 HOOK_ACTION_BLOCK = "block"
 HOOK_ACTION_WARN = "warn"
+HOOK_ACTION_DEFER = "defer"
 VALID_HOOK_ACTIONS = {
     HOOK_ACTION_ALLOW,
     HOOK_ACTION_MODIFY,
     HOOK_ACTION_BLOCK,
     HOOK_ACTION_WARN,
+    HOOK_ACTION_DEFER,
 }
 
 
@@ -156,6 +158,15 @@ def normalize_modeio_options(
                 400,
                 "MODEIO_VALIDATION_ERROR",
                 f"modeio.plugins.{plugin_name}.enabled must be boolean",
+            )
+        if "preset" in plugin_override and (
+            not isinstance(plugin_override["preset"], str)
+            or not plugin_override["preset"].strip()
+        ):
+            raise MiddlewareError(
+                400,
+                "MODEIO_VALIDATION_ERROR",
+                f"modeio.plugins.{plugin_name}.preset must be a non-empty string",
             )
         plugin_overrides[plugin_name.strip()] = dict(plugin_override)
 

@@ -82,3 +82,54 @@ def resolve_profile_plugins(profile_config: Dict[str, Any]) -> List[str]:
             )
         resolved.append(plugin_name.strip())
     return resolved
+
+
+def resolve_profile_plugin_overrides(profile_config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    raw = profile_config.get("plugin_overrides", {})
+    if raw is None:
+        return {}
+
+    if not isinstance(raw, dict):
+        raise MiddlewareError(
+            500,
+            "MODEIO_CONFIG_ERROR",
+            "profile.plugin_overrides must be an object",
+            retryable=False,
+        )
+
+    overrides: Dict[str, Dict[str, Any]] = {}
+    for plugin_name, plugin_override in raw.items():
+        if not isinstance(plugin_name, str) or not plugin_name.strip():
+            raise MiddlewareError(
+                500,
+                "MODEIO_CONFIG_ERROR",
+                "profile.plugin_overrides keys must be non-empty strings",
+                retryable=False,
+            )
+        if not isinstance(plugin_override, dict):
+            raise MiddlewareError(
+                500,
+                "MODEIO_CONFIG_ERROR",
+                f"profile.plugin_overrides.{plugin_name} must be an object",
+                retryable=False,
+            )
+        if "enabled" in plugin_override and not isinstance(plugin_override["enabled"], bool):
+            raise MiddlewareError(
+                500,
+                "MODEIO_CONFIG_ERROR",
+                f"profile.plugin_overrides.{plugin_name}.enabled must be boolean",
+                retryable=False,
+            )
+        if "preset" in plugin_override and (
+            not isinstance(plugin_override["preset"], str)
+            or not plugin_override["preset"].strip()
+        ):
+            raise MiddlewareError(
+                500,
+                "MODEIO_CONFIG_ERROR",
+                f"profile.plugin_overrides.{plugin_name}.preset must be a non-empty string",
+                retryable=False,
+            )
+        overrides[plugin_name.strip()] = dict(plugin_override)
+
+    return overrides

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+"""Guardrail plugin internals."""
 
 from modeio_middleware.plugins.guardrail_impl.plugin import Plugin
 

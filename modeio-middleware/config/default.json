@@ -1,5 +1,8 @@
 {
   "version": "0.1",
+  "preset_files": [
+    "presets/guardrail.json"
+  ],
   "profiles": {
     "dev": {
       "on_plugin_error": "fail_open",
@@ -21,12 +24,30 @@
         "guardrail",
         "redact"
       ]
+    },
+    "guardrail_quiet": {
+      "on_plugin_error": "warn",
+      "plugins": [
+        "guardrail"
+      ],
+      "plugin_overrides": {
+        "guardrail": {
+          "enabled": true,
+          "preset": "quiet"
+        }
+      }
+    }
+  },
+  "services": {
+    "defer_queue": {
+      "path": ".modeio/guardrail/deferred_actions.jsonl"
     }
   },
   "plugins": {
     "guardrail": {
       "enabled": false,
-      "module": "modeio_middleware.plugins.guardrail"
+      "module": "modeio_middleware.plugins.guardrail",
+      "preset": "interactive"
     },
     "redact": {
       "enabled": false,

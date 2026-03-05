@@ -11,7 +11,10 @@ SCRIPTS_DIR = REPO_ROOT / "modeio-middleware" / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from modeio_middleware.core.contracts import ENDPOINT_CHAT_COMPLETIONS  # noqa: E402
+from modeio_middleware.core.decision import HookDecision  # noqa: E402
 from modeio_middleware.core.plugin_manager import PluginManager  # noqa: E402
+from modeio_middleware.core.services.defer_queue import DeferredActionQueue  # noqa: E402
+from modeio_middleware.core.services.telemetry import PluginTelemetry  # noqa: E402
 from modeio_middleware.plugins.base import MiddlewarePlugin  # noqa: E402
 
 
@@ -56,11 +59,39 @@ class _BlockPlugin(MiddlewarePlugin):
         return {"action": "block", "message": "blocked by test plugin"}
 
 
+class _DecisionPlugin(MiddlewarePlugin):
+    name = "decision"
+
+    def pre_request(self, _hook_input):
+        return HookDecision(
+            action="warn",
+            message="decision-based warning",
+            findings=[{"class": "test_decision", "severity": "low", "confidence": 1.0, "reason": "ok", "evidence": []}],
+        )
+
+
+class _DeferPlugin(MiddlewarePlugin):
+    name = "defer"
+
+    def pre_request(self, hook_input):
+        services = hook_input.get("services", {})
+        queue = services.get("defer_queue") if isinstance(services, dict) else None
+        if queue is not None and hasattr(queue, "add"):
+            queue.add({"id": "deferred-1", "reason": "test"})
+
+        return HookDecision(
+            action="defer",
+            message="queued for final review",
+        )
+
+
 class TestPluginManager(unittest.TestCase):
     def setUp(self):
         _register_test_plugin("modeio_middleware.tests.plugins.modify", _ModifyPlugin)
         _register_test_plugin("modeio_middleware.tests.plugins.error", _ErrorPlugin)
         _register_test_plugin("modeio_middleware.tests.plugins.block", _BlockPlugin)
+        _register_test_plugin("modeio_middleware.tests.plugins.decision", _DecisionPlugin)
+        _register_test_plugin("modeio_middleware.tests.plugins.defer", _DeferPlugin)
 
     def test_resolve_active_plugins_enabled_order(self):
         manager = PluginManager(
@@ -208,6 +239,92 @@ class TestPluginManager(unittest.TestCase):
         self.assertFalse(result.blocked)
         self.assertEqual(result.event["payload"]["tag"], "stream")
         self.assertIn("modify:modify", result.actions)
+
+    def test_apply_pre_request_accepts_hookdecision_payload(self):
+        manager = PluginManager(
+            {
+                "decision": {
+                    "enabled": True,
+                    "module": "modeio_middleware.tests.plugins.decision",
+                }
+            }
+        )
+        active = manager.resolve_active_plugins(["decision"], {})
+
+        result = manager.apply_pre_request(
+            active,
+            request_id="req1",
+            endpoint_kind=ENDPOINT_CHAT_COMPLETIONS,
+            profile="dev",
+            request_body={"model": "gpt-test", "messages": [{"role": "user", "content": "hello"}]},
+            request_headers={},
+            context={},
+            shared_state={},
+            on_plugin_error="warn",
+        )
+
+        self.assertFalse(result.blocked)
+        self.assertIn("decision:warn", result.actions)
+        self.assertEqual(result.findings[0]["class"], "test_decision")
+
+    def test_apply_pre_request_records_telemetry(self):
+        manager = PluginManager(
+            {
+                "modify": {
+                    "enabled": True,
+                    "module": "modeio_middleware.tests.plugins.modify",
+                }
+            }
+        )
+        active = manager.resolve_active_plugins(["modify"], {})
+        telemetry = PluginTelemetry()
+
+        result = manager.apply_pre_request(
+            active,
+            request_id="req1",
+            endpoint_kind=ENDPOINT_CHAT_COMPLETIONS,
+            profile="dev",
+            request_body={"model": "gpt-test", "messages": [{"role": "user", "content": "hello"}]},
+            request_headers={},
+            context={},
+            shared_state={},
+            on_plugin_error="warn",
+            services={"telemetry": telemetry},
+        )
+
+        self.assertFalse(result.blocked)
+        snapshot = telemetry.snapshot()
+        self.assertEqual(snapshot["modify"]["calls"], 1)
+        self.assertEqual(snapshot["modify"]["hooks"]["pre_request"], 1)
+
+    def test_apply_pre_request_supports_defer_action(self):
+        manager = PluginManager(
+            {
+                "defer": {
+                    "enabled": True,
+                    "module": "modeio_middleware.tests.plugins.defer",
+                }
+            }
+        )
+        active = manager.resolve_active_plugins(["defer"], {})
+        queue = DeferredActionQueue()
+
+        result = manager.apply_pre_request(
+            active,
+            request_id="req1",
+            endpoint_kind=ENDPOINT_CHAT_COMPLETIONS,
+            profile="dev",
+            request_body={"model": "gpt-test", "messages": [{"role": "user", "content": "hello"}]},
+            request_headers={},
+            context={},
+            shared_state={},
+            on_plugin_error="warn",
+            services={"defer_queue": queue},
+        )
+
+        self.assertFalse(result.blocked)
+        self.assertIn("defer:defer", result.actions)
+        self.assertEqual(len(queue.list_items()), 1)
 
 
 if __name__ == "__main__":
