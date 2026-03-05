@@ -28,6 +28,9 @@ modeio-middleware/
     cli/
       gateway.py
       setup.py
+    connectors/
+      base.py
+      claude_hooks.py
     core/
       config_resolver.py
       context_extractor.py
@@ -81,6 +84,14 @@ modeio-middleware/
 7. Plugin manager runs post-response/stream hooks through runtime adapters
 8. Gateway returns provider-compatible JSON + middleware headers
 
+Claude hook connector flow:
+
+1. Gateway receives `POST /connectors/claude/hooks`
+2. Connector normalizes Claude hook payload into canonical middleware hook input
+3. Core resolves profile/plugin runtime and executes plugin pipeline
+4. Connector maps policy decision back to Claude hook output contract
+5. Gateway returns JSON decision + middleware headers
+
 ## Integration boundaries
 
 - `plugins/base.py` defines plugin contract
@@ -98,3 +109,4 @@ modeio-middleware/
 - v1 supports non-streaming and streaming passthrough
 - setup script supports safe OpenCode patch/unpatch with backup
 - Codex integration is environment-based (`OPENAI_BASE_URL`)
+- Claude integration uses native hooks transport (`/connectors/claude/hooks`) while preserving the same plugin protocol and policy runtime

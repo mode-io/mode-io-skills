@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Union
 
+from modeio_middleware.connectors.claude_hooks import (
+    build_claude_hook_response,
+    parse_claude_hook_invocation,
+)
 from modeio_middleware.core.contracts import (
     normalize_modeio_options,
     validate_endpoint_payload,
@@ -164,6 +168,13 @@ class MiddlewareEngine:
                 "upstream_chat_completions_url": self.config.upstream_chat_completions_url,
                 "upstream_responses_url": self.config.upstream_responses_url,
                 "default_profile": self.config.default_profile,
+                "source": "openai_gateway",
+                "source_event": "http_request",
+                "surface_capabilities": {
+                    "can_patch": True,
+                    "can_block": True,
+                    "can_defer": True,
+                },
             }
 
             pre_result = self.plugin_manager.apply_pre_request(
@@ -282,6 +293,128 @@ class MiddlewareEngine:
             )
         finally:
             if release_plugins and active_plugins:
+                self.plugin_manager.shutdown_active_plugins(active_plugins)
+
+    def process_claude_hook(
+        self,
+        *,
+        request_id: str,
+        payload: Dict[str, Any],
+        incoming_headers: Dict[str, str],
+    ) -> ProcessResult:
+        upstream_called = False
+        pre_actions: List[str] = []
+        post_actions: List[str] = []
+        degraded: List[str] = []
+        profile = self.config.default_profile
+        active_plugins: List[ActivePlugin] = []
+
+        try:
+            invocation = parse_claude_hook_invocation(
+                payload,
+                default_profile=self.config.default_profile,
+            )
+            profile = normalize_profile_name(
+                invocation.profile,
+                default_profile=self.config.default_profile,
+            )
+
+            on_plugin_error, active_plugins = self._resolve_plugin_runtime(
+                profile=profile,
+                on_plugin_error_override=invocation.on_plugin_error,
+                plugin_overrides=invocation.plugin_overrides,
+            )
+
+            shared_state: Dict[str, Any] = {}
+            connector_context = {
+                **invocation.connector_context,
+                "endpoint_kind": invocation.endpoint_kind,
+                "default_profile": self.config.default_profile,
+            }
+
+            if invocation.phase == "pre_request":
+                pre_result = self.plugin_manager.apply_pre_request(
+                    active_plugins,
+                    request_id=request_id,
+                    endpoint_kind=invocation.endpoint_kind,
+                    profile=profile,
+                    request_body=invocation.request_body,
+                    request_headers=incoming_headers,
+                    context=connector_context,
+                    shared_state=shared_state,
+                    on_plugin_error=on_plugin_error,
+                    services=self.services,
+                    connector_capabilities=invocation.connector_capabilities,
+                )
+                pre_actions = pre_result.actions
+                degraded.extend(pre_result.degraded)
+                response_payload = build_claude_hook_response(
+                    source_event=invocation.source_event,
+                    blocked=pre_result.blocked,
+                    block_message=pre_result.block_message,
+                    findings=pre_result.findings,
+                )
+            else:
+                post_result = self.plugin_manager.apply_post_response(
+                    active_plugins,
+                    request_id=request_id,
+                    endpoint_kind=invocation.endpoint_kind,
+                    profile=profile,
+                    request_context=connector_context,
+                    response_body=invocation.response_body,
+                    response_headers={},
+                    shared_state=shared_state,
+                    on_plugin_error=on_plugin_error,
+                    services=self.services,
+                    connector_capabilities=invocation.connector_capabilities,
+                )
+                post_actions = post_result.actions
+                degraded.extend(post_result.degraded)
+                response_payload = build_claude_hook_response(
+                    source_event=invocation.source_event,
+                    blocked=post_result.blocked,
+                    block_message=post_result.block_message,
+                    findings=post_result.findings,
+                )
+
+            headers = contract_headers(
+                request_id,
+                profile=profile,
+                pre_actions=pre_actions,
+                post_actions=post_actions,
+                degraded=degraded,
+                upstream_called=upstream_called,
+            )
+            return ProcessResult(status=200, payload=response_payload, headers=headers)
+
+        except MiddlewareError as error:
+            return self._error_process_result(
+                request_id=request_id,
+                profile=profile,
+                pre_actions=pre_actions,
+                post_actions=post_actions,
+                degraded=degraded,
+                upstream_called=upstream_called,
+                error=error,
+            )
+        except Exception:
+            error = MiddlewareError(
+                503,
+                "MODEIO_INTERNAL_ERROR",
+                "unexpected internal error",
+                retryable=False,
+            )
+            return self._error_process_result(
+                request_id=request_id,
+                profile=profile,
+                pre_actions=pre_actions,
+                post_actions=post_actions,
+                degraded=degraded,
+                upstream_called=upstream_called,
+                error=error,
+            )
+        finally:
+            if active_plugins:
                 self.plugin_manager.shutdown_active_plugins(active_plugins)
 
     def _process_stream_request(

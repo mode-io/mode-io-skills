@@ -137,6 +137,38 @@ class TestPluginManager(unittest.TestCase):
         self.assertEqual(result.body["model"], "rewritten-model")
         self.assertIn("modify:modify", result.actions)
 
+    def test_apply_pre_request_downgrades_modify_when_connector_disallows_patch(self):
+        manager = PluginManager(
+            {
+                "modify": {
+                    "enabled": True,
+                    "module": "modeio_middleware.tests.plugins.modify",
+                }
+            }
+        )
+        active = manager.resolve_active_plugins(["modify"], {})
+
+        result = manager.apply_pre_request(
+            active,
+            request_id="req1",
+            endpoint_kind=ENDPOINT_CHAT_COMPLETIONS,
+            profile="dev",
+            request_body={"model": "gpt-test", "messages": [{"role": "user", "content": "hello"}]},
+            request_headers={},
+            context={},
+            shared_state={},
+            on_plugin_error="warn",
+            connector_capabilities={
+                "can_patch": False,
+                "can_block": True,
+                "can_defer": True,
+            },
+        )
+
+        self.assertFalse(result.blocked)
+        self.assertEqual(result.body["model"], "gpt-test")
+        self.assertIn("modify:warn", result.actions)
+
     def test_apply_pre_request_error_fail_safe_blocks(self):
         manager = PluginManager(
             {

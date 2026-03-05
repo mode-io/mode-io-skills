@@ -60,6 +60,13 @@ Request params:
     "request_id": "req_...",
     "endpoint_kind": "chat_completions",
     "profile": "dev",
+    "source": "openai_gateway",
+    "source_event": "http_request",
+    "surface_capabilities": {
+      "can_patch": true,
+      "can_block": true,
+      "can_defer": true
+    },
     "plugin_config": {},
     "request_body": {}
   }
@@ -79,6 +86,13 @@ Response result:
 ```
 
 `decision` can also be returned as the top-level object.
+
+Optional host metadata fields may be present in `input` for connector-aware plugins:
+
+- `source`: host connector identifier (for example `openai_gateway`, `claude_hooks`)
+- `source_event`: connector-native event name
+- `surface_capabilities`: connector action support map (`can_patch`, `can_block`, `can_defer`)
+- `native_event`: sanitized connector-native payload when available
 
 ## Hooks
 

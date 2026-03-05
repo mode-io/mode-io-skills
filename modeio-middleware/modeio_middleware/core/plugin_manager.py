@@ -152,6 +152,7 @@ class PluginManager:
         active: ActivePlugin,
         action: str,
         result: Any,
+        connector_capabilities: Optional[Dict[str, bool]],
     ) -> str:
         original_action = action
         effective_action = action
@@ -166,6 +167,18 @@ class PluginManager:
             effective_action = HOOK_ACTION_WARN
         elif effective_action == HOOK_ACTION_DEFER and not can_defer:
             effective_action = HOOK_ACTION_WARN
+
+        if isinstance(connector_capabilities, dict):
+            connector_can_patch = bool(connector_capabilities.get("can_patch", True))
+            connector_can_block = bool(connector_capabilities.get("can_block", True))
+            connector_can_defer = bool(connector_capabilities.get("can_defer", True))
+
+            if effective_action == HOOK_ACTION_MODIFY and not connector_can_patch:
+                effective_action = HOOK_ACTION_WARN
+            elif effective_action == HOOK_ACTION_BLOCK and not connector_can_block:
+                effective_action = HOOK_ACTION_WARN
+            elif effective_action == HOOK_ACTION_DEFER and not connector_can_defer:
+                effective_action = HOOK_ACTION_WARN
 
         if active.mode == MODE_OBSERVE and effective_action in {
             HOOK_ACTION_MODIFY,
@@ -260,6 +273,7 @@ class PluginManager:
         services: Optional[Dict[str, Any]],
         hook_name: str,
         blocked_message_suffix: str,
+        connector_capabilities: Optional[Dict[str, bool]],
     ) -> HookPipelineResult:
         result = HookPipelineResult(body={}, headers={})
 
@@ -308,6 +322,7 @@ class PluginManager:
                 active=active,
                 action=normalized["action"],
                 result=result,
+                connector_capabilities=connector_capabilities,
             )
             duration_ms = (time.perf_counter() - start) * 1000
             self._record_telemetry(
@@ -341,6 +356,7 @@ class PluginManager:
         shared_state: Dict[str, Any],
         on_plugin_error: str,
         services: Optional[Dict[str, Any]] = None,
+        connector_capabilities: Optional[Dict[str, bool]] = None,
     ) -> HookPipelineResult:
         result = HookPipelineResult(body=copy.deepcopy(request_body), headers=dict(request_headers))
 
@@ -389,6 +405,7 @@ class PluginManager:
                 active=active,
                 action=normalized["action"],
                 result=result,
+                connector_capabilities=connector_capabilities,
             )
             duration_ms = (time.perf_counter() - start) * 1000
             self._record_telemetry(
@@ -441,6 +458,7 @@ class PluginManager:
         shared_state: Dict[str, Any],
         on_plugin_error: str,
         services: Optional[Dict[str, Any]] = None,
+        connector_capabilities: Optional[Dict[str, bool]] = None,
     ) -> HookPipelineResult:
         result = HookPipelineResult(body=copy.deepcopy(response_body), headers=dict(response_headers))
 
@@ -489,6 +507,7 @@ class PluginManager:
                 active=active,
                 action=normalized["action"],
                 result=result,
+                connector_capabilities=connector_capabilities,
             )
             duration_ms = (time.perf_counter() - start) * 1000
             self._record_telemetry(
@@ -540,6 +559,7 @@ class PluginManager:
         shared_state: Dict[str, Any],
         on_plugin_error: str,
         services: Optional[Dict[str, Any]] = None,
+        connector_capabilities: Optional[Dict[str, bool]] = None,
     ) -> HookPipelineResult:
         return self._apply_stream_lifecycle_hook(
             active_plugins,
@@ -553,6 +573,7 @@ class PluginManager:
             services=services,
             hook_name="post_stream_start",
             blocked_message_suffix="stream",
+            connector_capabilities=connector_capabilities,
         )
 
     def apply_post_stream_event(
@@ -567,6 +588,7 @@ class PluginManager:
         shared_state: Dict[str, Any],
         on_plugin_error: str,
         services: Optional[Dict[str, Any]] = None,
+        connector_capabilities: Optional[Dict[str, bool]] = None,
     ) -> StreamEventPipelineResult:
         result = StreamEventPipelineResult(event=copy.deepcopy(event))
 
@@ -614,6 +636,7 @@ class PluginManager:
                 active=active,
                 action=normalized["action"],
                 result=result,
+                connector_capabilities=connector_capabilities,
             )
             duration_ms = (time.perf_counter() - start) * 1000
             self._record_telemetry(
@@ -654,6 +677,7 @@ class PluginManager:
         shared_state: Dict[str, Any],
         on_plugin_error: str,
         services: Optional[Dict[str, Any]] = None,
+        connector_capabilities: Optional[Dict[str, bool]] = None,
     ) -> HookPipelineResult:
         return self._apply_stream_lifecycle_hook(
             active_plugins,
@@ -667,4 +691,5 @@ class PluginManager:
             services=services,
             hook_name="post_stream_end",
             blocked_message_suffix="stream end",
+            connector_capabilities=connector_capabilities,
         )
