@@ -70,6 +70,27 @@ class TestMapStore(unittest.TestCase):
         self.assertEqual(entries[0].original, "alice@example.com")
         self.assertEqual(entries[1].placeholder, "[NAME_1]")
 
+    def test_normalize_mapping_entries_skips_identity_mappings(self):
+        data = {
+            "mapping": [
+                {
+                    "anonymized": "25%",
+                    "original": "25%",
+                    "type": "percentage",
+                },
+                {
+                    "anonymized": "[MONEY_1]",
+                    "original": "2500万元人民币",
+                    "type": "money",
+                },
+            ]
+        }
+
+        entries = map_store.normalize_mapping_entries(data)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].placeholder, "[MONEY_1]")
+        self.assertEqual(entries[0].original, "2500万元人民币")
+
     def test_save_and_load_map_by_id_and_path(self):
         saved = map_store.save_map(
             raw_input="Email: alice@example.com",
