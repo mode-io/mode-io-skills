@@ -66,6 +66,8 @@ def normalize_mapping_entries(data: Dict[str, Any]) -> List[MappingEntry]:
             entry = MappingEntry.from_raw(item)
             if entry is None:
                 continue
+            if entry.placeholder == entry.original:
+                continue
             if entry.placeholder in seen_placeholders:
                 continue
             seen_placeholders.add(entry.placeholder)
