@@ -1,14 +1,16 @@
 ---
 name: modeio-middleware
 description: >-
-  Runs a local OpenAI-compatible middleware gateway for Codex/OpenCode routing.
-  Supports `/v1/chat/completions` and `/v1/responses`, including streaming pass-through,
-  with plugin-based pre-request and post-response/post-stream hooks.
+  Runs a local OpenAI-compatible middleware gateway for
+  Codex/OpenCode/OpenClaw/ClaudeCode routing.
+  Supports `/v1/chat/completions` and `/v1/responses` with
+  streaming pass-through, request body decoding, and
+  plugin-based pre/post policy hooks.
 ---
 
-# Run middleware gateway for Codex/OpenCode
+# Run middleware gateway for Codex/OpenCode/OpenClaw/ClaudeCode
 
-Use this skill when you need runtime request/response control in a local proxy.
+Use this skill to run a local policy gateway in front of an OpenAI-compatible upstream for Codex, OpenCode, OpenClaw, or Claude Code.
 
 ## Core routes
 
@@ -33,14 +35,18 @@ python modeio-middleware/scripts/middleware_gateway.py \
 
 ### `scripts/setup_middleware_gateway.py`
 
-Setup/unsetup assistant for Codex/OpenCode/Claude routing.
+Setup/unsetup helper for Codex/OpenCode/OpenClaw/ClaudeCode routing.
 
 ```bash
-python modeio-middleware/scripts/setup_middleware_gateway.py
+python modeio-middleware/scripts/setup_middleware_gateway.py --health-check
 
 python modeio-middleware/scripts/setup_middleware_gateway.py \
   --apply-opencode \
   --create-opencode-config
+
+python modeio-middleware/scripts/setup_middleware_gateway.py \
+  --apply-openclaw \
+  --create-openclaw-config
 
 python modeio-middleware/scripts/setup_middleware_gateway.py \
   --apply-claude \
@@ -49,12 +55,40 @@ python modeio-middleware/scripts/setup_middleware_gateway.py \
 python modeio-middleware/scripts/setup_middleware_gateway.py \
   --uninstall \
   --apply-opencode \
+  --apply-openclaw \
   --apply-claude
+```
+
+### `scripts/smoke_e2e.sh`
+
+Runs deterministic smoke checks.
+
+```bash
+# Offline matrix
+modeio-middleware/scripts/smoke_e2e.sh
+
+# Live gateway check
+modeio-middleware/scripts/smoke_e2e.sh --live
+
+# Live Codex/OpenCode/OpenClaw matrix via middleware
+modeio-middleware/scripts/smoke_e2e.sh --live-agents
+```
+
+Claude Code support is hook-based (`/connectors/claude/hooks`) and validated via connector tests.
+
+### `scripts/smoke_agent_matrix.py`
+
+Runs host-sandboxed live agent matrix with tap-proxy evidence output.
+
+```bash
+python modeio-middleware/scripts/smoke_agent_matrix.py \
+  --upstream-base-url "https://zenmux.ai/api/v1" \
+  --model "openai/gpt-5.3-codex"
 ```
 
 ### `scripts/new_plugin.py`
 
-Scaffold a new plugin and a matching unit test.
+Scaffold a new plugin and a matching test.
 
 ```bash
 python modeio-middleware/scripts/new_plugin.py my-plugin
@@ -79,18 +113,14 @@ python modeio-middleware/scripts/run_plugin_conformance.py /path/to/manifest.jso
 
 ## Behavior notes
 
-- Core middleware is generic; plugin chain is config-driven (`config/default.json`).
-- Default bundled plugin definition includes `redact` (disabled by default).
-- Presets are optional and resolved in core when supplied by config.
-- Profile policy controls plugin-error behavior (`fail_open`, `warn`, `fail_safe`).
+- Plugin chain is config-driven (`config/default.json`); a bundled `redact` plugin exists but is disabled by default (`"enabled": false`).
 - External plugins use `stdio-jsonrpc` with ModeIO Plugin Protocol v1.
-- External runtime mode defaults to `observe` for non-intrusive behavior.
-- Runtime modes: `observe`, `assist`, `enforce`.
-- Plugins receive shared runtime services in `hook_input["services"]` (telemetry, defer queue).
-- Stream pipeline supports `post_stream_start`, `post_stream_event`, and `post_stream_end` hooks.
-- Claude hooks connector uses native Claude hook transport but maps decisions through the same plugin runtime/protocol.
+- Runtime modes: `observe`, `assist`, `enforce` (external plugins default to `observe`).
+- Requests accept plain JSON or `Content-Encoding` `gzip`/`deflate`/`zstd`.
+- Claude integration uses hook transport (`/connectors/claude/hooks`), not `OPENAI_BASE_URL` routing.
+- Top-level `modeio` metadata in request body is stripped before upstream forwarding.
 
-## Contract highlights
+## Output contract
 
 - Required response headers:
   - `x-modeio-contract-version`
@@ -103,12 +133,21 @@ python modeio-middleware/scripts/run_plugin_conformance.py /path/to/manifest.jso
 - Streaming responses also include:
   - `x-modeio-streaming: true`
 - Middleware extension field: top-level `modeio` object in request body.
-- `modeio` metadata is stripped before upstream forwarding.
+- Middleware-generated failures use structured `modeio_error` payloads with stable error codes and `request_id`.
+
+## When not to use
+
+- PII anonymization or de-anonymization (`modeio-redact`)
+- Command safety analysis or skill repo scanning (`modeio-guardrail`)
+- Direct upstream API calls without local policy control
 
 ## Resources
 
-- `CONTRACT_AND_IMPLEMENTATION_PLAN.md`
-- `ARCHITECTURE.md`
-- `QUICKSTART.md`
-- `MODEIO_PLUGIN_PROTOCOL.md`
-- `PROTOCOL_IMPLEMENTATION_PLAN.md`
+- `scripts/middleware_gateway.py` — CLI entry point for gateway runtime
+- `scripts/setup_middleware_gateway.py` — CLI entry point for setup/uninstall
+- `scripts/smoke_e2e.sh` — deterministic smoke test runner
+- `scripts/smoke_agent_matrix.py` — live agent matrix with tap-proxy evidence
+- `QUICKSTART.md` — setup and usage guide
+- `ARCHITECTURE.md` — design and extension points
+- `MODEIO_PLUGIN_PROTOCOL.md` — external plugin protocol reference
+- `MODEIO_GATEWAY_UPSTREAM_API_KEY` env var — upstream API key for gateway routing
