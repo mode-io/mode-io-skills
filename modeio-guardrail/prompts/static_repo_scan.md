@@ -14,8 +14,8 @@ python scripts/skill_safety_assessment.py evaluate --target-repo <repo_path> --j
 # (compat) legacy alias still supported
 python scripts/skill_safety_assessment.py scan --target-repo <repo_path> --json > /tmp/skill_scan.json
 
-# 2) Render prompt input with script highlights
-python scripts/skill_safety_assessment.py prompt --target-repo <repo_path> --scan-file /tmp/skill_scan.json
+# 2) Render prompt input with script highlights + full findings
+python scripts/skill_safety_assessment.py prompt --target-repo <repo_path> --scan-file /tmp/skill_scan.json --include-full-findings
 
 # 3) Optional: generate adjudication prompt for LLM context interpretation
 python scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json > /tmp/adjudication_prompt.md
@@ -53,7 +53,7 @@ Hard constraints:
 3) If evidence is missing, do not claim the issue.
 4) If repository visibility is incomplete, return `caution` and explain missing coverage.
 5) Treat `script_scan_json` as authoritative baseline evidence. Do not ignore `required_highlight_evidence_ids`.
-6) Every finding must include `evidence_refs` that point to `script_scan_json.findings[*].evidence_id`.
+6) Every finding must include `evidence_refs` that point to script evidence IDs. In this workflow, use IDs from `script_scan_json.findings[*].evidence_id` (available when `--include-full-findings` is used).
 7) If you suspect additional risk but cannot link to script evidence, place it in `coverage_notes` as an uncertainty, not as a finding.
 8) Keep `decision` and `risk_score` consistent with referenced evidence severity.
 9) Consider `context_profile` when interpreting findings in docs/examples/tests; do not treat those as runtime by default.
@@ -81,16 +81,16 @@ Method:
 1) Review `script_scan_json.script_scan_highlights` and required evidence IDs first.
 2) Confirm each required highlight is addressed in final findings.
 3) Build findings with severity: low/medium/high/critical.
-4) Compute risk score (0-100):
+4) Compute risk score (0-100) using this calibration heuristic:
    - critical=25, high=15, medium=8, low=3 per finding
    - +10 if obfuscation/evasion is present
    - cap at 100
-5) Decide decision:
+5) Keep decision consistent with severity and validator thresholds:
    - reject: score >= 70 OR any critical finding
    - caution: score 35-69 OR incomplete evidence/coverage
    - approve: score < 35 and no high/critical findings with adequate coverage
 
-Output format (must follow exactly):
+Output format (recommended for readability). The strict machine contract is `# JSON_SUMMARY` with required keys:
 
 # Decision Card
 - Decision: reject | caution | approve
@@ -99,7 +99,7 @@ Output format (must follow exactly):
 - One-line rationale: <single sentence>
 
 # Top Findings
-For each finding (max 8):
+For each finding (recommended max 8):
 - ID: F-<n>
 - Severity: low | medium | high | critical
 - Category: A|B|C|D|E
