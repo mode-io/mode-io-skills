@@ -13,7 +13,7 @@ description: >-
 
 # Run safety checks for instructions and skill repos
 
-Gate risky operations behind a real-time safety assessment. Every instruction that could cause data loss, permission escalation, or irreversible state change should be checked before execution.
+Use this skill to gate risky operations behind a real-time safety assessment, or to scan third-party skill repos before installation.
 
 ## Tool routing
 
@@ -73,7 +73,7 @@ Additional signals:
 - `is_destructive: true` combined with `is_reversible: false`: always surface the recommendation to the user, regardless of approval status.
 - If the safety check itself fails (network error, API error): warn the user that safety could not be verified. Do not silently proceed with unverified instructions.
 
-## Script commands
+## Scripts
 
 ### `scripts/safety.py`
 
@@ -216,7 +216,7 @@ Safety verification failures must never be silently ignored.
 8. If coverage is partial or evidence is insufficient, return `caution` with explicit coverage note.
 9. Include a prioritized remediation plan so users can fix and re-scan quickly.
 
-## When NOT to use
+## When not to use
 
 - For PII redaction or anonymization — use `modeio-redact` instead.
 - For tasks with no executable instruction or repository target to evaluate (pure discussion, documentation, questions).
@@ -224,20 +224,8 @@ Safety verification failures must never be silently ignored.
 
 ## Resources
 
-- `modeio_guardrail/cli/safety.py`: modular safety client implementation (importable core)
-- `scripts/safety.py`: compatibility wrapper entrypoint for CLI usage
-- `modeio_guardrail/cli/skill_safety_assessment.py`: thin CLI router for evaluate/scan/prompt/validate/adjudicate
-- `modeio_guardrail/skill_safety/engine.py`: layered v2 evaluator orchestration and report builder
-- `modeio_guardrail/skill_safety/scanners/`: concern-specific scanner modules (prompt, execution/evasion, secret-egress, supply-chain, capability)
-- `modeio_guardrail/skill_safety/collector.py`: repository file collection + scan-surface classification
-- `modeio_guardrail/skill_safety/scoring.py`: scoring + decision policy + finding kind classification
-- `modeio_guardrail/skill_safety/validation.py`: strict validator + integrity re-scan checks
-- `modeio_guardrail/skill_safety/prompt_payload.py`: SCRIPT_SCAN prompt payload renderer
-- `modeio_guardrail/skill_safety/context.py`: context profile parser + context-aware risk multipliers
-- `modeio_guardrail/skill_safety/adjudication.py`: adjudication prompt builder + deterministic merge logic
-- `benchmarks/run_repo_set.py`: repeatable benchmark runner over repo-set manifests
-- `benchmarks/repo_sets/*.json`: curated fresh benchmark manifests (good + risky)
-- `scripts/skill_safety_assessment.py`: compatibility wrapper entrypoint for assessment evaluate/scan/prompt/validate/adjudicate commands
-- `prompts/static_repo_scan.md`: Skill Safety Assessment prompt contract for pre-install skill-repo risk scanning
-- `SAFETY_API_URL`: optional environment override for custom endpoint routing
-- `ARCHITECTURE.md`: package boundaries and compatibility notes
+- `scripts/safety.py` — CLI entry point for instruction safety checks
+- `scripts/skill_safety_assessment.py` — CLI entry point for skill repo assessment (evaluate/scan/prompt/validate/adjudicate)
+- `prompts/static_repo_scan.md` — Skill Safety Assessment prompt contract
+- `ARCHITECTURE.md` — package boundaries and compatibility notes
+- `SAFETY_API_URL` env var — optional endpoint override (default: `https://safety-cf.modeio.ai/api/cf/safety`)
