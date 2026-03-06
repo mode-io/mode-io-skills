@@ -22,6 +22,17 @@ Use this skill to gate risky operations behind a real-time safety assessment, or
 3. Skill Safety Assessment is static analysis only. Never execute code, install dependencies, or run hooks in the target repository.
 4. For Skill Safety Assessment, run deterministic script evaluation first (`evaluate`), then pass highlights into the prompt contract.
 
+## Dependencies
+
+- `requests` is required for `scripts/safety.py` because it makes backend API calls.
+- `scripts/skill_safety_assessment.py` does not require `requests` for basic local repository evaluation.
+- For repo-local setup from the repo root:
+
+```bash
+python scripts/bootstrap_env.py
+python scripts/doctor_env.py
+```
+
 ## Instruction safety execution policy
 
 1. Always run `scripts/safety.py` with `--json` for structured output.
@@ -194,7 +205,7 @@ Any field may be `null` if the backend could not determine it. Treat `null` in `
 }
 ```
 
-Error types: `validation_error` (empty input), `network_error` (HTTP/connection failure), `api_error` (backend returned error payload).
+Error types: `validation_error` (empty input), `dependency_error` (missing local package such as `requests`), `network_error` (HTTP/connection failure), `api_error` (backend returned error payload).
 
 Exit code is non-zero on any failure.
 

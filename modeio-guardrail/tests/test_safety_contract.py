@@ -95,7 +95,9 @@ class TestSafetyContract(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertFalse(payload["success"])
         self.assertEqual(payload["tool"], "modeio-guardrail")
-        self.assertEqual(payload["error"]["type"], "network_error")
+        self.assertIn(payload["error"]["type"], ("network_error", "dependency_error"))
+        if payload["error"]["type"] == "dependency_error":
+            self.assertIn("requests package is required", payload["error"]["message"])
 
     def test_post_with_retry_retries_503_then_succeeds(self):
         first = _DummyResponse(status_code=503)
@@ -168,6 +170,20 @@ class TestSafetyContract(unittest.TestCase):
         payload = json.loads(stdout)
         self.assertEqual(payload["error"]["type"], "api_error")
         self.assertEqual(payload["error"]["status_code"], 503)
+
+    def test_main_json_missing_dependency_is_classified_as_dependency_error(self):
+        dependency_error = safety.requests.RequestException(
+            "requests package is required for backend-backed safety checks."
+        )
+
+        with patch("safety._is_requests_dependency_error", return_value=True):
+            with patch("safety.detect_safety", side_effect=dependency_error):
+                code, stdout, _ = self._run_main(["--input", "DROP TABLE users", "--json"])
+
+        self.assertEqual(code, 1)
+        payload = json.loads(stdout)
+        self.assertEqual(payload["error"]["type"], "dependency_error")
+        self.assertIn("requests package is required", payload["error"]["message"])
 
     def test_main_json_invalid_payload_type_is_api_error(self):
         with patch("safety.detect_safety", return_value=["bad"]):
