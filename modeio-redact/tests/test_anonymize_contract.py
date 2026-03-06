@@ -15,6 +15,7 @@ SCRIPTS_DIR = REPO_ROOT / "modeio-redact" / "scripts"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 import anonymize  # noqa: E402
+from modeio_redact.workflow.map_store import hash_text, load_map  # noqa: E402
 
 try:  # noqa: E402
     from docx import Document
@@ -583,6 +584,53 @@ class TestAnonymizeContract(unittest.TestCase):
                 self.assertIsNotNone(map_ref)
                 self.assertEqual(map_ref.entry_count, 1)
                 self.assertIn("mapRef", data)
+            finally:
+                if original is None:
+                    os.environ.pop("MODEIO_REDACT_MAP_DIR", None)
+                else:
+                    os.environ["MODEIO_REDACT_MAP_DIR"] = original
+
+    @unittest.skipUnless(HAS_DOCX, "python-docx is required")
+    def test_maybe_sync_non_text_map_hash_updates_docx_hash_to_written_output(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original = os.environ.get("MODEIO_REDACT_MAP_DIR")
+            os.environ["MODEIO_REDACT_MAP_DIR"] = tmpdir
+            try:
+                input_text = "Accepted on behalf of Asterion Biologics, Inc."
+                provider_text = "Accepted on behalf of [REDACTED_COMPANY_1]."
+                written_text = "Accepted on behalf of [REDACTED_COMPANY_1]"
+
+                map_ref = anonymize.save_map(
+                    raw_input=input_text,
+                    anonymized_content=provider_text,
+                    entries=[
+                        {
+                            "placeholder": "[REDACTED_COMPANY_1]",
+                            "original": "Asterion Biologics, Inc.",
+                            "type": "company",
+                        }
+                    ],
+                    level="dynamic",
+                    source_mode="api",
+                )
+
+                output_path = Path(tmpdir) / "output.docx"
+                document = Document()
+                document.add_paragraph(written_text)
+                document.save(str(output_path))
+
+                data = {"mapRef": map_ref.to_dict()}
+                anonymize._maybe_sync_non_text_map_hash(
+                    map_ref=map_ref,
+                    output_path=str(output_path),
+                    input_extension=".docx",
+                    data=data,
+                )
+
+                record, _ = load_map(map_ref.map_path)
+                actual_output = anonymize.read_input_file(output_path, ".docx")
+                self.assertEqual(record.anonymized_hash, hash_text(actual_output))
+                self.assertNotEqual(record.anonymized_hash, hash_text(provider_text))
             finally:
                 if original is None:
                     os.environ.pop("MODEIO_REDACT_MAP_DIR", None)

@@ -62,10 +62,12 @@ def write_non_text_anonymized_file(
         )
         return
     if handler_key == HANDLER_PDF:
-        _write_pdf_with_redactions(
+        _write_pdf_with_replacements(
             input_path=input_path,
             output_path=output_path,
-            targets=_build_pdf_redaction_targets(normalized_entries),
+            replacements=build_replacement_pairs(normalized_entries, direction="redact"),
+            fill_color=(0, 0, 0),
+            text_color=(1, 1, 1),
         )
         return
     raise ValueError(f"Unsupported non-text anonymization handler for extension '{extension}'.")
@@ -87,7 +89,14 @@ def write_non_text_deanonymized_file(
         )
         return
     if handler_key == HANDLER_PDF:
-        raise ValueError("De-anonymization is not supported for '.pdf' files.")
+        _write_pdf_with_replacements(
+            input_path=input_path,
+            output_path=output_path,
+            replacements=build_replacement_pairs(normalized_entries, direction="restore"),
+            fill_color=(1, 1, 1),
+            text_color=(0, 0, 0),
+        )
+        return
     raise ValueError(f"Unsupported non-text de-anonymization handler for extension '{extension}'.")
 
 
@@ -173,35 +182,104 @@ def _normalize_entries(mapping_entries: Sequence[Any]) -> List[MappingEntry]:
     return normalized
 
 
+def _find_replacement_spans(
+    text: str,
+    replacements: Sequence[Tuple[str, str]],
+) -> List[Tuple[int, int, str]]:
+    spans: List[Tuple[int, int, str]] = []
+
+    candidates = [(source, target) for source, target in replacements if source]
+    candidates.sort(key=lambda item: len(item[0]), reverse=True)
+
+    for source, target in candidates:
+        search_from = 0
+        while True:
+            start = text.find(source, search_from)
+            if start < 0:
+                break
+            end = start + len(source)
+            search_from = start + 1
+            if any(start < existing_end and end > existing_start for existing_start, existing_end, _ in spans):
+                continue
+            spans.append((start, end, target))
+
+    spans.sort(key=lambda item: (item[0], item[1]))
+    return spans
+
+
+def _apply_replacement_spans_to_text(
+    text: str,
+    spans: Sequence[Tuple[int, int, str]],
+) -> str:
+    if not spans:
+        return text
+
+    pieces: List[str] = []
+    cursor = 0
+    for start, end, target in spans:
+        if cursor < start:
+            pieces.append(text[cursor:start])
+        pieces.append(target)
+        cursor = end
+    if cursor < len(text):
+        pieces.append(text[cursor:])
+    return "".join(pieces)
+
+
 def _apply_replacements_to_paragraph(paragraph, replacements: Sequence[Tuple[str, str]]) -> None:
     if not replacements:
         return
 
-    if paragraph.runs:
-        for run in paragraph.runs:
-            updated = run.text
-            for source, target in replacements:
-                if source in updated:
-                    updated = updated.replace(source, target)
-            run.text = updated
-
-        current_text = paragraph.text
-        normalized_text = current_text
-        for source, target in replacements:
-            if source in normalized_text:
-                normalized_text = normalized_text.replace(source, target)
-
-        if normalized_text != current_text:
-            paragraph.runs[0].text = normalized_text
-            for run in paragraph.runs[1:]:
-                run.text = ""
+    paragraph_text = paragraph.text
+    spans = _find_replacement_spans(paragraph_text, replacements)
+    if not spans:
         return
 
-    normalized_text = paragraph.text
-    for source, target in replacements:
-        if source in normalized_text:
-            normalized_text = normalized_text.replace(source, target)
-    paragraph.text = normalized_text
+    if not paragraph.runs:
+        paragraph.text = _apply_replacement_spans_to_text(paragraph_text, spans)
+        return
+
+    run_boundaries: List[Tuple[Any, str, int, int]] = []
+    cursor = 0
+    for run in paragraph.runs:
+        run_text = run.text or ""
+        start = cursor
+        end = start + len(run_text)
+        run_boundaries.append((run, run_text, start, end))
+        cursor = end
+
+    if cursor != len(paragraph_text):
+        paragraph.text = _apply_replacement_spans_to_text(paragraph_text, spans)
+        return
+
+    for run, run_text, run_start, run_end in run_boundaries:
+        if not run_text:
+            run.text = ""
+            continue
+
+        pieces: List[str] = []
+        local_cursor = run_start
+        for start, end, target in spans:
+            if end <= run_start:
+                continue
+            if start >= run_end:
+                break
+
+            overlap_start = max(start, run_start)
+            overlap_end = min(end, run_end)
+
+            if local_cursor < overlap_start:
+                pieces.append(run_text[local_cursor - run_start: overlap_start - run_start])
+
+            if run_start <= start < run_end:
+                pieces.append(target)
+
+            local_cursor = max(local_cursor, overlap_end)
+
+        if local_cursor < run_end:
+            pieces.append(run_text[local_cursor - run_start: run_end - run_start])
+
+        run.text = "".join(pieces)
 
 
 def _write_docx_with_replacements(
@@ -250,33 +328,23 @@ def _read_pdf_text(path: Path) -> str:
     return "\n\n".join(page_texts).strip()
 
 
-def _build_pdf_redaction_targets(mapping_entries: Sequence[MappingEntry]) -> List[str]:
-    targets: List[str] = []
-    seen = set()
-    for entry in mapping_entries:
-        value = entry.original.strip()
-        if not value or value in seen:
-            continue
-        seen.add(value)
-        targets.append(value)
-    targets.sort(key=len, reverse=True)
-    return targets
-
-
 def _copy_binary_file(input_path: Path, output_path: Path) -> None:
     if input_path.resolve() == output_path.resolve():
         return
     shutil.copyfile(str(input_path), str(output_path))
 
 
-def _write_pdf_with_redactions(
+def _write_pdf_with_replacements(
     input_path: Path,
     output_path: Path,
-    targets: Sequence[str],
+    replacements: Sequence[Tuple[str, str]],
+    *,
+    fill_color: Tuple[float, float, float],
+    text_color: Tuple[float, float, float],
 ) -> None:
     fitz = _import_fitz_module()
 
-    if not targets:
+    if not replacements:
         _copy_binary_file(input_path, output_path)
         return
 
@@ -291,11 +359,25 @@ def _write_pdf_with_redactions(
             words = page.get_text("words")
             if words:
                 has_text_layer = True
-            for target in targets:
-                rects = page.search_for(target)
+            overlay_tasks: List[Tuple[Any, str]] = []
+            for source, target in replacements:
+                rects = page.search_for(source)
                 for rect in rects:
-                    page.add_redact_annot(rect, fill=(0, 0, 0))
+                    page.add_redact_annot(
+                        rect,
+                        fill=fill_color,
+                        cross_out=False,
+                    )
+                    overlay_tasks.append((rect, target))
             page.apply_redactions()
+            for rect, target in overlay_tasks:
+                _insert_pdf_replacement_text(
+                    fitz=fitz,
+                    page=page,
+                    rect=rect,
+                    text=target,
+                    text_color=text_color,
+                )
 
         if not has_text_layer:
             raise ValueError(
@@ -325,3 +407,32 @@ def _write_pdf_with_redactions(
         except OSError as exc:
             temp_path.unlink(missing_ok=True)
             raise ValueError(f"Failed to finalize in-place PDF write: {exc}") from exc
+
+
+def _insert_pdf_replacement_text(
+    *,
+    fitz,
+    page,
+    rect: Any,
+    text: str,
+    text_color: Tuple[float, float, float],
+) -> None:
+    normalized_rect = fitz.Rect(rect)
+    width = max(normalized_rect.width - 1, 1)
+    height = max(normalized_rect.height - 1, 1)
+
+    font_size = min(height * 0.8, 10.0)
+    while font_size > 2.0:
+        if fitz.get_text_length(text, fontname="courier", fontsize=font_size) <= width:
+            break
+        font_size -= 0.25
+
+    baseline_y = min(normalized_rect.y1 - 1, normalized_rect.y0 + max(font_size, 2.0))
+    page.insert_text(
+        (normalized_rect.x0, baseline_y),
+        text,
+        fontname="courier",
+        fontsize=max(font_size, 2.0),
+        color=text_color,
+        overlay=True,
+    )

@@ -300,7 +300,7 @@ class TestDeanonymizeContract(unittest.TestCase):
             self.assertIn("alice@example.com", restored_text)
 
     @unittest.skipUnless(HAS_FITZ, "PyMuPDF is required")
-    def test_deanonymize_rejects_pdf_file_input_type(self):
+    def test_deanonymize_accepts_pdf_file_input_type(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             map_path = Path(tmpdir) / "map.json"
             map_path.write_text(
@@ -333,11 +333,19 @@ class TestDeanonymizeContract(unittest.TestCase):
                     "--json",
                 ],
             )
-            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.returncode, 0)
             payload = json.loads(result.stdout)
 
-            self.assertFalse(payload["success"])
-            self.assertEqual(payload["error"]["type"], "validation_error")
+            self.assertTrue(payload["success"])
+            self.assertIn("alice@example.com", payload["data"]["deanonymizedContent"])
+            output_path = Path(payload["data"]["outputPath"])
+            restored = fitz.open(str(output_path))
+            try:
+                restored_text = "\n".join(page.get_text("text") for page in restored)
+            finally:
+                restored.close()
+            self.assertIn("alice@example.com", restored_text)
+            self.assertNotIn("[EMAIL_1]", restored_text)
 
     def test_json_file_input_auto_resolves_map_from_sidecar(self):
         original_text = '{"email":"alice@example.com"}'

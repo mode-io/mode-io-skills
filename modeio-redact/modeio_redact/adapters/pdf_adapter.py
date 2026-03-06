@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from modeio_redact.adapters.coverage import summarize_redaction_removal_coverage
+from modeio_redact.adapters.coverage import summarize_apply_coverage
 from modeio_redact.assurance.verifier import verify_content_against_plan
 from modeio_redact.core.models import ApplyReport, ExtractionBundle, InputSource, RedactionPlan, VerificationReport
 from modeio_redact.workflow.file_handlers import (
@@ -46,7 +46,7 @@ class PdfAdapter:
             mapping_entries=plan.mapping_entries,
         )
         output_text = read_input_file(output_path, ".pdf")
-        return summarize_redaction_removal_coverage(output_text, plan)
+        return summarize_apply_coverage(output_text, plan)
 
     def verify(self, source: InputSource, output_path: Path, plan: RedactionPlan) -> VerificationReport:
         del source

@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 REQUESTS_AVAILABLE = True
@@ -55,13 +56,19 @@ from modeio_redact.workflow.file_types import (
     is_level_supported_for_extension,
     supported_levels_for_extension,
 )
+from modeio_redact.workflow.file_handlers import read_input_file, uses_text_handler
 from modeio_redact.workflow.input_source import (
     SUPPORTED_FILE_EXTENSIONS,
     resolve_input_source,
     resolve_input_source_context,
 )
 from modeio_redact.core.models import MapRef, MappingEntry
-from modeio_redact.workflow.map_store import MapStoreError, normalize_mapping_entries, save_map
+from modeio_redact.workflow.map_store import (
+    MapStoreError,
+    normalize_mapping_entries,
+    save_map,
+    update_anonymized_hash,
+)
 
 # Backend API URL, overridable via ANONYMIZE_API_URL environment variable
 URL = os.environ.get("ANONYMIZE_API_URL", "https://safety-cf.modeio.ai/api/cf/anonymize")
@@ -354,6 +361,25 @@ def _maybe_save_map(
     return map_ref
 
 
+def _maybe_sync_non_text_map_hash(
+    *,
+    map_ref: Optional[MapRef],
+    output_path: Optional[str],
+    input_extension: Optional[str],
+    data: Dict[str, Any],
+) -> None:
+    if map_ref is None or not output_path or not input_extension:
+        return
+    if uses_text_handler(input_extension):
+        return
+
+    actual_output = read_input_file(Path(output_path).expanduser(), input_extension)
+    update_anonymized_hash(map_ref.map_path, actual_output)
+    map_ref_data = data.get("mapRef")
+    if isinstance(map_ref_data, dict):
+        map_ref_data["mapPath"] = map_ref.map_path
+
+
 def main():
     supported = ", ".join(SUPPORTED_FILE_EXTENSIONS)
     parser = argparse.ArgumentParser(
@@ -595,6 +621,20 @@ def main():
         else:
             print(f"Error: failed to write output file: {error}", file=sys.stderr)
         sys.exit(1)
+
+    try:
+        _maybe_sync_non_text_map_hash(
+            map_ref=map_ref,
+            output_path=output_path,
+            input_extension=input_extension,
+            data=data,
+        )
+    except (MapStoreError, ValueError) as error:
+        _append_warning(
+            data,
+            code="map_hash_sync_failed",
+            message=str(error),
+        )
 
     if args.json:
         print(json.dumps(_success_envelope(level=args.level, mode=mode, data=data), ensure_ascii=False))

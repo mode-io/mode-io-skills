@@ -231,3 +231,38 @@ def load_map(map_ref: Optional[str]) -> Tuple[MapRecord, Path]:
 
     record = _validate_record(raw, fallback_map_id=path.stem)
     return record, path
+
+
+def update_anonymized_hash(map_ref: str, anonymized_content: str) -> MapRecord:
+    path = _resolve_map_path(map_ref)
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except OSError as exc:
+        raise MapStoreError(f"failed to read map file: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise MapStoreError(f"map file is not valid JSON: {exc}") from exc
+
+    if not isinstance(raw, dict):
+        raise MapStoreError("invalid map file: root must be an object")
+
+    raw["anonymizedHash"] = hash_text(anonymized_content)
+
+    temp_name = None
+    try:
+        fd, temp_name = tempfile.mkstemp(prefix=f"{path.stem}-", suffix=".tmp", dir=str(path.parent))
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(raw, handle, ensure_ascii=False, indent=2)
+        temp_path = Path(temp_name)
+        _safe_chmod(temp_path, 0o600)
+        os.replace(temp_path, path)
+        _safe_chmod(path, 0o600)
+    except OSError as exc:
+        if temp_name:
+            try:
+                Path(temp_name).unlink()
+            except OSError:
+                pass
+        raise MapStoreError(f"failed to persist local map file: {exc}") from exc
+
+    return _validate_record(raw, fallback_map_id=path.stem)

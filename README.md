@@ -595,8 +595,9 @@ python modeio-redact/scripts/anonymize.py --input ./incident.pdf --level lite
 # PDF note:
 # - .pdf anonymization is supported for text-layer PDFs across lite/dynamic/strict/crossborder.
 # - non-lite PDF flows require API mapping entries for fail-closed projection.
-# - Redaction removes underlying text and applies black fill.
-# - .pdf de-anonymization is not supported.
+# - Redaction removes underlying text and applies black fill with white placeholder text.
+# - .pdf de-anonymization is supported for text-layer PDFs produced by modeio-redact.
+# - restored PDFs reconstruct readable/searchable text but do not guarantee exact original layout fidelity.
 # - file outputs enforce coverage checks by default.
 # - .docx/.pdf also run residual verification by default.
 
@@ -675,8 +676,9 @@ python modeio-redact/scripts/detect_local.py --input "Email: alice@example.com" 
 > Local detector score fields are heuristic decision scores (for threshold gating), not statistical confidence intervals.
 
 > `--input` auto-reads supported file paths (`.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`, `.jsonl`, `.yaml`, `.yml`, `.xml`, `.html`, `.htm`, `.rst`, `.log`, `.docx`, `.pdf`).
-> `.pdf` requires a text layer, is supported only with `--level lite`, and is anonymize-only.
+> `.pdf` requires a text layer and supports all anonymization levels when mapping entries are available.
 > `.docx` and `.pdf` outputs run verified fail-closed checks by default.
+> `.pdf` de-anonymization is supported for text-layer PDFs produced by `modeio-redact`, but it reconstructs page text rather than restoring the exact original PDF layout.
 > For file workflows, anonymize/deanonymize now write output files by default unless you use explicit `--output` or `--in-place`.
 > File output JSON includes `applyReport`, `verificationReport`, and `assurancePolicy` for coverage + verification visibility.
 > `deanonymize.py` always continues on hash mismatch and emits an `input_hash_mismatch` warning.
