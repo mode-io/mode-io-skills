@@ -5,8 +5,9 @@ description: >-
   supported file-path input (`.txt`, `.md`, `.markdown`, `.csv`, `.tsv`,
   `.json`, `.jsonl`, `.yaml`, `.yml`, `.xml`, `.html`, `.htm`, `.rst`, `.log`,
   `.docx`, `.pdf`). Supports local regex masking in `lite` mode, remote API
-  anonymization in `dynamic`/`strict`/`crossborder`, and local placeholder
-  restore using saved map files.
+  anonymization in `dynamic`/`strict`/`crossborder`, local placeholder
+  restore using saved map files for supported reversible formats, and
+  anonymize-only PDF redaction.
 ---
 
 # Run anonymization checks for text and files
@@ -80,9 +81,8 @@ Notes:
 - `lite` is local-only; non-lite levels call backend anonymize API.
 - Non-lite API calls retry up to 2 times with exponential backoff (1s base) on 502/503/504 and network errors.
 - `.pdf` anonymization supports all levels for text-layer PDFs; non-lite requires API mapping entries for fail-closed projection.
-- `.pdf` de-anonymization is supported for text-layer PDFs that were anonymized through `modeio-redact` placeholder replacement flow.
-- PDF placeholder styling uses a black background with white replacement text so redacted content remains visibly readable while the original text layer is removed.
-- `.pdf` de-anonymization reconstructs visible/searchable page text but does not guarantee exact original PDF layout fidelity.
+- `.pdf` applies true PDF redaction (remove text layer content + black fill) and uses sidecar-only map linkage.
+- `.pdf` de-anonymization is not supported.
 - Default file output path is `<name>.redacted.<ext>` with collision-safe suffixing.
 - Sidecar map ref file is written for file workflows as `<output-stem>.map.json` (example: `incident.redacted.map.json`).
 - For file outputs, an assurance pipeline runs automatically: `.docx`/`.pdf` use `verified` policy (fail on coverage mismatch or residual findings); all other file types use `best_effort` with coverage enforcement.

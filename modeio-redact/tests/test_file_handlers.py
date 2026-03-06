@@ -125,7 +125,6 @@ class TestFileHandlers(unittest.TestCase):
             finally:
                 redacted.close()
             self.assertNotIn("alice@example.com", extracted)
-            self.assertIn("[EMAIL_1]", extracted)
 
     @unittest.skipUnless(HAS_DOCX, "python-docx is required")
     def test_docx_preserves_non_matching_run_formatting_for_cross_run_replacement(self):
@@ -171,7 +170,7 @@ class TestFileHandlers(unittest.TestCase):
             self.assertTrue(paragraph.runs[3].bold)
 
     @unittest.skipUnless(HAS_FITZ, "PyMuPDF is required")
-    def test_pdf_read_and_redaction_write_keeps_long_placeholder_extractable(self):
+    def test_pdf_read_and_redaction_write_removes_long_original(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             input_path = Path(tmpdir) / "sample.pdf"
             output_path = Path(tmpdir) / "sample.redacted.pdf"
@@ -201,40 +200,17 @@ class TestFileHandlers(unittest.TestCase):
             finally:
                 redacted.close()
             self.assertNotIn("XH4829916", extracted)
-            self.assertIn("[REDACTED_ID_NUMBER_1]", extracted)
+            self.assertNotIn("[REDACTED_ID_NUMBER_1]", extracted)
 
     @unittest.skipUnless(HAS_FITZ, "PyMuPDF is required")
-    def test_pdf_deanonymize_write(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_path = Path(tmpdir) / "sample.redacted.pdf"
-            output_path = Path(tmpdir) / "sample.restored.pdf"
-
-            source = fitz.open()
-            page = source.new_page()
-            page.insert_text((72, 72), "Email: [EMAIL_1]")
-            source.save(str(input_path))
-            source.close()
-
+    def test_pdf_deanonymize_unsupported(self):
+        with self.assertRaises(ValueError):
             file_handlers.write_non_text_deanonymized_file(
-                input_path=input_path,
-                output_path=output_path,
+                input_path=Path("/tmp/a.pdf"),
+                output_path=Path("/tmp/b.pdf"),
                 extension=".pdf",
-                mapping_entries=[
-                    {
-                        "placeholder": "[EMAIL_1]",
-                        "original": "alice@example.com",
-                        "type": "email",
-                    }
-                ],
+                mapping_entries=[],
             )
-
-            restored = fitz.open(str(output_path))
-            try:
-                extracted = "\n".join(page.get_text("text") for page in restored)
-            finally:
-                restored.close()
-            self.assertIn("alice@example.com", extracted)
-            self.assertNotIn("[EMAIL_1]", extracted)
 
 
 if __name__ == "__main__":

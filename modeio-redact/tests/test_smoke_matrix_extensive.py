@@ -281,32 +281,9 @@ class TestSmokeMatrixExtensive(unittest.TestCase):
 
             self.assertNotIn("alice@example.com", redacted_text)
             self.assertNotIn("415-555-1234", redacted_text)
-            self.assertIn("[EMAIL_1]", redacted_text)
-            self.assertIn("[PHONE_1]", redacted_text)
-
             apply_report = anonymize_payload["data"]["applyReport"]
             self.assertGreaterEqual(apply_report["expectedCount"], 4)
             self.assertEqual(apply_report["expectedCount"], apply_report["appliedCount"])
-
-            deanonymize_result = self._run_cli(
-                DEANONYMIZE_SCRIPT,
-                [
-                    "--input",
-                    str(output_path),
-                    "--json",
-                ],
-                env=env,
-            )
-            deanonymize_payload = self._assert_success_payload(deanonymize_result)
-            restored_path = Path(deanonymize_payload["data"]["outputPath"])
-            restored_document = fitz.open(str(restored_path))
-            try:
-                restored_text = "\n".join(page.get_text("text") for page in restored_document)
-            finally:
-                restored_document.close()
-
-            self.assertIn("alice@example.com", restored_text)
-            self.assertIn("415-555-1234", restored_text)
 
     def test_text_in_place_roundtrip_smoke(self):
         with tempfile.TemporaryDirectory() as tmpdir:
