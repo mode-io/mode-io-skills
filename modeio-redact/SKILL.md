@@ -75,7 +75,7 @@ Notes:
 - `.pdf` anonymization supports all levels for text-layer PDFs; non-lite requires API mapping entries for fail-closed projection.
 - `.pdf` de-anonymization is not supported.
 - Default file output path is `<name>.redacted.<ext>` with collision-safe suffixing.
-- Sidecar map ref file `<output>.map.json` is written for file workflows.
+- Sidecar map ref file is written for file workflows as `<output-stem>.map.json` (example: `incident.redacted.map.json`).
 - For file outputs, an assurance pipeline runs automatically: `.docx`/`.pdf` use `verified` policy (fail on coverage mismatch or residual findings); all other file types use `best_effort` with coverage enforcement.
 
 ```bash
@@ -137,6 +137,7 @@ python scripts/detect_local.py --input "Name: Alice Wang" --profile precision --
 ```bash
 python -m unittest discover tests -p "test_*.py"
 python -m unittest discover tests -p "test_smoke_matrix_extensive.py"
+MODEIO_REDACT_SKIP_API_SMOKE=1 python -m unittest discover tests -p "test_smoke_matrix_extensive.py"
 ```
 
 ## Output contract
@@ -149,11 +150,13 @@ Top-level envelope: `success`, `tool`, `mode`, `level`, `data`.
 
 - `anonymizedContent`: redacted text
 - `hasPII`: boolean
-- `mapRef`: `{ mapId, mapPath, sidecarPath? }`
-- `outputPath`: written file path (file mode only)
+- `inputType`: `text` or `file`
+- `inputPath`: resolved source path (file input only)
+- `mapRef`: `{ mapId, mapPath, entryCount, sidecarPath? }`
+- `outputPath`: written file path (present when an output file is written)
 - `warnings`: `[{ code, message }]` (present when applicable)
 
-File-output-only fields (present when input is a file path):
+Output-file fields (present when an output file is written):
 
 - `applyReport`: `{ expectedCount, foundCount, appliedCount, missingCount, missedSpans, warnings }`
 - `verificationReport`: `{ passed, skipped, residualCount, residuals, warnings }`
@@ -167,7 +170,10 @@ Top-level envelope: `success`, `tool`, `mode`, `data`.
 
 - `deanonymizedContent`: restored text
 - `replacementSummary`: `{ totalReplacements, replacementsByType }`
-- `mapRef`: `{ mapId, mapPath }`
+- `mapRef`: `{ mapId, mapPath, entryCount }`
+- `linkageSource`: `explicit-map`, `embedded-mapid`, `sidecar`, or `latest-fallback`
+- `warnings`: `[{ code, message }]` (for example, `input_hash_mismatch`)
+- `outputPath`: written file path (present when an output file is written)
 
 ### `detect_local.py --json`
 
@@ -176,7 +182,7 @@ Full output fields:
 - `originalText`: the unmodified input
 - `sanitizedText`: text with PII replaced by placeholders
 - `items`: array of detected entities with `type`, `value`, `maskedValue`, `detectionScore`, `scoreReasons`, and positional fields (`startIndex`, `endIndex`)
-- `riskScore`: 0.0–1.0 aggregate risk
+- `riskScore`: 0–100 aggregate risk score
 - `riskLevel`: `low`, `medium`, `high`
 - `profile`: active profile name
 - `thresholds`: threshold values used per entity type

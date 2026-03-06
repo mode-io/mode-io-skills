@@ -17,6 +17,7 @@ modeio-redact/
       policy.py
       pipeline.py
       errors.py
+      replacement.py
     adapters/
       base.py
       registry.py
@@ -44,6 +45,7 @@ modeio-redact/
       file_handlers.py
       input_source.py
       file_workflow.py
+      map_linkage.py
       map_store.py
   scripts/
     anonymize.py
@@ -61,10 +63,12 @@ modeio-redact/
 - Middleware gateway routing and prompt request/response hooks live in `modeio-middleware`.
 - Pre-commit staged-diff scanning is not part of redact scope.
 - File/map helpers under `modeio_redact/workflow/` are shared by anonymize/deanonymize paths.
+- Map-reference resolution is centralized in `workflow/map_linkage.py` (explicit map -> embedded marker -> sidecar -> latest fallback).
 
 ## Pipeline Notes
 
 - `core/pipeline.py` orchestrates local-regex (`lite`) and remote API providers.
+- `core/replacement.py` centralizes stable longest-first replacement behavior for restore/redact paths.
 - `planning/*` builds canonical span plans from mapping entries.
 - `adapters/*` isolate file-format behavior (`text`, `docx`, `pdf`).
 - `assurance/*` applies residual-leak verification for fail-closed output policy.
