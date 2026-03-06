@@ -50,7 +50,7 @@ _FILE_TYPE_POLICIES: Tuple[FileTypePolicy, ...] = (
     FileTypePolicy(
         extension=".pdf",
         handler_key=HANDLER_PDF,
-        supports_deanonymize=False,
+        supports_deanonymize=True,
         supported_levels=ALL_LEVELS,
     ),
 )
