@@ -11,8 +11,7 @@ description: >-
 
 # Run anonymization checks for text and files
 
-`modeio-redact` focuses on anonymize/deanonymize + local detection only.
-See `ARCHITECTURE.md` for full package layout and boundary rules.
+Use this skill to anonymize, de-anonymize, or detect PII in text and files.
 
 ## Scope
 
@@ -140,7 +139,7 @@ python -m unittest discover tests -p "test_*.py"
 python -m unittest discover tests -p "test_smoke_matrix_extensive.py"
 ```
 
-## Output contracts
+## Output contract
 
 ### `anonymize.py --json`
 
