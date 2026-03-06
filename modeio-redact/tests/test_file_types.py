@@ -50,7 +50,7 @@ class TestFileTypes(unittest.TestCase):
     def test_deanonymize_support_mapping(self):
         self.assertTrue(file_types.supports_deanonymize_for_extension(".txt"))
         self.assertTrue(file_types.supports_deanonymize_for_extension(".docx"))
-        self.assertTrue(file_types.supports_deanonymize_for_extension(".pdf"))
+        self.assertFalse(file_types.supports_deanonymize_for_extension(".pdf"))
 
     def test_pdf_level_support_includes_all_levels(self):
         self.assertTrue(file_types.is_level_supported_for_extension(".pdf", "lite"))

@@ -62,12 +62,10 @@ def write_non_text_anonymized_file(
         )
         return
     if handler_key == HANDLER_PDF:
-        _write_pdf_with_replacements(
+        _write_pdf_with_redactions(
             input_path=input_path,
             output_path=output_path,
-            replacements=build_replacement_pairs(normalized_entries, direction="redact"),
-            fill_color=(0, 0, 0),
-            text_color=(1, 1, 1),
+            targets=_build_pdf_redaction_targets(normalized_entries),
         )
         return
     raise ValueError(f"Unsupported non-text anonymization handler for extension '{extension}'.")
@@ -89,14 +87,7 @@ def write_non_text_deanonymized_file(
         )
         return
     if handler_key == HANDLER_PDF:
-        _write_pdf_with_replacements(
-            input_path=input_path,
-            output_path=output_path,
-            replacements=build_replacement_pairs(normalized_entries, direction="restore"),
-            fill_color=(1, 1, 1),
-            text_color=(0, 0, 0),
-        )
-        return
+        raise ValueError("De-anonymization is not supported for '.pdf' files.")
     raise ValueError(f"Unsupported non-text de-anonymization handler for extension '{extension}'.")
 
 
@@ -334,17 +325,27 @@ def _copy_binary_file(input_path: Path, output_path: Path) -> None:
     shutil.copyfile(str(input_path), str(output_path))
 
 
-def _write_pdf_with_replacements(
+def _build_pdf_redaction_targets(mapping_entries: Sequence[MappingEntry]) -> List[str]:
+    targets: List[str] = []
+    seen = set()
+    for entry in mapping_entries:
+        value = entry.original.strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        targets.append(value)
+    targets.sort(key=len, reverse=True)
+    return targets
+
+
+def _write_pdf_with_redactions(
     input_path: Path,
     output_path: Path,
-    replacements: Sequence[Tuple[str, str]],
-    *,
-    fill_color: Tuple[float, float, float],
-    text_color: Tuple[float, float, float],
+    targets: Sequence[str],
 ) -> None:
     fitz = _import_fitz_module()
 
-    if not replacements:
+    if not targets:
         _copy_binary_file(input_path, output_path)
         return
 
@@ -359,25 +360,11 @@ def _write_pdf_with_replacements(
             words = page.get_text("words")
             if words:
                 has_text_layer = True
-            overlay_tasks: List[Tuple[Any, str]] = []
-            for source, target in replacements:
-                rects = page.search_for(source)
+            for target in targets:
+                rects = page.search_for(target)
                 for rect in rects:
-                    page.add_redact_annot(
-                        rect,
-                        fill=fill_color,
-                        cross_out=False,
-                    )
-                    overlay_tasks.append((rect, target))
+                    page.add_redact_annot(rect, fill=(0, 0, 0))
             page.apply_redactions()
-            for rect, target in overlay_tasks:
-                _insert_pdf_replacement_text(
-                    fitz=fitz,
-                    page=page,
-                    rect=rect,
-                    text=target,
-                    text_color=text_color,
-                )
 
         if not has_text_layer:
             raise ValueError(
@@ -407,32 +394,3 @@ def _write_pdf_with_replacements(
         except OSError as exc:
             temp_path.unlink(missing_ok=True)
             raise ValueError(f"Failed to finalize in-place PDF write: {exc}") from exc
-
-
-def _insert_pdf_replacement_text(
-    *,
-    fitz,
-    page,
-    rect: Any,
-    text: str,
-    text_color: Tuple[float, float, float],
-) -> None:
-    normalized_rect = fitz.Rect(rect)
-    width = max(normalized_rect.width - 1, 1)
-    height = max(normalized_rect.height - 1, 1)
-
-    font_size = min(height * 0.8, 10.0)
-    while font_size > 2.0:
-        if fitz.get_text_length(text, fontname="courier", fontsize=font_size) <= width:
-            break
-        font_size -= 0.25
-
-    baseline_y = min(normalized_rect.y1 - 1, normalized_rect.y0 + max(font_size, 2.0))
-    page.insert_text(
-        (normalized_rect.x0, baseline_y),
-        text,
-        fontname="courier",
-        fontsize=max(font_size, 2.0),
-        color=text_color,
-        overlay=True,
-    )
