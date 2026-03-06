@@ -5,7 +5,7 @@
     <img src="assets/modeio.png" alt="Modeio Logo" width="120px">
   </picture>
 </p>
-<h1>Mode IO.AI: Dynamic Privacy & Compliance Protector</h1>
+<h1>Mode IO.AI: Privacy, Safety & Policy Skills for AI Agents</h1>
 
 </div>
 
@@ -23,18 +23,26 @@
 
 # 😎 About Us
 
-**Mode IO.AI** is your **dynamic privacy and compliance protector**. We provide privacy capabilities for HIPAA, GDPR, and similar compliance scenarios — helping you safely anonymize and redact personally identifiable information (PII) in data processing, cross-border transfers, and AI workflows.
+**Mode IO.AI** is your **dynamic privacy and compliance protector**. We provide privacy, safety, and policy routing capabilities for HIPAA, GDPR, PIPL, and similar compliance scenarios — helping you safely anonymize and redact personally identifiable information (PII), gate risky operations, and route AI requests through local policy controls.
 
-This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, Cursor, and other AI environments. Through standardized skill descriptions and scripts, AI assistants can run local regex masking (`lite`) or call Modeio APIs (`dynamic`/`strict`/`crossborder`) whenever anonymization, redaction, PII removal, or safety checks are needed.
+This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, Cursor, and other AI environments. Three skills cover the core surface:
+
+- **`modeio-redact`** — PII anonymization and de-anonymization for text, files, and cross-border compliance.
+- **`modeio-guardrail`** — Real-time instruction safety checks and pre-install skill repo scanning.
+- **`modeio-middleware`** — Local OpenAI-compatible policy gateway with plugin hooks for Codex, OpenCode, OpenClaw, and Claude Code.
+
+Through standardized skill descriptions and scripts, AI assistants can run local regex masking (`lite`) or call Modeio APIs (`dynamic`/`strict`/`crossborder`) whenever anonymization, redaction, PII removal, safety checks, or policy routing are needed.
 
 > [!NOTE]
 > `modeio-redact` `lite` runs fully local regex masking with no network call. Other anonymization levels (`dynamic`/`strict`/`crossborder`) and all safety checks perform real API requests (no caching) for auditable and traceable output.
 > For `crossborder`, you must provide explicit `--sender-code` and `--recipient-code` each run.
+> `modeio-middleware` runs a local gateway process — no external service dependency for request routing.
 
 ## ✨ Why teams like this
 
 - **Fast onboarding** — install only the skill you need
-- **Flexible execution** — use local regex masking for `lite`, or live API checks for higher-assurance analysis
+- **Flexible execution** — use local regex masking for `lite`, live API checks for higher-assurance analysis, or local gateway for policy routing
+- **Policy in front of every request** — middleware gateway intercepts LLM traffic for audit, redaction, and custom hooks
 - **Multi-agent friendly** — works across Claude Code, Codex CLI, OpenClaw, OpenCode, and Cursor
 
 # 👀 See It In Action
@@ -307,6 +315,46 @@ is_reversible: true
 
 ---
 
+### Middleware gateway — local policy routing
+
+> *A team wants every LLM request/response from Codex and OpenCode to pass through local policy hooks before hitting the upstream provider.*
+
+```bash
+# Start gateway
+python modeio-middleware/scripts/middleware_gateway.py \
+  --host 127.0.0.1 \
+  --port 8787 \
+  --upstream-chat-url "https://api.openai.com/v1/chat/completions" \
+  --upstream-responses-url "https://api.openai.com/v1/responses"
+```
+
+```
+Gateway listening on http://127.0.0.1:8787/v1
+Routes: /v1/chat/completions, /v1/responses, /connectors/claude/hooks, /healthz
+```
+
+```bash
+# Configure Codex/OpenCode to route through the gateway
+python modeio-middleware/scripts/setup_middleware_gateway.py \
+  --apply-opencode --create-opencode-config
+```
+
+```
+OpenCode config: changed=true backup=/path/to/backup
+Gateway health: healthy
+```
+
+```bash
+# Run live agent smoke matrix with tap-proxy evidence
+python modeio-middleware/scripts/smoke_agent_matrix.py \
+  --upstream-base-url "https://zenmux.ai/api/v1" \
+  --model "openai/gpt-5.3-codex"
+```
+
+> The gateway intercepts every request/response, runs plugin hooks (redact, guardrail, custom), and produces `x-modeio-*` headers for audit trail. Tap-proxy logs prove upstream traversal.
+
+---
+
 # 🧰 Skills
 
 **`modeio-redact`** — Masks PII in text or JSON via the Modeio anonymization API. Also supports offline regex detection.
@@ -317,9 +365,9 @@ is_reversible: true
 
 > Trigger phrases: *"safety check", "risk assessment", "security audit", "destructive check", "instruction audit", "skill safety assessment", "scan this skill repo", "is this skill dangerous"*
 
-**`modeio-middleware`** — Runs a local OpenAI-compatible request/response middleware gateway for Codex/OpenCode routing. Supports plugin-driven pre-request and post-response controls, with optional guardrail/redact adapters.
+**`modeio-middleware`** — Runs a local OpenAI-compatible policy gateway for Codex, OpenCode, OpenClaw, and Claude Code. Supports plugin-driven pre-request and post-response hooks, streaming pass-through, and tap-proxy evidence for audit.
 
-> Trigger phrases: *"middleware gateway", "route provider through local proxy", "pre request hook", "post response hook", "OpenCode baseURL middleware", "Codex OPENAI_BASE_URL"*
+> Trigger phrases: *"middleware gateway", "route through local proxy", "pre request hook", "post response hook", "OpenCode baseURL middleware", "Codex OPENAI_BASE_URL", "Claude hooks connector"*
 
 Skill Safety Assessment contract: [`modeio-guardrail/prompts/static_repo_scan.md`](modeio-guardrail/prompts/static_repo_scan.md)
 
