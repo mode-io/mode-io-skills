@@ -39,6 +39,13 @@ Optional dependencies (required for specific features):
 
 Missing optional packages raise a clear error at runtime when the feature is invoked.
 
+For repo-local setup from the repo root:
+
+```bash
+python scripts/bootstrap_env.py
+python scripts/doctor_env.py
+```
+
 ## Execution policy
 
 1. Default to `scripts/anonymize.py --json` for structured output.

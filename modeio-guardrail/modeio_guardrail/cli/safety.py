@@ -12,7 +12,42 @@ import sys
 import time
 from typing import Any, Dict
 
-import requests
+REQUESTS_AVAILABLE = True
+try:
+    import requests
+except ModuleNotFoundError:
+    REQUESTS_AVAILABLE = False
+
+    class _RequestsShim:
+        class RequestException(Exception):
+            pass
+
+        class MissingDependencyError(RequestException):
+            pass
+
+        class ConnectionError(RequestException):
+            pass
+
+        class Timeout(RequestException):
+            pass
+
+        class HTTPError(RequestException):
+            def __init__(self, *args, response=None, **kwargs):
+                super().__init__(*args)
+                self.response = response
+
+        class Response:
+            def __init__(self):
+                self.status_code = None
+
+        @staticmethod
+        def post(*_args, **_kwargs):
+            raise _RequestsShim.MissingDependencyError(
+                "requests package is required for backend-backed safety checks. "
+                "Install dependencies from requirements.txt."
+            )
+
+    requests = _RequestsShim()
 
 # Backend API URL, overridable via SAFETY_API_URL environment variable
 URL = os.environ.get("SAFETY_API_URL", "https://safety-cf.modeio.ai/api/cf/safety")
@@ -34,6 +69,15 @@ TARGET_HELP = (
     "Concrete operation target (absolute file path, table, service name, or URL). "
     "Required for state-changing instructions."
 )
+
+
+def _is_requests_dependency_error(error: Exception) -> bool:
+    if REQUESTS_AVAILABLE:
+        return False
+    missing_dependency_type = getattr(requests, "MissingDependencyError", None)
+    if missing_dependency_type is not None and isinstance(error, missing_dependency_type):
+        return True
+    return "requests package is required" in str(error).lower()
 
 
 def _post_with_retry(url, json_payload, timeout=60):
@@ -160,9 +204,10 @@ def main():
     except requests.RequestException as e:
         response = getattr(e, "response", None)
         status_code = getattr(response, "status_code", None)
+        dependency_error = _is_requests_dependency_error(e)
         _exit_with_error(
-            error_type="network_error",
-            message=f"safety request failed: {type(e).__name__}",
+            error_type="dependency_error" if dependency_error else "network_error",
+            message=str(e) if dependency_error else f"safety request failed: {type(e).__name__}",
             status_code=status_code,
         )
     except ValueError as e:

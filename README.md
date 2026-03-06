@@ -469,7 +469,33 @@ npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent cursor --
 npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent cursor --yes --copy
 ```
 
-## 6) Verify in 30 seconds ✅
+## 6) Bootstrap the local runtime (recommended for repo use) 📦
+
+If you cloned this repo and want a smooth local first run, do this before verification:
+
+```bash
+python scripts/bootstrap_env.py
+source .venv/bin/activate
+python scripts/doctor_env.py
+```
+
+Quick shortcuts:
+
+```bash
+make bootstrap
+make doctor
+make smoke-redact-lite
+```
+
+The doctor check tells you exactly what is missing for:
+
+- `modeio-redact` offline and API-backed modes
+- `modeio-guardrail` backend safety checks
+- `modeio-middleware` local helper health and live-routing readiness
+
+Use `.env.example` as the reference template for optional env vars and live middleware values.
+
+## 7) Verify in 30 seconds ✅
 
 After installing, ask your agent:
 
@@ -528,7 +554,7 @@ Health: healthy
 > [!TIP]
 > If you see redacted placeholders and a structured risk response like above, you are fully set up.
 
-## 7) Install dependencies (for manual script execution) 📦
+## 8) Manual dependency install (alternative to bootstrap)
 
 ```bash
 python -m venv .venv
@@ -567,7 +593,8 @@ python modeio-redact/scripts/anonymize.py --input ./incident.pdf --level lite
 # ./sensitive_notes.redacted.txt + ./sensitive_notes.redacted.map.json
 
 # PDF note:
-# - .pdf anonymization is supported for text-layer PDFs in --level lite only.
+# - .pdf anonymization is supported for text-layer PDFs across lite/dynamic/strict/crossborder.
+# - non-lite PDF flows require API mapping entries for fail-closed projection.
 # - Redaction removes underlying text and applies black fill.
 # - .pdf de-anonymization is not supported.
 # - file outputs enforce coverage checks by default.

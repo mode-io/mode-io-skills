@@ -19,6 +19,13 @@ Use this skill to run a local policy gateway in front of an OpenAI-compatible up
 - `POST /connectors/claude/hooks`
 - `GET /healthz`
 
+For repo-local setup from the repo root:
+
+```bash
+python scripts/bootstrap_env.py
+python scripts/doctor_env.py
+```
+
 ## Scripts
 
 ### `scripts/middleware_gateway.py`

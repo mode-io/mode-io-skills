@@ -1,5 +1,13 @@
 # modeio-middleware Quickstart
 
+## 0) Bootstrap the repo-local Python environment
+
+```bash
+python scripts/bootstrap_env.py
+source .venv/bin/activate
+python scripts/doctor_env.py
+```
+
 ## 1) Start the gateway
 
 ```bash
@@ -17,6 +25,7 @@ python modeio-middleware/scripts/middleware_gateway.py \
 ### Codex CLI
 
 ```bash
+python modeio-middleware/scripts/setup_middleware_gateway.py --health-check --json
 export OPENAI_BASE_URL="http://127.0.0.1:8787/v1"
 ```
 
