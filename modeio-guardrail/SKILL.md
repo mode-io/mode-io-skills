@@ -27,12 +27,13 @@ Use this skill to gate risky operations behind a real-time safety assessment, or
 1. Always run `scripts/safety.py` with `--json` for structured output.
 2. Run the check **before** executing the instruction, not after.
 3. Each instruction must trigger a fresh backend call. Do not reuse cached or historical results.
-4. For any state-changing instruction (`delete`, `overwrite`, `permission change`, `deploy`, `schema change`), pass both `--context` and `--target`.
-5. Use the Context Contract below exactly. Do not send free-form `--context` values like `"production"` only.
-6. If required context or target is missing, treat the instruction as unverified and ask for the missing fields before execution.
-7. If an instruction contains multiple operations, check the riskiest one.
+4. For any state-changing instruction (`delete`, `overwrite`, `permission change`, `deploy`, `schema change`), always pass both `--context` and `--target`.
+5. `scripts/safety.py` accepts `--context` and `--target` as optional flags, so this requirement is enforced by policy, not by automatic CLI blocking.
+6. Use the Context Contract below exactly. Do not send free-form `--context` values like `"production"` only.
+7. If policy-required context or target is missing, treat the instruction as unverified and ask for the missing fields before execution.
+8. If an instruction contains multiple operations, check the riskiest one.
 
-## Context contract (required for state-changing instructions)
+## Context contract (policy-required for state-changing instructions)
 
 Pass `--context` as a JSON string with this exact shape:
 
@@ -78,8 +79,8 @@ Additional signals:
 ### `scripts/safety.py`
 
 - `-i, --input`: required, instruction text to evaluate (whitespace-only rejected)
-- `-c, --context`: required for state-changing instructions; JSON string following the Context Contract above
-- `-t, --target`: required for state-changing instructions; concrete operation target (file path, table name, service name, URL)
+- `-c, --context`: policy-required for state-changing instructions (CLI accepts it as optional); JSON string following the Context Contract above
+- `-t, --target`: policy-required for state-changing instructions (CLI accepts it as optional); concrete operation target (file path, table name, service name, URL)
 - `--json`: output unified JSON envelope for machine consumption
 - Endpoint: `https://safety-cf.modeio.ai/api/cf/safety` (override via `SAFETY_API_URL`)
 - Retries: automatic retry on HTTP 502/503/504 and connection/timeout errors (up to 2 retries with exponential backoff)
@@ -126,15 +127,17 @@ Context profile (optional, no user identity required):
 python scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --json > /tmp/skill_scan.json
 python scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --context-profile '{"environment":"ci","execution_mode":"build-test","risk_tolerance":"balanced","data_sensitivity":"internal"}' --json > /tmp/skill_scan.json
 python scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --github-osint-timeout 8 --json > /tmp/skill_scan.json
+python scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --context-profile-file ./context_profile.json --output /tmp/skill_scan.json --json
 
 # (compat) legacy alias still supported
 python scripts/skill_safety_assessment.py scan --target-repo /path/to/repo --json > /tmp/skill_scan.json
 
-# 2) Build prompt payload with highlights
-python scripts/skill_safety_assessment.py prompt --target-repo /path/to/repo --scan-file /tmp/skill_scan.json
+# 2) Build prompt payload with highlights + full findings (recommended for strict evidence_refs linking)
+python scripts/skill_safety_assessment.py prompt --target-repo /path/to/repo --scan-file /tmp/skill_scan.json --include-full-findings
 
 # 3) Validate model output for evidence linkage + integrity
 python scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
+# --rescan-on-validate requires --target-repo
 python scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --target-repo /path/to/repo --rescan-on-validate --json
 
 # 4) Optional adjudication bridge (LLM interprets context, engine keeps deterministic control)
@@ -208,13 +211,14 @@ Safety verification failures must never be silently ignored.
 
 1. Use `prompts/static_repo_scan.md` as the strict contract.
 2. Run `scripts/skill_safety_assessment.py evaluate` first (or `scan` compatibility alias) and pass its highlights into prompt input.
-3. Every finding must include `path:line` evidence, exact snippet quote, and `evidence_refs` linked to scan evidence IDs.
-4. Always include all required highlight evidence IDs from scan output in final findings.
-5. Keep decision/score consistent with referenced evidence severity and coverage constraints.
-6. Use `adjudicate` when context interpretation is required (docs/examples/tests vs runtime/install paths).
-7. Return one of: `reject`, `caution`, or `approve`.
-8. If coverage is partial or evidence is insufficient, return `caution` with explicit coverage note.
-9. Include a prioritized remediation plan so users can fix and re-scan quickly.
+3. When model output must include strict `evidence_refs`, render prompt input with `--include-full-findings` so scan evidence IDs and snippets are available in `SCRIPT_SCAN_JSON`.
+4. Every finding must include `path:line` evidence, exact snippet quote, and `evidence_refs` linked to scan evidence IDs.
+5. Always include all required highlight evidence IDs from scan output in final findings.
+6. Keep decision/score consistent with referenced evidence severity and coverage constraints.
+7. Use `adjudicate` when context interpretation is required (docs/examples/tests vs runtime/install paths).
+8. Return one of: `reject`, `caution`, or `approve`.
+9. If coverage is partial or evidence is insufficient, return `caution` with explicit coverage note.
+10. Include a prioritized remediation plan so users can fix and re-scan quickly.
 
 ## When not to use
 
