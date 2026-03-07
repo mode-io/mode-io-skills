@@ -202,10 +202,11 @@ def resolve_plugin_runtime_config(
             retryable=False,
         )
 
-    runtime_raw = plugin_config.get("runtime", "legacy_inprocess")
+    default_runtime = "legacy_inprocess" if isinstance(plugin_config.get("module"), str) else "stdio_jsonrpc"
+    runtime_raw = plugin_config.get("runtime", default_runtime)
     runtime = str(runtime_raw or "").strip().lower()
     if not runtime:
-        runtime = "legacy_inprocess"
+        runtime = default_runtime
 
     module_path_raw = plugin_config.get("module")
     module_path: str | None = None

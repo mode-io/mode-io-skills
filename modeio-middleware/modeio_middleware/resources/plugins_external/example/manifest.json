@@ -1,0 +1,23 @@
+{
+  "name": "examples/hello-policy",
+  "version": "0.1.0",
+  "protocol_version": "1.0",
+  "transport": "stdio-jsonrpc",
+  "hooks": [
+    "pre.request",
+    "post.response"
+  ],
+  "capabilities": {
+    "can_patch": false,
+    "can_block": false,
+    "needs_network": false,
+    "needs_raw_body": false
+  },
+  "timeout_ms": {
+    "pre.request": 150,
+    "post.response": 120
+  },
+  "metadata": {
+    "description": "Minimal shipped example plugin for ModeIO middleware quickstart and conformance checks."
+  }
+}

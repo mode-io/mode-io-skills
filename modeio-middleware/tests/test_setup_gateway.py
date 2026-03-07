@@ -127,6 +127,10 @@ class TestSetupGateway(unittest.TestCase):
             "Remove-Item Env:OPENAI_BASE_URL",
         )
 
+    def test_build_start_command_uses_installed_entrypoint(self):
+        command = setup_gateway._build_start_command("http://127.0.0.1:8787/v1")
+        self.assertTrue(command.startswith("modeio-middleware-gateway "))
+
     def test_apply_opencode_base_url_updates_nested_object(self):
         source = {
             "model": "openai/gpt-4o-mini",

@@ -1,0 +1,5 @@
+recursive-include modeio_middleware/resources *.json *.py *.md
+recursive-include scripts *.py *.sh
+include QUICKSTART.md
+include ARCHITECTURE.md
+include MODEIO_PLUGIN_PROTOCOL.md

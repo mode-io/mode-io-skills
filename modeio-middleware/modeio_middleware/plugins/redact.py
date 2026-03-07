@@ -3,15 +3,7 @@
 from __future__ import annotations
 
 import copy
-import sys
-from pathlib import Path
 from typing import Any, Dict
-
-CURRENT_FILE = Path(__file__).resolve()
-REPO_ROOT = CURRENT_FILE.parents[3]
-REDACT_PACKAGE_ROOT = REPO_ROOT / "modeio-redact"
-if str(REDACT_PACKAGE_ROOT) not in sys.path:
-    sys.path.insert(0, str(REDACT_PACKAGE_ROOT))
 
 from modeio_middleware.plugins.base import MiddlewarePlugin
 from modeio_middleware.plugins.redact_utils import restore_tokens_deep, shield_request_body

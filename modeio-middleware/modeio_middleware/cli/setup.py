@@ -151,7 +151,7 @@ def _build_start_command(gateway_base_url: str) -> str:
                 port = int(raw_port)
 
     return (
-        "python modeio-middleware/scripts/middleware_gateway.py "
+        "modeio-middleware-gateway "
         f"--host {host} --port {port} "
         f"--upstream-chat-url \"{DEFAULT_UPSTREAM_CHAT_URL}\" "
         f"--upstream-responses-url \"{DEFAULT_UPSTREAM_RESPONSES_URL}\""

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modeio.ai/schemas/modeio-plugin-message-v1.json",
+  "title": "ModeIO Plugin Decision Message v1",
+  "type": "object",
+  "properties": {
+    "decision": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "annotate",
+            "patch",
+            "block",
+            "allow",
+            "warn",
+            "modify"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "patch_target": {
+          "type": "string",
+          "enum": [
+            "request_body",
+            "response_body",
+            "event"
+          ]
+        },
+        "patches": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
