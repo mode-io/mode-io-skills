@@ -2,9 +2,6 @@
 
 import json
 import sys
-import types
-import urllib.error
-import urllib.request
 import unittest
 from pathlib import Path
 
@@ -20,7 +17,16 @@ TESTS_DIR = REPO_ROOT / "modeio-middleware" / "tests"
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(TESTS_DIR))
 
-from helpers.gateway_harness import GatewayStub, UpstreamStub, completion_payload, responses_payload  # noqa: E402
+from helpers.gateway_harness import (  # noqa: E402
+    completion_payload,
+    http_get_json,
+    post_json,
+    post_raw,
+    post_stream,
+    responses_payload,
+    start_gateway_pair,
+)
+from helpers.plugin_modules import register_plugin_module  # noqa: E402
 from modeio_middleware.plugins.base import MiddlewarePlugin  # noqa: E402
 
 
@@ -32,93 +38,23 @@ class _BlockerPlugin(MiddlewarePlugin):
 
 
 def _register_blocker_plugin_module(module_name: str):
-    module = types.ModuleType(module_name)
-    module.Plugin = _BlockerPlugin
-    sys.modules[module_name] = module
+    register_plugin_module(module_name, _BlockerPlugin)
 
 
 class TestGatewayContract(unittest.TestCase):
     def _start_pair(self, response_factory, *, status=200, stream_factory=None, plugins=None, profiles=None):
-        upstream = UpstreamStub(response_factory=response_factory, status=status, stream_factory=stream_factory)
-        upstream.start()
-        gateway_stub = GatewayStub(
-            upstream_base_url=upstream.base_url,
+        return start_gateway_pair(
+            response_factory,
+            status=status,
+            stream_factory=stream_factory,
             plugins=plugins,
             profiles=profiles,
         )
-        gateway_stub.start()
-        return upstream, gateway_stub
-
-    def _http_get_json(self, url):
-        request = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(request, timeout=5) as response:
-            body = json.loads(response.read().decode("utf-8"))
-            return response.status, response.headers, body
-
-    def _post_json(self, gateway_url, path, payload, headers=None):
-        request_headers = {"Content-Type": "application/json"}
-        if headers:
-            request_headers.update(headers)
-        request = urllib.request.Request(
-            f"{gateway_url}{path}",
-            data=json.dumps(payload).encode("utf-8"),
-            headers=request_headers,
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=5) as response:
-                body = json.loads(response.read().decode("utf-8"))
-                return response.status, response.headers, body
-        except urllib.error.HTTPError as error:
-            try:
-                body = json.loads(error.read().decode("utf-8"))
-                return error.code, error.headers, body
-            finally:
-                error.close()
-
-    def _post_raw(self, gateway_url, path, body, headers=None):
-        request_headers = {"Content-Type": "application/json"}
-        if headers:
-            request_headers.update(headers)
-        request = urllib.request.Request(
-            f"{gateway_url}{path}",
-            data=body,
-            headers=request_headers,
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=5) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-                return response.status, response.headers, payload
-        except urllib.error.HTTPError as error:
-            try:
-                payload = json.loads(error.read().decode("utf-8"))
-                return error.code, error.headers, payload
-            finally:
-                error.close()
-
-    def _post_stream(self, gateway_url, path, payload):
-        request = urllib.request.Request(
-            f"{gateway_url}{path}",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=5) as response:
-                body = response.read().decode("utf-8", errors="replace")
-                return response.status, response.headers, body
-        except urllib.error.HTTPError as error:
-            try:
-                body = error.read().decode("utf-8", errors="replace")
-                return error.code, error.headers, body
-            finally:
-                error.close()
 
     def test_healthz_reports_ready(self):
         upstream, gateway_stub = self._start_pair(lambda _path, _payload: completion_payload("ok"))
         try:
-            status, _headers, payload = self._http_get_json(f"{gateway_stub.base_url}/healthz")
+            status, _headers, payload = http_get_json(gateway_stub.base_url, "/healthz")
             self.assertEqual(status, 200)
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["service"], "modeio-middleware")
@@ -131,7 +67,7 @@ class TestGatewayContract(unittest.TestCase):
             lambda _path, payload: completion_payload(payload["messages"][0]["content"])
         )
         try:
-            status, _headers, _payload = self._post_json(
+            status, _headers, _payload = post_json(
                 gateway_stub.base_url,
                 "/v1/chat/completions",
                 {
@@ -152,7 +88,7 @@ class TestGatewayContract(unittest.TestCase):
             lambda _path, payload: responses_payload(str(payload.get("input", "")))
         )
         try:
-            status, _headers, payload = self._post_json(
+            status, _headers, payload = post_json(
                 gateway_stub.base_url,
                 "/v1/responses",
                 {
@@ -174,7 +110,7 @@ class TestGatewayContract(unittest.TestCase):
             lambda _path, payload: completion_payload(payload["messages"][0]["content"])
         )
         try:
-            status, _headers, payload = self._post_json(
+            status, _headers, payload = post_json(
                 gateway_stub.base_url,
                 "/v1/chat/completions",
                 {
@@ -200,7 +136,7 @@ class TestGatewayContract(unittest.TestCase):
             lambda _path, payload: completion_payload(payload["messages"][0]["content"])
         )
         try:
-            status, _headers, payload = self._post_json(
+            status, _headers, payload = post_json(
                 gateway_stub.base_url,
                 "/v1/chat/completions",
                 {
@@ -236,7 +172,7 @@ class TestGatewayContract(unittest.TestCase):
             ).encode("utf-8")
             encoded = zstd_codec.compress(raw_payload)
 
-            status, _headers, payload = self._post_raw(
+            status, _headers, payload = post_raw(
                 gateway_stub.base_url,
                 "/v1/responses",
                 encoded,
@@ -260,7 +196,7 @@ class TestGatewayContract(unittest.TestCase):
                     "input": "hello",
                 }
             ).encode("utf-8")
-            status, _headers, payload = self._post_raw(
+            status, _headers, payload = post_raw(
                 gateway_stub.base_url,
                 "/v1/responses",
                 raw_payload,
@@ -286,7 +222,7 @@ class TestGatewayContract(unittest.TestCase):
             stream_factory=stream_factory,
         )
         try:
-            status, headers, body = self._post_stream(
+            status, headers, body = post_stream(
                 gateway_stub.base_url,
                 "/v1/chat/completions",
                 {
@@ -317,7 +253,7 @@ class TestGatewayContract(unittest.TestCase):
             stream_factory=stream_factory,
         )
         try:
-            status, headers, body = self._post_stream(
+            status, headers, body = post_stream(
                 gateway_stub.base_url,
                 "/v1/responses",
                 {
@@ -354,7 +290,7 @@ class TestGatewayContract(unittest.TestCase):
 
         upstream, gateway_stub = self._start_pair(echo_user_content, plugins=plugins, profiles=profiles)
         try:
-            status, headers, payload = self._post_json(
+            status, headers, payload = post_json(
                 gateway_stub.base_url,
                 "/v1/chat/completions",
                 {
@@ -408,7 +344,7 @@ class TestGatewayContract(unittest.TestCase):
             profiles=profiles,
         )
         try:
-            status, _headers, body = self._post_stream(
+            status, _headers, body = post_stream(
                 gateway_stub.base_url,
                 "/v1/chat/completions",
                 {
@@ -448,7 +384,7 @@ class TestGatewayContract(unittest.TestCase):
             profiles=profiles,
         )
         try:
-            status, headers, payload = self._post_json(
+            status, headers, payload = post_json(
                 gateway_stub.base_url,
                 "/v1/chat/completions",
                 {
@@ -492,7 +428,7 @@ class TestGatewayContract(unittest.TestCase):
             profiles=profiles,
         )
         try:
-            status, _headers, payload = self._post_json(
+            status, _headers, payload = post_json(
                 gateway_stub.base_url,
                 "/v1/chat/completions",
                 {
@@ -538,7 +474,7 @@ class TestGatewayContract(unittest.TestCase):
             profiles=profiles,
         )
         try:
-            status, _headers, _payload = self._post_json(
+            status, _headers, _payload = post_json(
                 gateway_stub.base_url,
                 "/v1/chat/completions",
                 {

@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 
-import json
 import sys
-import urllib.error
-import urllib.request
 import unittest
 from pathlib import Path
 
@@ -17,37 +14,16 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(HELPERS_DIR))
 
-from gateway_harness import GatewayStub, UpstreamStub, completion_payload  # noqa: E402
-
-
-def _post_json(gateway_url: str, path: str, payload: dict):
-    request = urllib.request.Request(
-        f"{gateway_url}{path}",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            body = json.loads(response.read().decode("utf-8"))
-            return response.status, response.headers, body
-    except urllib.error.HTTPError as error:
-        try:
-            body = json.loads(error.read().decode("utf-8"))
-            return error.code, error.headers, body
-        finally:
-            error.close()
+from gateway_harness import completion_payload, post_json, start_gateway_pair  # noqa: E402
 
 
 class TestProtocolStdioRuntime(unittest.TestCase):
     def _start_pair(self, plugins: dict, profiles: dict):
-        upstream = UpstreamStub(
-            response_factory=lambda _path, payload: completion_payload(payload["messages"][0]["content"])
+        return start_gateway_pair(
+            lambda _path, payload: completion_payload(payload["messages"][0]["content"]),
+            plugins=plugins,
+            profiles=profiles,
         )
-        upstream.start()
-        gateway = GatewayStub(upstream.base_url, plugins=plugins, profiles=profiles)
-        gateway.start()
-        return upstream, gateway
 
     def _stdio_plugin_base(self) -> dict:
         return {
@@ -74,7 +50,7 @@ class TestProtocolStdioRuntime(unittest.TestCase):
 
         upstream, gateway = self._start_pair(plugins, profiles)
         try:
-            status, headers, payload = _post_json(
+            status, headers, payload = post_json(
                 gateway.base_url,
                 "/v1/chat/completions",
                 {
@@ -111,7 +87,7 @@ class TestProtocolStdioRuntime(unittest.TestCase):
 
         upstream, gateway = self._start_pair(plugins, profiles)
         try:
-            status, headers, payload = _post_json(
+            status, headers, payload = post_json(
                 gateway.base_url,
                 "/v1/chat/completions",
                 {
@@ -148,7 +124,7 @@ class TestProtocolStdioRuntime(unittest.TestCase):
 
         upstream, gateway = self._start_pair(plugins, profiles)
         try:
-            status, headers, payload = _post_json(
+            status, headers, payload = post_json(
                 gateway.base_url,
                 "/v1/chat/completions",
                 {
