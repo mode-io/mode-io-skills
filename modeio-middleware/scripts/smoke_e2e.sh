@@ -73,6 +73,9 @@ run_setup_smoke() {
       --apply-openclaw \
       --create-openclaw-config \
       --openclaw-config-path "$tmpdir/openclaw.json" \
+      --apply-claude \
+      --create-claude-settings \
+      --claude-settings-path "$tmpdir/claude-settings.json" \
       >"$setup_json"
 
     python3 modeio-middleware/scripts/setup_middleware_gateway.py \
@@ -82,16 +85,20 @@ run_setup_smoke() {
       --opencode-config-path "$tmpdir/opencode.json" \
       --apply-openclaw \
       --openclaw-config-path "$tmpdir/openclaw.json" \
+      --apply-claude \
+      --claude-settings-path "$tmpdir/claude-settings.json" \
       >"$uninstall_json"
   )
 
   check_json_field "$setup_json" "payload['success'] is True"
   check_json_field "$setup_json" "payload['opencode']['changed'] is True"
   check_json_field "$setup_json" "payload['openclaw']['changed'] is True"
+  check_json_field "$setup_json" "payload['claude']['changed'] is True"
 
   check_json_field "$uninstall_json" "payload['success'] is True"
   check_json_field "$uninstall_json" "payload['opencode']['changed'] is True"
   check_json_field "$uninstall_json" "payload['openclaw']['changed'] is True"
+  check_json_field "$uninstall_json" "payload['claude']['changed'] is True"
 }
 
 run_openclaw_cli_smoke() {
@@ -414,7 +421,7 @@ run_live_agent_matrix_smoke() {
     exit 1
   fi
 
-  log "running live agent matrix smoke (codex/opencode/openclaw via middleware)"
+  log "running live agent matrix smoke (codex/opencode/openclaw/claude via middleware)"
   (
     cd "$REPO_ROOT"
     python3 modeio-middleware/scripts/smoke_agent_matrix.py

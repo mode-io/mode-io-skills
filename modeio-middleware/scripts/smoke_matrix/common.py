@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
 
-SUPPORTED_AGENTS = ("codex", "opencode", "openclaw")
+SUPPORTED_AGENTS = ("codex", "opencode", "openclaw", "claude")
 UPSTREAM_KEY_FALLBACK_ENVS = ("ZENMUX_API_KEY", "OPENAI_API_KEY")
 
 

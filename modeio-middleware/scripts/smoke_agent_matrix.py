@@ -60,13 +60,33 @@ def _run_setup(
     repo_root: Path,
     env: Dict[str, str],
     gateway_base_url: str,
+    claude_gateway_base_url: str,
     opencode_config_path: Path,
     openclaw_config_path: Path,
     openclaw_models_cache_path: Path,
+    claude_settings_path: Path,
     timeout_seconds: int,
 ) -> Dict[str, object]:
     setup_script = repo_root / "modeio-middleware" / "scripts" / "setup_middleware_gateway.py"
-    command = [
+
+    def _run_setup_command(command: Sequence[str]) -> Dict[str, object]:
+        result = _run_command_capture(
+            command=command,
+            cwd=repo_root,
+            env=env,
+            timeout_seconds=timeout_seconds,
+        )
+        stdout = str(result["stdout"])
+        try:
+            payload = json.loads(stdout)
+        except ValueError as error:
+            raise RuntimeError(f"setup script returned non-JSON output: {stdout[:400]}") from error
+
+        if result["exitCode"] != 0 or not payload.get("success"):
+            raise RuntimeError(f"setup script failed: exit={result['exitCode']} payload={payload}")
+        return payload
+
+    routing_command = [
         sys.executable,
         str(setup_script),
         "--json",
@@ -83,22 +103,30 @@ def _run_setup(
         "--gateway-base-url",
         gateway_base_url,
     ]
+    routing_payload = _run_setup_command(routing_command)
 
-    result = _run_command_capture(
-        command=command,
-        cwd=repo_root,
-        env=env,
-        timeout_seconds=timeout_seconds,
-    )
-    stdout = str(result["stdout"])
-    try:
-        payload = json.loads(stdout)
-    except ValueError as error:
-        raise RuntimeError(f"setup script returned non-JSON output: {stdout[:400]}") from error
+    claude_command = [
+        sys.executable,
+        str(setup_script),
+        "--json",
+        "--apply-claude",
+        "--create-claude-settings",
+        "--claude-settings-path",
+        str(claude_settings_path),
+        "--gateway-base-url",
+        claude_gateway_base_url,
+    ]
+    claude_payload = _run_setup_command(claude_command)
 
-    if result["exitCode"] != 0 or not payload.get("success"):
-        raise RuntimeError(f"setup script failed: exit={result['exitCode']} payload={payload}")
-    return payload
+    routing_payload["claude"] = claude_payload.get("claude")
+    commands = routing_payload.get("commands")
+    if isinstance(commands, dict):
+        commands["claudeHookUrl"] = (
+            claude_payload.get("commands", {}).get("claudeHookUrl")
+            if isinstance(claude_payload.get("commands"), dict)
+            else None
+        )
+    return routing_payload
 
 
 def _start_logged_process(
@@ -142,10 +170,12 @@ def _run_agent_check(
     index: int,
     run_id: str,
     model: str,
+    claude_model: str,
     repo_root: Path,
     run_dir: Path,
     env: Dict[str, str],
     timeout_seconds: int,
+    claude_settings_path: Optional[Path],
     tap_jsonl_path: Path,
 ) -> Dict[str, object]:
     token = f"SMOKE_{agent.upper()}_{index}_{run_id.upper()}"
@@ -154,16 +184,19 @@ def _run_agent_check(
         agent=agent,
         token=token,
         model=model,
+        claude_model=claude_model,
         repo_root=repo_root,
         codex_output_path=codex_message_path,
+        claude_settings_path=claude_settings_path,
         timeout_seconds=timeout_seconds,
     )
 
     before_count = len(_load_tap_events(tap_jsonl_path))
+    agent_env = dict(os.environ) if agent == "claude" else env
     result = _run_command_capture(
         command=command,
         cwd=repo_root,
-        env=env,
+        env=agent_env,
         timeout_seconds=timeout_seconds,
     )
 
@@ -180,6 +213,7 @@ def _run_agent_check(
     new_events = after_events[before_count:]
     tap_window = _tap_window_metrics(new_events)
     tap_token = _tap_token_metrics(new_events, token)
+    tap_kind = "claude_hook_tap" if agent == "claude" else "upstream_tap"
     ok = (
         int(result["exitCode"]) == 0
         and int(tap_window["eventCount"]) >= 1
@@ -196,6 +230,7 @@ def _run_agent_check(
         "stdoutPath": str(stdout_path),
         "stderrPath": str(stderr_path),
         "tokenInOutput": token in output_text,
+        "tapKind": tap_kind,
         "tap": {
             "window": tap_window,
             "token": tap_token,
@@ -444,17 +479,22 @@ def _run_gateway_smoke_checks(
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run isolated live smoke tests via codex/opencode/openclaw through modeio-middleware."
+        description="Run isolated live smoke tests via codex/opencode/openclaw/claude through modeio-middleware."
     )
     parser.add_argument(
         "--agents",
-        default="codex,opencode,openclaw",
-        help="Comma-separated agent list (codex,opencode,openclaw)",
+        default="codex,opencode,openclaw,claude",
+        help="Comma-separated agent list (codex,opencode,openclaw,claude)",
     )
     parser.add_argument(
         "--model",
         default="openai/gpt-5.3-codex",
-        help="OpenAI-compatible model name used in all agent prompts",
+        help="OpenAI-compatible model name used for codex/opencode/openclaw smoke prompts",
+    )
+    parser.add_argument(
+        "--claude-model",
+        default="sonnet",
+        help="Claude model alias/name used for claude smoke prompts",
     )
     parser.add_argument(
         "--upstream-base-url",
@@ -479,6 +519,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--gateway-host", default="127.0.0.1", help="Gateway listen host")
     parser.add_argument("--gateway-port", type=int, default=0, help="Gateway listen port (0 = auto)")
     parser.add_argument("--tap-port", type=int, default=0, help="Tap proxy listen port (0 = auto)")
+    parser.add_argument(
+        "--claude-tap-port",
+        type=int,
+        default=0,
+        help="Claude hook tap proxy listen port (0 = auto)",
+    )
     parser.add_argument(
         "--command-timeout-seconds",
         type=int,
@@ -512,6 +558,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary_path = run_dir / "summary.json"
     tap_jsonl_path = run_dir / "tap-exchanges.jsonl"
     tap_stdout_path = run_dir / "tap-proxy.log"
+    claude_tap_jsonl_path = run_dir / "claude-hook-exchanges.jsonl"
+    claude_tap_stdout_path = run_dir / "claude-hook-tap.log"
     gateway_log_path = run_dir / "gateway.log"
     setup_payload_path = run_dir / "setup-report.json"
 
@@ -526,12 +574,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             "apiKeyEnv": None,
             "model": args.model,
         },
+        "agentModels": {
+            "openaiCompatible": args.model,
+            "claude": args.claude_model,
+        },
         "sandbox": {},
         "gateway": {},
         "tap": {
             "logPath": str(tap_jsonl_path),
             "stdoutPath": str(tap_stdout_path),
         },
+        "claudeHookTap": None,
         "setup": None,
         "gatewayChecks": [],
         "agents": [],
@@ -543,6 +596,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     report["sandbox"] = {
         "root": str(paths["root"]),
         "home": str(paths["home"]),
+        "claudeSettings": str(paths["claude_settings"]),
         "opencodeConfig": str(paths["opencode_config"]),
         "openclawConfig": str(paths["openclaw_config"]),
         "openclawModelsCache": str(paths["openclaw_models_cache"]),
@@ -551,11 +605,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     tap_process: Optional[subprocess.Popen] = None
     tap_log_handle = None
+    claude_tap_process: Optional[subprocess.Popen] = None
+    claude_tap_log_handle = None
     gateway_process: Optional[subprocess.Popen] = None
     gateway_log_handle = None
 
     try:
         agents = _parse_agents(args.agents)
+        needs_claude = "claude" in agents
         missing_commands = _check_required_commands(agents)
         if missing_commands:
             raise RuntimeError("missing required commands: " + ", ".join(missing_commands))
@@ -568,17 +625,20 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         for key in ("home", "xdg_config", "xdg_state", "xdg_cache", "openclaw_state"):
             paths[key].mkdir(parents=True, exist_ok=True)
+        paths["claude_settings"].parent.mkdir(parents=True, exist_ok=True)
         paths["opencode_config"].parent.mkdir(parents=True, exist_ok=True)
         paths["openclaw_models_cache"].parent.mkdir(parents=True, exist_ok=True)
 
         seeded_codex = _seed_codex_credentials(Path.home(), paths["home"])
         report["sandbox"]["seededCodexFiles"] = seeded_codex
+        report["sandbox"]["claudeUsesHostAuthContext"] = needs_claude
 
         gateway_port = args.gateway_port if args.gateway_port > 0 else _free_port()
         tap_port = args.tap_port if args.tap_port > 0 else _free_port()
         gateway_base_url = f"http://{args.gateway_host}:{gateway_port}/v1"
         gateway_health_url = f"http://{args.gateway_host}:{gateway_port}/healthz"
         tap_base_url = f"http://{args.gateway_host}:{tap_port}"
+        gateway_root_url = gateway_base_url.rsplit("/v1", 1)[0]
 
         env = _build_sandbox_env(
             dict(os.environ),
@@ -641,13 +701,53 @@ def main(argv: Sequence[str] | None = None) -> int:
         report["tap"]["baseUrl"] = tap_base_url
         report["tap"]["port"] = tap_port
 
+        claude_gateway_base_url = gateway_base_url
+        if needs_claude:
+            claude_tap_port = args.claude_tap_port if args.claude_tap_port > 0 else _free_port()
+            claude_tap_base_url = f"http://{args.gateway_host}:{claude_tap_port}"
+            claude_tap_command = [
+                sys.executable,
+                str(repo_root / "modeio-middleware" / "scripts" / "upstream_tap_proxy.py"),
+                "--host",
+                args.gateway_host,
+                "--port",
+                str(claude_tap_port),
+                "--target-base-url",
+                gateway_root_url,
+                "--log-jsonl",
+                str(claude_tap_jsonl_path),
+                "--api-key-env",
+                "MODEIO_TAP_UPSTREAM_API_KEY",
+            ]
+            claude_tap_process, claude_tap_log_handle = _start_logged_process(
+                command=claude_tap_command,
+                cwd=repo_root,
+                env=env,
+                log_path=claude_tap_stdout_path,
+            )
+            if not _wait_for_url(
+                f"{claude_tap_base_url}/healthz",
+                timeout_seconds=args.startup_timeout_seconds,
+            ):
+                raise RuntimeError("claude hook tap proxy failed to become healthy")
+            claude_gateway_base_url = f"{claude_tap_base_url}/v1"
+            report["claudeHookTap"] = {
+                "baseUrl": claude_tap_base_url,
+                "port": claude_tap_port,
+                "logPath": str(claude_tap_jsonl_path),
+                "stdoutPath": str(claude_tap_stdout_path),
+                "targetBaseUrl": gateway_root_url,
+            }
+
         setup_payload = _run_setup(
             repo_root=repo_root,
             env=env,
             gateway_base_url=gateway_base_url,
+            claude_gateway_base_url=claude_gateway_base_url,
             opencode_config_path=paths["opencode_config"],
             openclaw_config_path=paths["openclaw_config"],
             openclaw_models_cache_path=paths["openclaw_models_cache"],
+            claude_settings_path=paths["claude_settings"],
             timeout_seconds=args.command_timeout_seconds,
         )
         report["setup"] = setup_payload
@@ -676,11 +776,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     index=index,
                     run_id=run_id,
                     model=args.model,
+                    claude_model=args.claude_model,
                     repo_root=repo_root,
                     run_dir=run_dir,
                     env=env,
                     timeout_seconds=args.command_timeout_seconds,
-                    tap_jsonl_path=tap_jsonl_path,
+                    claude_settings_path=paths["claude_settings"] if agent == "claude" else None,
+                    tap_jsonl_path=claude_tap_jsonl_path if agent == "claude" else tap_jsonl_path,
                 )
             )
 
@@ -690,8 +792,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         report["success"] = False
         report["error"] = str(error)
     finally:
+        _stop_process(claude_tap_process)
         _stop_process(gateway_process)
         _stop_process(tap_process)
+        _close_handle(claude_tap_log_handle)
         _close_handle(gateway_log_handle)
         _close_handle(tap_log_handle)
 
