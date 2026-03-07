@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_DIR = REPO_ROOT / "modeio-middleware"
 HELPERS_DIR = REPO_ROOT / "modeio-middleware" / "tests" / "helpers"
 sys.path.insert(0, str(PACKAGE_DIR))

@@ -80,16 +80,23 @@ modeio-middleware/
       base.py
       redact.py
   tests/
-    test_claude_hook_connector.py
-    test_config_resolver.py
-    test_gateway_contract.py
-    test_protocol_manifest.py
-    test_protocol_registry.py
-    test_protocol_stdio_runtime.py
-    test_smoke_opencode_flow.py
-    test_setup_gateway.py
-    test_plugin_manager.py
-    test_profile_policy.py
+    helpers/
+      gateway_harness.py
+      plugin_modules.py
+    unit/
+      test_config_resolver.py
+      test_http_transport.py
+      test_plugin_manager.py
+      test_setup_gateway.py
+      test_stdio_supervisor.py
+      test_upstream_client.py
+    integration/
+      test_claude_hook_connector.py
+      test_gateway_contract.py
+      test_protocol_stdio_runtime.py
+    smoke/
+      test_protocol_example_plugin.py
+      test_smoke_opencode_flow.py
 ```
 
 ## Runtime data flow

@@ -10,7 +10,7 @@ try:
 except Exception:  # pragma: no cover
     zstd_codec = None
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPTS_DIR = REPO_ROOT / "modeio-middleware" / "scripts"
 TESTS_DIR = REPO_ROOT / "modeio-middleware" / "tests"
 

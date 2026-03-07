@@ -7,7 +7,7 @@ from pathlib import Path
 
 from starlette.testclient import TestClient
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_ROOT = REPO_ROOT / "modeio-middleware"
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
