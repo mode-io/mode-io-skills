@@ -37,7 +37,7 @@ except ModuleNotFoundError:
         def post(*_args, **_kwargs):
             raise _RequestsShim.MissingDependencyError(
                 "requests package is required for api-backed anonymization levels. "
-                "Install dependencies from requirements.txt."
+                "Install requests to enable non-lite anonymization."
             )
 
     requests = _RequestsShim()

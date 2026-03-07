@@ -6,7 +6,7 @@ import copy
 import hashlib
 from typing import Any, Dict, List, Sequence, Tuple
 
-from modeio_redact.detection.detect_local import detect_sensitive_local
+from modeio_redact import detect_sensitive_local
 
 from modeio_middleware.core.contracts import ENDPOINT_CHAT_COMPLETIONS, ENDPOINT_RESPONSES
 
