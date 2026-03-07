@@ -13,7 +13,6 @@
             "pass",
             "annotate",
             "patch",
-            "defer",
             "block",
             "allow",
             "warn",

@@ -36,8 +36,7 @@
       "mode": "observe",
       "capabilities_grant": {
         "can_patch": false,
-        "can_block": false,
-        "can_defer": false
+        "can_block": false
       }
     }
   }

@@ -64,8 +64,7 @@ Request params:
     "source_event": "http_request",
     "surface_capabilities": {
       "can_patch": true,
-      "can_block": true,
-      "can_defer": true
+      "can_block": true
     },
     "plugin_config": {},
     "request_body": {}
@@ -91,7 +90,7 @@ Optional host metadata fields may be present in `input` for connector-aware plug
 
 - `source`: host connector identifier (for example `openai_gateway`, `claude_hooks`)
 - `source_event`: connector-native event name
-- `surface_capabilities`: connector action support map (`can_patch`, `can_block`, `can_defer`)
+- `surface_capabilities`: connector action support map (`can_patch`, `can_block`)
 - `native_event`: sanitized connector-native payload when available
 
 ## Hooks
@@ -109,7 +108,6 @@ Protocol actions:
 - `pass`
 - `annotate`
 - `patch`
-- `defer`
 - `block`
 
 Host mapping to middleware actions:
@@ -117,7 +115,6 @@ Host mapping to middleware actions:
 - `pass -> allow`
 - `annotate -> warn`
 - `patch -> modify`
-- `defer -> defer`
 - `block -> block`
 
 Patch action uses RFC6902 operations (`add`, `replace`, `remove`) plus `patch_target`.
@@ -132,7 +129,7 @@ Each plugin runs with one host mode:
 
 Downgrade rules:
 
-- `observe`: `modify`, `defer`, `block` are downgraded to `warn`
+- `observe`: `modify` and `block` are downgraded to `warn`
 - `assist`: `block` is downgraded to `warn`
 - `enforce`: no mode downgrade
 
@@ -144,7 +141,6 @@ Enforced capability gates:
 
 - `can_patch`
 - `can_block`
-- `can_defer`
 
 If not granted, corresponding action is downgraded to `warn`.
 
@@ -171,3 +167,21 @@ Plugin manifest/config can tighten or relax these values.
 - External plugins run as local subprocesses.
 - Plugins should not log protocol frames to stdout.
 - Any plugin diagnostics should go to stderr.
+
+## Relation to ACP
+
+ACP (Agent Client Protocol) solves a different boundary than MPP.
+
+- MPP is the local middleware-to-plugin contract for policy hooks around model traffic.
+- ACP is a host or editor control-plane protocol for agent sessions, tools, approvals, terminal access, and filesystem access.
+
+Practical implication:
+
+- If `modeio-middleware` adopts ACP later, ACP should sit above or beside the gateway as a host connector.
+- ACP should not replace MPP unless the product stops being a narrow policy-hook runtime and becomes a full agent host/runtime.
+
+Recommended order of operations:
+
+1. Keep MPP small and stable for request/response policy hooks.
+2. Make middleware packaging and entry points standalone-friendly.
+3. Add ACP only when there is a concrete need for editor-native session control beyond HTTP interception and plugin hooks.

@@ -17,7 +17,6 @@ SUPPORTED_TRANSPORTS = {TRANSPORT_STDIO_JSONRPC}
 CAPABILITY_KEYS = {
     "can_patch",
     "can_block",
-    "can_defer",
     "needs_network",
     "needs_raw_body",
 }
@@ -92,7 +91,6 @@ def _normalize_capabilities(raw: Any, *, source: str) -> Dict[str, bool]:
     capabilities = {
         "can_patch": False,
         "can_block": False,
-        "can_defer": False,
         "needs_network": False,
         "needs_raw_body": False,
     }

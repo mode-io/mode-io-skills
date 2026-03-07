@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modeio-middleware"
+version = "0.1.0"
+description = "Policy gateway middleware for OpenAI-shaped HTTP traffic and connector hooks."
+requires-python = ">=3.10"
+dependencies = [
+  "httpx>=0.27,<1",
+  "starlette>=0.37,<1",
+  "uvicorn>=0.30,<1",
+]
+
+[project.scripts]
+modeio-middleware-gateway = "modeio_middleware.cli.gateway:main"
+modeio-middleware-setup = "modeio_middleware.cli.setup:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["modeio_middleware*"]
