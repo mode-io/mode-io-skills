@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Callable, Dict, Iterable, Iterator, List
 
 from modeio_middleware.core.plugin_manager import ActivePlugin, PluginManager
-from modeio_middleware.core.sse import parse_sse_data_line, serialize_sse_data_line
+from modeio_middleware.core.sse import iter_sse_events, serialize_sse_event
 
 
 def iter_transformed_sse_stream(
@@ -22,22 +21,16 @@ def iter_transformed_sse_stream(
     on_plugin_error: str,
     degraded: List[str],
     services: Dict[str, Any] | None = None,
+    connector_capabilities: Dict[str, bool] | None = None,
     on_finish: Callable[[], None] | None = None,
 ) -> Iterator[bytes]:
     runtime_degraded = list(degraded)
     try:
-        for raw_line in upstream_response.iter_lines(chunk_size=1, decode_unicode=False):
-            if isinstance(raw_line, str):
-                line_bytes = raw_line.encode("utf-8")
-            else:
-                line_bytes = raw_line
-
-            parsed_event = parse_sse_data_line(line_bytes)
-            if parsed_event is None:
-                yield line_bytes + b"\n"
-                continue
-
+        for parsed_event in iter_sse_events(upstream_response.iter_lines()):
             is_done_event = parsed_event.get("data_type") == "done"
+            if parsed_event.get("data_type") == "none":
+                yield serialize_sse_event(parsed_event)
+                continue
 
             event_result = plugin_manager.apply_post_stream_event(
                 active_plugins,
@@ -49,6 +42,7 @@ def iter_transformed_sse_stream(
                 shared_state=shared_state,
                 on_plugin_error=on_plugin_error,
                 services=services,
+                connector_capabilities=connector_capabilities,
             )
             runtime_degraded.extend(event_result.degraded)
 
@@ -61,13 +55,11 @@ def iter_transformed_sse_stream(
                         "code": "MODEIO_PLUGIN_BLOCKED",
                     }
                 }
-                error_line = b"data: " + json.dumps(payload, ensure_ascii=False).encode("utf-8")
-                yield error_line + b"\n\n"
-                yield b"data: [DONE]\n\n"
+                yield serialize_sse_event({"data_type": "json", "payload": payload})
+                yield serialize_sse_event({"data_type": "done"})
                 break
 
-            line_bytes = serialize_sse_data_line(event_result.event)
-            yield line_bytes + b"\n"
+            yield serialize_sse_event(event_result.event)
 
             if is_done_event:
                 break
@@ -81,6 +73,7 @@ def iter_transformed_sse_stream(
             shared_state=shared_state,
             on_plugin_error=on_plugin_error,
             services=services,
+            connector_capabilities=connector_capabilities,
         )
         runtime_degraded.extend(end_result.degraded)
         if end_result.blocked:
@@ -91,9 +84,8 @@ def iter_transformed_sse_stream(
                     "code": "MODEIO_PLUGIN_BLOCKED",
                 }
             }
-            error_line = b"data: " + json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            yield error_line + b"\n\n"
-            yield b"data: [DONE]\n\n"
+            yield serialize_sse_event({"data_type": "json", "payload": payload})
+            yield serialize_sse_event({"data_type": "done"})
     finally:
         upstream_response.close()
         if on_finish is not None:

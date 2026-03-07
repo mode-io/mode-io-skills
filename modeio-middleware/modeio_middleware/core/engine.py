@@ -5,27 +5,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Union
 
+from modeio_middleware.connectors.base import CanonicalInvocation, ConnectorAdapter
 from modeio_middleware.connectors.claude_hooks import (
+    CLAUDE_HOOK_CONNECTOR_PATH,
+    ClaudeHookConnector,
     build_claude_hook_response,
-    parse_claude_hook_invocation,
 )
-from modeio_middleware.core.contracts import (
-    normalize_modeio_options,
-    validate_endpoint_payload,
-)
+from modeio_middleware.connectors.openai_http import OpenAIHttpConnector
 from modeio_middleware.core.errors import MiddlewareError
 from modeio_middleware.core.http_contract import contract_headers, error_payload
-from modeio_middleware.core.plugin_manager import ActivePlugin, PluginManager
 from modeio_middleware.core.pipeline_session import PipelineSession
+from modeio_middleware.core.plugin_manager import ActivePlugin, PluginManager
 from modeio_middleware.core.profiles import (
     DEFAULT_PROFILE,
-    normalize_profile_name,
     resolve_plugin_error_policy,
-    resolve_profile_plugin_overrides,
     resolve_profile,
+    resolve_profile_plugin_overrides,
     resolve_profile_plugins,
 )
-from modeio_middleware.core.services.defer_queue import DeferredActionQueue
 from modeio_middleware.core.services.telemetry import PluginTelemetry
 from modeio_middleware.core.stream_relay import iter_transformed_sse_stream
 from modeio_middleware.core.upstream_client import forward_upstream_json, forward_upstream_stream
@@ -61,17 +58,8 @@ class StreamProcessResult:
 
 
 def _build_runtime_services(service_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    cfg = service_config if isinstance(service_config, dict) else {}
-
-    defer_cfg = cfg.get("defer_queue", {})
-    defer_path: Optional[str] = None
-    if isinstance(defer_cfg, dict):
-        candidate = defer_cfg.get("path")
-        if isinstance(candidate, str) and candidate.strip():
-            defer_path = candidate.strip()
-
+    del service_config
     return {
-        "defer_queue": DeferredActionQueue(path=defer_path),
         "telemetry": PluginTelemetry(),
     }
 
@@ -85,6 +73,10 @@ class MiddlewareEngine:
             config_base_dir=runtime_config.config_base_dir,
         )
         self.services = _build_runtime_services(runtime_config.service_config)
+        self._connectors: tuple[ConnectorAdapter, ...] = (
+            ClaudeHookConnector(),
+            OpenAIHttpConnector(),
+        )
 
     def _resolve_plugin_runtime(
         self,
@@ -103,6 +95,17 @@ class MiddlewareEngine:
             profile_plugin_overrides=profile_overrides,
         )
         return on_plugin_error, active_plugins
+
+    def _resolve_connector(self, path: str) -> ConnectorAdapter:
+        for connector in self._connectors:
+            if connector.matches(path):
+                return connector
+        raise MiddlewareError(
+            404,
+            "MODEIO_ROUTE_NOT_FOUND",
+            "route not found",
+            retryable=False,
+        )
 
     def _new_session(self, *, request_id: str) -> PipelineSession:
         return PipelineSession(request_id=request_id, profile=self.config.default_profile)
@@ -129,8 +132,60 @@ class MiddlewareEngine:
         return ProcessResult(status=error.status, payload=payload, headers=headers)
 
     def _shutdown_session_plugins(self, session: PipelineSession) -> None:
-        if session.release_plugins and session.active_plugins:
-            self.plugin_manager.shutdown_active_plugins(session.active_plugins)
+        del session
+        return
+
+    def _build_request_context(self, invocation: CanonicalInvocation) -> Dict[str, Any]:
+        return {
+            "endpoint_kind": invocation.endpoint_kind,
+            "default_profile": self.config.default_profile,
+            "upstream_chat_completions_url": self.config.upstream_chat_completions_url,
+            "upstream_responses_url": self.config.upstream_responses_url,
+            **invocation.connector_context,
+        }
+
+    def _start_invocation(
+        self,
+        invocation: CanonicalInvocation,
+    ) -> tuple[PipelineSession, str, Dict[str, Any], Dict[str, Any]]:
+        session = self._new_session(request_id=invocation.request_id)
+        session.profile = invocation.profile
+        on_plugin_error, session.active_plugins = self._resolve_plugin_runtime(
+            profile=session.profile,
+            on_plugin_error_override=invocation.on_plugin_error,
+            plugin_overrides=invocation.plugin_overrides,
+        )
+        shared_state: Dict[str, Any] = {}
+        request_context = self._build_request_context(invocation)
+        return session, on_plugin_error, shared_state, request_context
+
+    def shutdown(self) -> None:
+        self.plugin_manager.shutdown()
+
+    def process_http_request(
+        self,
+        *,
+        path: str,
+        request_id: str,
+        payload: Dict[str, Any],
+        incoming_headers: Dict[str, str],
+    ) -> Union[ProcessResult, StreamProcessResult]:
+        try:
+            connector = self._resolve_connector(path)
+            invocation = connector.parse(
+                request_id=request_id,
+                payload=payload,
+                incoming_headers=incoming_headers,
+                default_profile=self.config.default_profile,
+                path=path,
+            )
+        except MiddlewareError as error:
+            session = self._new_session(request_id=request_id)
+            return self._error_process_result(session, error)
+
+        if invocation.phase == "request":
+            return self.process_openai_invocation(invocation)
+        return self._process_connector_hook(invocation)
 
     def process_request(
         self,
@@ -140,49 +195,34 @@ class MiddlewareEngine:
         request_body: Dict[str, Any],
         incoming_headers: Dict[str, str],
     ) -> Union[ProcessResult, StreamProcessResult]:
-        session = self._new_session(request_id=request_id)
+        path = "/v1/chat/completions" if endpoint_kind == "chat_completions" else "/v1/responses"
+        return self.process_http_request(
+            path=path,
+            request_id=request_id,
+            payload=request_body,
+            incoming_headers=incoming_headers,
+        )
+
+    def process_openai_invocation(
+        self,
+        invocation: CanonicalInvocation,
+    ) -> Union[ProcessResult, StreamProcessResult]:
+        session, on_plugin_error, shared_state, request_context = self._start_invocation(invocation)
+        connector_capabilities = invocation.connector_capabilities.as_dict()
 
         try:
-            stream_enabled = validate_endpoint_payload(endpoint_kind, request_body)
-
-            options = normalize_modeio_options(
-                request_body,
-                default_profile=self.config.default_profile,
-            )
-            session.profile = normalize_profile_name(options.profile, default_profile=self.config.default_profile)
-
-            on_plugin_error, session.active_plugins = self._resolve_plugin_runtime(
-                profile=session.profile,
-                on_plugin_error_override=options.on_plugin_error,
-                plugin_overrides=options.plugin_overrides,
-            )
-
-            shared_state: Dict[str, Any] = {}
-            request_context = {
-                "endpoint_kind": endpoint_kind,
-                "upstream_chat_completions_url": self.config.upstream_chat_completions_url,
-                "upstream_responses_url": self.config.upstream_responses_url,
-                "default_profile": self.config.default_profile,
-                "source": "openai_gateway",
-                "source_event": "http_request",
-                "surface_capabilities": {
-                    "can_patch": True,
-                    "can_block": True,
-                    "can_defer": True,
-                },
-            }
-
             pre_result = self.plugin_manager.apply_pre_request(
                 session.active_plugins,
                 request_id=session.request_id,
-                endpoint_kind=endpoint_kind,
+                endpoint_kind=invocation.endpoint_kind,
                 profile=session.profile,
-                request_body=request_body,
-                request_headers=incoming_headers,
+                request_body=invocation.request_body,
+                request_headers=invocation.incoming_headers,
                 context=request_context,
                 shared_state=shared_state,
                 on_plugin_error=on_plugin_error,
                 services=self.services,
+                connector_capabilities=connector_capabilities,
             )
             session.pre_actions = pre_result.actions
             session.degraded.extend(pre_result.degraded)
@@ -195,27 +235,26 @@ class MiddlewareEngine:
                     details={"phase": "pre_request"},
                 )
 
-            if stream_enabled:
-                stream_result = self._process_stream_request(
-                    endpoint_kind=endpoint_kind,
+            response_request_context = {
+                **request_context,
+                "preFindings": pre_result.findings,
+            }
+            if invocation.stream:
+                return self._process_stream_request(
+                    endpoint_kind=invocation.endpoint_kind,
                     session=session,
                     on_plugin_error=on_plugin_error,
                     shared_state=shared_state,
-                    request_context={
-                        **request_context,
-                        "preFindings": pre_result.findings,
-                    },
+                    request_context=response_request_context,
                     upstream_payload=pre_result.body,
                     upstream_headers=pre_result.headers,
+                    connector_capabilities=connector_capabilities,
                 )
-                if isinstance(stream_result, StreamProcessResult) and stream_result.stream is not None:
-                    session.release_plugins = False
-                return stream_result
 
             session.upstream_called = True
             upstream_payload = forward_upstream_json(
                 config=self.config,
-                endpoint_kind=endpoint_kind,
+                endpoint_kind=invocation.endpoint_kind,
                 payload=pre_result.body,
                 incoming_headers=pre_result.headers,
             )
@@ -223,17 +262,15 @@ class MiddlewareEngine:
             post_result = self.plugin_manager.apply_post_response(
                 session.active_plugins,
                 request_id=session.request_id,
-                endpoint_kind=endpoint_kind,
+                endpoint_kind=invocation.endpoint_kind,
                 profile=session.profile,
-                request_context={
-                    **request_context,
-                    "preFindings": pre_result.findings,
-                },
+                request_context=response_request_context,
                 response_body=upstream_payload,
                 response_headers={},
                 shared_state=shared_state,
                 on_plugin_error=on_plugin_error,
                 services=self.services,
+                connector_capabilities=connector_capabilities,
             )
             session.post_actions = post_result.actions
             session.degraded.extend(post_result.degraded)
@@ -269,31 +306,26 @@ class MiddlewareEngine:
         payload: Dict[str, Any],
         incoming_headers: Dict[str, str],
     ) -> ProcessResult:
-        session = self._new_session(request_id=request_id)
+        result = self.process_http_request(
+            path=CLAUDE_HOOK_CONNECTOR_PATH,
+            request_id=request_id,
+            payload=payload,
+            incoming_headers=incoming_headers,
+        )
+        if isinstance(result, StreamProcessResult):
+            raise MiddlewareError(
+                500,
+                "MODEIO_INTERNAL_ERROR",
+                "claude connector unexpectedly returned a stream result",
+                retryable=False,
+            )
+        return result
+
+    def _process_connector_hook(self, invocation: CanonicalInvocation) -> ProcessResult:
+        session, on_plugin_error, shared_state, request_context = self._start_invocation(invocation)
+        connector_capabilities = invocation.connector_capabilities.as_dict()
 
         try:
-            invocation = parse_claude_hook_invocation(
-                payload,
-                default_profile=self.config.default_profile,
-            )
-            session.profile = normalize_profile_name(
-                invocation.profile,
-                default_profile=self.config.default_profile,
-            )
-
-            on_plugin_error, session.active_plugins = self._resolve_plugin_runtime(
-                profile=session.profile,
-                on_plugin_error_override=invocation.on_plugin_error,
-                plugin_overrides=invocation.plugin_overrides,
-            )
-
-            shared_state: Dict[str, Any] = {}
-            connector_context = {
-                **invocation.connector_context,
-                "endpoint_kind": invocation.endpoint_kind,
-                "default_profile": self.config.default_profile,
-            }
-
             if invocation.phase == "pre_request":
                 pre_result = self.plugin_manager.apply_pre_request(
                     session.active_plugins,
@@ -301,12 +333,12 @@ class MiddlewareEngine:
                     endpoint_kind=invocation.endpoint_kind,
                     profile=session.profile,
                     request_body=invocation.request_body,
-                    request_headers=incoming_headers,
-                    context=connector_context,
+                    request_headers=invocation.incoming_headers,
+                    context=request_context,
                     shared_state=shared_state,
                     on_plugin_error=on_plugin_error,
                     services=self.services,
-                    connector_capabilities=invocation.connector_capabilities,
+                    connector_capabilities=connector_capabilities,
                 )
                 session.pre_actions = pre_result.actions
                 session.degraded.extend(pre_result.degraded)
@@ -316,19 +348,19 @@ class MiddlewareEngine:
                     block_message=pre_result.block_message,
                     findings=pre_result.findings,
                 )
-            else:
+            elif invocation.phase == "post_response":
                 post_result = self.plugin_manager.apply_post_response(
                     session.active_plugins,
                     request_id=session.request_id,
                     endpoint_kind=invocation.endpoint_kind,
                     profile=session.profile,
-                    request_context=connector_context,
+                    request_context=request_context,
                     response_body=invocation.response_body,
                     response_headers={},
                     shared_state=shared_state,
                     on_plugin_error=on_plugin_error,
                     services=self.services,
-                    connector_capabilities=invocation.connector_capabilities,
+                    connector_capabilities=connector_capabilities,
                 )
                 session.post_actions = post_result.actions
                 session.degraded.extend(post_result.degraded)
@@ -337,6 +369,13 @@ class MiddlewareEngine:
                     blocked=post_result.blocked,
                     block_message=post_result.block_message,
                     findings=post_result.findings,
+                )
+            else:
+                raise MiddlewareError(
+                    500,
+                    "MODEIO_INTERNAL_ERROR",
+                    f"unsupported connector phase '{invocation.phase}'",
+                    retryable=False,
                 )
 
             headers = self._session_headers(session)
@@ -365,6 +404,7 @@ class MiddlewareEngine:
         request_context: Dict[str, Any],
         upstream_payload: Dict[str, Any],
         upstream_headers: Dict[str, str],
+        connector_capabilities: Dict[str, bool],
     ) -> Union[ProcessResult, StreamProcessResult]:
         upstream_response = forward_upstream_stream(
             config=self.config,
@@ -383,6 +423,7 @@ class MiddlewareEngine:
             shared_state=shared_state,
             on_plugin_error=on_plugin_error,
             services=self.services,
+            connector_capabilities=connector_capabilities,
         )
         session.degraded.extend(post_start_result.degraded)
         session.post_actions = list(post_start_result.actions)
@@ -431,6 +472,7 @@ class MiddlewareEngine:
                 on_plugin_error=on_plugin_error,
                 degraded=session.degraded,
                 services=self.services,
+                connector_capabilities=connector_capabilities,
                 on_finish=lambda: self.plugin_manager.shutdown_active_plugins(session.active_plugins),
             ),
             payload=None,

@@ -171,3 +171,6 @@ class StdioJsonRpcRuntime(PluginRuntime):
 
     def shutdown(self) -> None:
         self._supervisor.shutdown()
+
+    def is_healthy(self) -> bool:
+        return self._supervisor.is_alive()

@@ -48,6 +48,27 @@ def _dependency_status() -> List[Dict[str, Any]]:
             "installed": _module_installed("requests"),
         },
         {
+            "package": "httpx",
+            "module": "httpx",
+            "requiredFor": "modeio-middleware upstream routing",
+            "optional": False,
+            "installed": _module_installed("httpx"),
+        },
+        {
+            "package": "starlette",
+            "module": "starlette",
+            "requiredFor": "modeio-middleware ASGI transport",
+            "optional": False,
+            "installed": _module_installed("starlette"),
+        },
+        {
+            "package": "uvicorn",
+            "module": "uvicorn",
+            "requiredFor": "modeio-middleware gateway server runtime",
+            "optional": False,
+            "installed": _module_installed("uvicorn"),
+        },
+        {
             "package": "python-docx",
             "module": "docx",
             "requiredFor": "modeio-redact .docx file workflows",

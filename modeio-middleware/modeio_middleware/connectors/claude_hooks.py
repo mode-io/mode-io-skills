@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict
 
-from modeio_middleware.connectors.base import ConnectorEvent
+from modeio_middleware.connectors.base import CanonicalInvocation, ConnectorAdapter, ConnectorCapabilities
 from modeio_middleware.core.contracts import ModeioOptions, normalize_modeio_options
 from modeio_middleware.core.errors import MiddlewareError
 
@@ -26,23 +26,41 @@ ENDPOINT_CLAUDE_USER_PROMPT = "claude_user_prompt"
 ENDPOINT_CLAUDE_STOP = "claude_stop"
 
 
-def _default_connector_capabilities() -> Dict[str, bool]:
-    return {
-        "can_patch": False,
-        "can_block": True,
-        "can_defer": True,
-    }
+def _default_connector_capabilities() -> ConnectorCapabilities:
+    return ConnectorCapabilities(
+        can_patch=False,
+        can_block=True,
+    )
 
 
-class ClaudeHookInvocation(ConnectorEvent):
-    pass
+class ClaudeHookConnector(ConnectorAdapter):
+    route_paths = (CLAUDE_HOOK_CONNECTOR_PATH,)
+
+    def parse(
+        self,
+        *,
+        request_id: str,
+        payload: Dict[str, Any],
+        incoming_headers: Dict[str, str],
+        default_profile: str,
+        path: str,
+    ) -> CanonicalInvocation:
+        del path
+        return parse_claude_hook_invocation(
+            request_id=request_id,
+            payload=payload,
+            incoming_headers=incoming_headers,
+            default_profile=default_profile,
+        )
 
 
 def parse_claude_hook_invocation(
-    payload: Dict[str, Any],
     *,
+    request_id: str,
+    payload: Dict[str, Any],
+    incoming_headers: Dict[str, str],
     default_profile: str,
-) -> ClaudeHookInvocation:
+) -> CanonicalInvocation:
     if not isinstance(payload, dict):
         raise MiddlewareError(
             400,
@@ -80,7 +98,7 @@ def parse_claude_hook_invocation(
     connector_context = {
         "source": "claude_hooks",
         "source_event": event_name,
-        "surface_capabilities": dict(connector_capabilities),
+        "surface_capabilities": connector_capabilities.as_dict(),
         "native_event": event_payload,
     }
 
@@ -89,18 +107,21 @@ def parse_claude_hook_invocation(
             "event": event_payload,
             "prompt": event_payload.get("prompt", ""),
         }
-        return ClaudeHookInvocation(
+        return CanonicalInvocation(
             source="claude_hooks",
             source_event=event_name,
             phase=PHASE_PRE_REQUEST,
             endpoint_kind=ENDPOINT_CLAUDE_USER_PROMPT,
+            request_id=request_id,
             profile=modeio_options.profile,
             on_plugin_error=modeio_options.on_plugin_error,
             plugin_overrides=modeio_options.plugin_overrides,
+            incoming_headers=dict(incoming_headers),
             request_body=request_body,
             response_body={},
             connector_context=connector_context,
             connector_capabilities=connector_capabilities,
+            stream=False,
         )
 
     response_body = {
@@ -111,18 +132,21 @@ def parse_claude_hook_invocation(
     if isinstance(event_payload.get("status"), str):
         response_body["status"] = event_payload["status"]
 
-    return ClaudeHookInvocation(
+    return CanonicalInvocation(
         source="claude_hooks",
         source_event=event_name,
         phase=PHASE_POST_RESPONSE,
         endpoint_kind=ENDPOINT_CLAUDE_STOP,
+        request_id=request_id,
         profile=modeio_options.profile,
         on_plugin_error=modeio_options.on_plugin_error,
         plugin_overrides=modeio_options.plugin_overrides,
+        incoming_headers=dict(incoming_headers),
         request_body={},
         response_body=response_body,
         connector_context=connector_context,
         connector_capabilities=connector_capabilities,
+        stream=False,
     )
 
 

@@ -15,4 +15,3 @@ class PipelineSession:
     post_actions: List[str] = field(default_factory=list)
     degraded: List[str] = field(default_factory=list)
     active_plugins: List[Any] = field(default_factory=list)
-    release_plugins: bool = True
