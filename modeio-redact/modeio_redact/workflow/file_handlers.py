@@ -105,7 +105,7 @@ def _import_docx_document_class():
         from docx import Document
     except ModuleNotFoundError as exc:
         raise ValueError(
-            "python-docx package is required for '.docx' support. Install dependencies from requirements.txt."
+            "python-docx package is required for '.docx' support. Install python-docx to enable DOCX workflows."
         ) from exc
     return Document
 
@@ -115,7 +115,7 @@ def _import_fitz_module():
         import fitz
     except ModuleNotFoundError as exc:
         raise ValueError(
-            "PyMuPDF package is required for '.pdf' support. Install dependencies from requirements.txt."
+            "PyMuPDF package is required for '.pdf' support. Install PyMuPDF to enable PDF workflows."
         ) from exc
     return fitz
 

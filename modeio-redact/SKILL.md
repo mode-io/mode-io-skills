@@ -1,18 +1,15 @@
 ---
 name: modeio-redact
 description: >-
-  Runs PII anonymization and local de-anonymization for text/JSON strings and
-  supported file-path input (`.txt`, `.md`, `.markdown`, `.csv`, `.tsv`,
-  `.json`, `.jsonl`, `.yaml`, `.yml`, `.xml`, `.html`, `.htm`, `.rst`, `.log`,
-  `.docx`, `.pdf`). Supports local regex masking in `lite` mode, remote API
-  anonymization in `dynamic`/`strict`/`crossborder`, local placeholder
-  restore using saved map files for supported reversible formats, and
-  anonymize-only PDF redaction.
+  Runs PII anonymization, local de-anonymization, and deterministic local
+  detector checks for text and supported files. Use for redact/restore flows,
+  file-first anonymization, or offline detector tuning with allowlist,
+  blocklist, and threshold controls.
 ---
 
-# Run anonymization checks for text and files
+# Run anonymization and restore flows
 
-Use this skill to anonymize, de-anonymize, or detect PII in text and files.
+Use this skill when you need to anonymize text/files, restore placeholders with a saved map, or tune the local detector.
 
 ## Scope
 
@@ -20,195 +17,99 @@ Use this skill to anonymize, de-anonymize, or detect PII in text and files.
   - anonymize (`scripts/anonymize.py`)
   - deanonymize (`scripts/deanonymize.py`)
   - local detector diagnostics (`scripts/detect_local.py`)
-  - map lifecycle and file workflow helpers
-  - file-output assurance pipeline (coverage verification, residual scan)
+  - file/map workflow helpers
+  - fail-closed assurance for rich-file outputs
 - Not included:
-  - prompt gateway / runtime request proxying (use `modeio-middleware`)
-  - git pre-commit staged diff scanning
+  - request/response gateway routing (`modeio-middleware`)
+  - command safety analysis (`modeio-guardrail`)
+  - staged-diff or git pre-commit scanning
 
-## Dependencies
+## First-run path
 
-Core dependencies (always required): none beyond the Python standard library.
-
-Optional dependencies (required for specific features):
-
-| Package | Required for | Install |
-|---|---|---|
-| `requests` | Non-`lite` levels (remote API calls) | `pip install requests` |
-| `python-docx` | `.docx` file read/write | `pip install python-docx` |
-| `PyMuPDF` (`fitz`) | `.pdf` file read/redact | `pip install PyMuPDF` |
-
-Missing optional packages raise a clear error at runtime when the feature is invoked.
-
-For repo-local setup from the repo root:
+From the repo root:
 
 ```bash
 python scripts/bootstrap_env.py
 python scripts/doctor_env.py
+modeio-redact/scripts/smoke_redact.sh
 ```
 
-## Execution policy
+Optional packages:
 
-1. Default to `scripts/anonymize.py --json` for structured output.
-2. Use `scripts/deanonymize.py` for local restore (no network call).
-3. Use `--level lite` for offline/no-network anonymization.
-4. Use `scripts/detect_local.py` only when detailed local diagnostics are requested.
+- `requests` for non-`lite` API-backed anonymization
+- `python-docx` for `.docx`
+- `PyMuPDF` for `.pdf`
+
+## Core commands
+
+### Anonymize text
+
+```bash
+python modeio-redact/scripts/anonymize.py \
+  --input "Email: alice@example.com, Phone: 415-555-1234" \
+  --level lite \
+  --json
+```
+
+### Anonymize a file
+
+```bash
+python modeio-redact/scripts/anonymize.py \
+  --input ./incident.docx \
+  --level lite \
+  --json
+```
+
+### Restore from a saved map
+
+```bash
+python modeio-redact/scripts/deanonymize.py \
+  --input "Email: [EMAIL_1]" \
+  --map ~/.modeio/redact/maps/<map-id>.json \
+  --json
+```
+
+### Tune the local detector
+
+```bash
+python modeio-redact/scripts/detect_local.py \
+  --input "Project codename Phoenix is approved. Reach support@example.com." \
+  --allowlist-file modeio-redact/examples/detect-local/allowlist.json \
+  --blocklist-file modeio-redact/examples/detect-local/blocklist.json \
+  --thresholds-file modeio-redact/examples/detect-local/thresholds.json \
+  --json
+```
 
 ## Level selection
 
-| Scenario | Level | Reason |
-|---|---|---|
-| Offline or no network available | `lite` | Local regex only, no API call |
-| General anonymization (default) | `dynamic` | Remote API path for broad coverage |
-| Compliance-sensitive workflows | `strict` | Includes compliance analysis |
-| Cross-region transfer workflows | `crossborder` | Requires jurisdiction codes |
+| Scenario | Level |
+|---|---|
+| Offline or no network | `lite` |
+| General anonymization | `dynamic` |
+| Compliance-sensitive review | `strict` |
+| Cross-region transfer analysis | `crossborder` |
 
-## Scripts
+For `crossborder`, pass both `--sender-code` and `--recipient-code`.
 
-### `scripts/anonymize.py`
-
-- `-i, --input`: required, literal content or supported file path
-- `--level`: `lite`, `dynamic`, `strict`, `crossborder` (default: `dynamic`)
-- `--sender-code`: required for `crossborder` (example: `CN SHA`)
-- `--recipient-code`: required for `crossborder` (example: `US NYC`)
-- `--json`: output structured JSON envelope
-- `--output`: explicit output file path
-- `--in-place`: overwrite input file in place (file-path input only)
-
-Notes:
-
-- Existing supported file paths are auto-read as file input.
-- `lite` is local-only; non-lite levels call backend anonymize API.
-- Non-lite API calls retry up to 2 times with exponential backoff (1s base) on 502/503/504 and network errors.
-- `.pdf` anonymization supports all levels for text-layer PDFs; non-lite requires API mapping entries for fail-closed projection.
-- `.pdf` applies true PDF redaction (remove text layer content + black fill) and uses sidecar-only map linkage.
-- `.pdf` de-anonymization is not supported.
-- Default file output path is `<name>.redacted.<ext>` with collision-safe suffixing.
-- Sidecar map ref file is written for file workflows as `<output-stem>.map.json` (example: `incident.redacted.map.json`).
-- For file outputs, an assurance pipeline runs automatically: `.docx`/`.pdf` use `verified` policy (fail on coverage mismatch or residual findings); all other file types use `best_effort` with coverage enforcement.
+## Validation
 
 ```bash
-python scripts/anonymize.py --input "Email: alice@example.com" --level dynamic --json
-python scripts/anonymize.py --input "Phone 13812345678" --level lite --json
-python scripts/anonymize.py --input ./incident.docx --level lite --json
-python scripts/anonymize.py --input ./incident.pdf --level lite --json
-python scripts/anonymize.py --input ./incident.pdf --level dynamic --json
+python -m unittest discover modeio-redact/tests -p "test_*.py"
+python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
+modeio-redact/scripts/smoke_redact.sh
 ```
 
-### `scripts/deanonymize.py`
-
-- `-i, --input`: required, anonymized text or supported file path
-- `--map`: optional map ID or map file path
-- `--output`: explicit output file path
-- `--in-place`: overwrite file input in place
-- `--json`: output structured JSON envelope
-
-Map resolution order when `--map` is omitted:
-
-1. Embedded marker in `.txt`/`.md`/`.markdown`
-2. Sidecar map file `<input>.map.json`
-3. Latest local map fallback (literal text input only)
-
-Map marker embedding styles per file type:
-
-| File type | Marker style | Example |
-|---|---|---|
-| `.txt` | Hash-comment on first line | `# modeio-redact-map-id: <id>` |
-| `.md`, `.markdown` | HTML comment on first line | `<!-- modeio-redact-map-id: <id> -->` |
-| All others | No embedded marker | (uses sidecar `.map.json` only) |
-
-```bash
-python scripts/deanonymize.py --input "Email: [EMAIL_1]" --json
-python scripts/deanonymize.py --input ./notes.redacted.txt --json
-```
-
-### `scripts/detect_local.py`
-
-- `-i, --input`: required input text
-- `--profile`: `strict`, `balanced`, `precision` (default: `balanced`)
-- `--allowlist-file`: optional JSON allowlist rules
-- `--blocklist-file`: optional JSON blocklist rules
-- `--thresholds-file`: optional JSON threshold overrides
-- `--explain`: print heuristic diagnostics in non-JSON mode
-- `--json`: output full detector payload
-
-Detects 13 entity types: `phone`, `email`, `idCard`, `creditCard`, `bankCard`, `address`, `name`, `password`, `apiKey`, `ipAddress`, `ssn`, `passport`, `dateOfBirth`.
-
-Profile thresholds: `strict` lowers base thresholds by -0.12, `balanced` uses defaults, `precision` raises by +0.10.
-
-```bash
-python scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json
-python scripts/detect_local.py --input "Name: Alice Wang" --profile precision --json
-```
-
-## Testing
-
-```bash
-python -m unittest discover tests -p "test_*.py"
-python -m unittest discover tests -p "test_smoke_matrix_extensive.py"
-MODEIO_REDACT_SKIP_API_SMOKE=1 python -m unittest discover tests -p "test_smoke_matrix_extensive.py"
-```
-
-## Output contract
-
-### `anonymize.py --json`
-
-Top-level envelope: `success`, `tool`, `mode`, `level`, `data`.
-
-`data` fields:
-
-- `anonymizedContent`: redacted text
-- `hasPII`: boolean
-- `inputType`: `text` or `file`
-- `inputPath`: resolved source path (file input only)
-- `mapRef`: `{ mapId, mapPath, entryCount, sidecarPath? }`
-- `outputPath`: written file path (present when an output file is written)
-- `warnings`: `[{ code, message }]` (present when applicable)
-
-Output-file fields (present when an output file is written):
-
-- `applyReport`: `{ expectedCount, foundCount, appliedCount, missingCount, missedSpans, warnings }`
-- `verificationReport`: `{ passed, skipped, residualCount, residuals, warnings }`
-- `assurancePolicy`: `{ level, failOnCoverageMismatch, failOnResidualFindings }`
-
-### `deanonymize.py --json`
-
-Top-level envelope: `success`, `tool`, `mode`, `data`.
-
-`data` fields:
-
-- `deanonymizedContent`: restored text
-- `replacementSummary`: `{ totalReplacements, replacementsByType }`
-- `mapRef`: `{ mapId, mapPath, entryCount }`
-- `linkageSource`: `explicit-map`, `embedded-mapid`, `sidecar`, or `latest-fallback`
-- `warnings`: `[{ code, message }]` (for example, `input_hash_mismatch`)
-- `outputPath`: written file path (present when an output file is written)
-
-### `detect_local.py --json`
-
-Full output fields:
-
-- `originalText`: the unmodified input
-- `sanitizedText`: text with PII replaced by placeholders
-- `items`: array of detected entities with `type`, `value`, `maskedValue`, `detectionScore`, `scoreReasons`, and positional fields (`startIndex`, `endIndex`)
-- `riskScore`: 0–100 aggregate risk score
-- `riskLevel`: `low`, `medium`, `high`
-- `profile`: active profile name
-- `thresholds`: threshold values used per entity type
-- `scoringMethod`: scoring algorithm identifier
-- `detectorVersion`: detector version string
-- `stats`: `{ candidateCount, keptCount }`
-
-## When not to use
-
-- Runtime LLM request/response gateway hooks (`modeio-middleware`)
-- Command safety analysis (`modeio-guardrail`)
+Set `MODEIO_REDACT_SKIP_API_SMOKE=1` when you want the extensive smoke matrix to skip remote API coverage.
 
 ## Resources
 
-- `scripts/anonymize.py` — CLI entry point for anonymization
-- `scripts/deanonymize.py` — CLI entry point for de-anonymization
-- `scripts/detect_local.py` — CLI entry point for local PII detection
-- `ARCHITECTURE.md` — package layout and boundary rules
-- `ANONYMIZE_API_URL` env var — optional endpoint override (default: `https://safety-cf.modeio.ai/api/cf/anonymize`)
-- `MODEIO_REDACT_MAP_DIR` env var — optional local map directory override (default: `~/.modeio/redact/maps/`)
+- `ARCHITECTURE.md` for package boundaries
+- `references/cli-contracts.md` for flags and output contracts
+- `references/file-workflows.md` for map linkage and assurance behavior
+- `references/local-detector.md` for profiles and shipped config examples
+- `examples/detect-local/` for ready-to-edit tuning files
+
+## When not to use
+
+- Middleware interception or policy routing
+- Safety approval/block decisions

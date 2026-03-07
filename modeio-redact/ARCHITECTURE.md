@@ -1,83 +1,85 @@
 # modeio-redact Architecture
 
-## Goals
+## Goal
 
-- Keep `modeio-redact` focused on anonymize/deanonymize and local detection.
-- Keep script wrappers thin and stable for redact core commands.
-- Keep file-output assurance fail-closed for supported file workflows.
-- Route LLM middleware responsibilities to `modeio-middleware`.
+Keep `modeio-redact` focused on anonymize/deanonymize, deterministic local detection, and safe file projection workflows.
 
-## Package Layout
+## Layout
 
 ```text
 modeio-redact/
-  modeio_redact/
-    core/
-      models.py
-      policy.py
-      pipeline.py
-      errors.py
-      replacement.py
-    adapters/
-      base.py
-      registry.py
-      text_adapter.py
-      docx_adapter.py
-      pdf_adapter.py
-    planning/
-      resolver.py
-      plan_builder.py
-    assurance/
-      residual_scan.py
-      verifier.py
-    providers/
-      base.py
-      local_regex_provider.py
-      remote_api_provider.py
-    cli/
-      anonymize.py
-      anonymize_output.py
-      deanonymize.py
-    detection/
-      detect_local.py
-    workflow/
-      file_types.py
-      file_handlers.py
-      input_source.py
-      file_workflow.py
-      map_linkage.py
-      map_store.py
+  SKILL.md
+  ARCHITECTURE.md
+  references/
+    cli-contracts.md
+    file-workflows.md
+    local-detector.md
+  examples/
+    detect-local/
+      allowlist.json
+      blocklist.json
+      thresholds.json
   scripts/
     anonymize.py
     deanonymize.py
     detect_local.py
-    file_workflow.py
-    input_source.py
-    map_store.py
+    smoke_redact.sh
+  modeio_redact/
+    __init__.py
+    adapters/
+    assurance/
+    cli/
+      anonymize.py
+      anonymize_output.py
+      deanonymize.py
+    core/
+      models.py
+      pipeline.py
+      policy.py
+      replacement.py
+    detection/
+      __init__.py
+      data.py
+      detect_local.py
+    planning/
+    providers/
+    workflow/
+  tests/
 ```
 
 ## Boundary Rules
 
-- Detection core (`modeio_redact/detection/detect_local.py`) remains deterministic and local-only.
-- Redact package owns anonymize/deanonymize + map workflows only.
-- Middleware gateway routing and prompt request/response hooks live in `modeio-middleware`.
-- Pre-commit staged-diff scanning is not part of redact scope.
-- File/map helpers under `modeio_redact/workflow/` are shared by anonymize/deanonymize paths.
-- Map-reference resolution is centralized in `workflow/map_linkage.py` (explicit map -> embedded marker -> sidecar -> latest fallback).
+- `modeio_redact/` is the reusable Python surface.
+- `scripts/` are stable repo-local entrypoints and smoke helpers.
+- `references/` keeps deep behavior/docs out of `SKILL.md`.
+- `examples/` contains working config artifacts, not placeholder prose.
+- Middleware- and guardrail-specific behavior does not live in redact.
 
-## Pipeline Notes
+## Core Pipelines
 
-- `core/pipeline.py` orchestrates local-regex (`lite`) and remote API providers.
-- `core/replacement.py` centralizes stable longest-first replacement behavior for restore/redact paths.
-- `planning/*` builds canonical span plans from mapping entries.
-- `adapters/*` isolate file-format behavior (`text`, `docx`, `pdf`).
-- `assurance/*` applies residual-leak verification for fail-closed output policy.
+- `core/pipeline.py` owns provider selection and file projection orchestration.
+- `core/models.py` owns typed redact contracts used across pipeline stages.
+- `detection/detect_local.py` owns detector execution logic.
+- `detection/data.py` owns static detector rules/config tables.
+- `workflow/*` owns file typing, map linkage, and persistence helpers.
+- `adapters/*` isolates format-specific projection behavior for text, DOCX, and PDF.
+
+## Public Surface
+
+The package-level surface in `modeio_redact/__init__.py` intentionally exposes:
+
+- `detect_sensitive_local`
+- `RedactionProviderPipeline`
+- `RedactionFilePipeline`
+- `AssurancePolicy`
+- shared redact contract models
+
+That keeps downstream code from reaching through arbitrary internal modules when a stable surface is enough.
 
 ## Regression Checklist
 
-- `python3 -m unittest discover modeio-redact/tests -p "test_*.py"`
-- `python3 -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"`
-- CLI smoke checks:
-  - `python3 modeio-redact/scripts/anonymize.py --help`
-  - `python3 modeio-redact/scripts/deanonymize.py --help`
-  - `python3 modeio-redact/scripts/detect_local.py --help`
+```bash
+python -m unittest discover modeio-redact/tests -p "test_*.py"
+python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
+modeio-redact/scripts/smoke_redact.sh
+```
