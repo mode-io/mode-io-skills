@@ -1,5 +1,14 @@
 # modeio-middleware Quickstart
 
+This quickstart currently assumes a checkout of `mode-io-skills` and a repo-local Python environment.
+`modeio-middleware` now has a standalone `pyproject.toml`, but the supported path in this repo remains repo-first.
+
+Use this file in three passes:
+
+1. Start the local gateway and verify `/healthz`.
+2. Route one host through it (`Codex`, `OpenCode`, `OpenClaw`, or Claude hooks).
+3. Only then move on to external plugin authoring.
+
 ## 0) Bootstrap the repo-local Python environment
 
 ```bash
@@ -48,6 +57,8 @@ python modeio-middleware/scripts/setup_middleware_gateway.py \
 This writes `~/.claude/settings.json` hook entries for `UserPromptSubmit` and `Stop`
 to `POST http://127.0.0.1:8787/connectors/claude/hooks`.
 
+The live smoke harness covers Claude separately from OpenAI-routed clients: it drives Claude through native hooks and records `/connectors/claude/hooks` traffic with a local hook tap.
+
 ## 3) Health check
 
 ```bash
@@ -91,6 +102,7 @@ Check middleware headers in response:
 ## 5) Use external protocol plugins (optional)
 
 External plugins use `stdio-jsonrpc` and default to non-intrusive `observe` mode.
+The shipped example plugin lives under `modeio-middleware/plugins_external/example/`.
 
 Example plugin config entry:
 
@@ -104,8 +116,7 @@ Example plugin config entry:
     "mode": "observe",
     "capabilities_grant": {
       "can_patch": false,
-      "can_block": false,
-      "can_defer": false
+      "can_block": false
     }
   }
 }
@@ -117,6 +128,9 @@ Validate and run conformance:
 python modeio-middleware/scripts/validate_plugin_manifest.py plugins_external/example/manifest.json
 python modeio-middleware/scripts/run_plugin_conformance.py plugins_external/example/manifest.json python3 plugins_external/example/plugin.py
 ```
+
+The example plugin is intentionally minimal: it emits an `annotate` decision on `pre.request` and otherwise passes through.
+Once this works, use `new_plugin.py` to scaffold your own plugin. The default scaffold is `stdio-jsonrpc`; `legacy_inprocess` remains internal-only for bundled plugins.
 
 ## 6) Uninstall / rollback
 

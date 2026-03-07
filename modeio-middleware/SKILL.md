@@ -12,6 +12,8 @@ description: >-
 
 Use this skill to run a local policy gateway in front of an OpenAI-compatible upstream for Codex, OpenCode, OpenClaw, or Claude Code.
 
+Current distribution model: repo-local checkout first. The commands below assume you are running from a cloned `mode-io-skills` repo with its local Python environment prepared.
+
 ## Core routes
 
 - `POST /v1/chat/completions`
@@ -77,11 +79,11 @@ modeio-middleware/scripts/smoke_e2e.sh
 # Live gateway check
 modeio-middleware/scripts/smoke_e2e.sh --live
 
-# Live Codex/OpenCode/OpenClaw matrix via middleware
+# Live Codex/OpenCode/OpenClaw/Claude matrix via middleware
 modeio-middleware/scripts/smoke_e2e.sh --live-agents
 ```
 
-Claude Code support is hook-based (`/connectors/claude/hooks`) and validated via connector tests.
+Claude Code support is hook-based (`/connectors/claude/hooks`). The live smoke matrix now covers it with a dedicated hook tap, while Codex/OpenCode/OpenClaw still use upstream tap evidence.
 
 ### `scripts/smoke_agent_matrix.py`
 
@@ -90,7 +92,8 @@ Runs host-sandboxed live agent matrix with tap-proxy evidence output.
 ```bash
 python modeio-middleware/scripts/smoke_agent_matrix.py \
   --upstream-base-url "https://zenmux.ai/api/v1" \
-  --model "openai/gpt-5.3-codex"
+  --model "openai/gpt-5.3-codex" \
+  --claude-model "sonnet"
 ```
 
 ### `scripts/new_plugin.py`
@@ -100,7 +103,11 @@ Scaffold a new plugin and a matching test.
 ```bash
 python modeio-middleware/scripts/new_plugin.py my-plugin
 python modeio-middleware/scripts/new_plugin.py my-protocol-plugin --runtime stdio_jsonrpc
+
+`stdio-jsonrpc` is the public plugin surface. `legacy_inprocess` remains internal-only for bundled plugins and tests.
 ```
+
+A shipped stdio example plugin is also included under `modeio-middleware/plugins_external/example/` for validation and conformance checks.
 
 ### `scripts/validate_plugin_manifest.py`
 
@@ -153,7 +160,7 @@ python modeio-middleware/scripts/run_plugin_conformance.py /path/to/manifest.jso
 - `scripts/middleware_gateway.py` — CLI entry point for gateway runtime
 - `scripts/setup_middleware_gateway.py` — CLI entry point for setup/uninstall
 - `scripts/smoke_e2e.sh` — deterministic smoke test runner
-- `scripts/smoke_agent_matrix.py` — live agent matrix with tap-proxy evidence
+- `scripts/smoke_agent_matrix.py` — live agent matrix with upstream tap evidence for OpenAI-routed clients and hook tap evidence for Claude
 - `QUICKSTART.md` — setup and usage guide
 - `ARCHITECTURE.md` — design and extension points
 - `MODEIO_PLUGIN_PROTOCOL.md` — external plugin protocol reference

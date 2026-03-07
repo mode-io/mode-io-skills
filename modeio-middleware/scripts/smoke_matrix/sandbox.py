@@ -17,6 +17,7 @@ def build_sandbox_paths(root: Path) -> Dict[str, Path]:
         "xdg_state": xdg_root / "state",
         "xdg_cache": xdg_root / "cache",
         "opencode_config": xdg_root / "config" / "opencode" / "opencode.json",
+        "claude_settings": home / ".claude" / "settings.json",
         "openclaw_state": openclaw_state,
         "openclaw_config": openclaw_state / "openclaw.json",
         "openclaw_models_cache": openclaw_state / "agents" / "main" / "agent" / "models.json",

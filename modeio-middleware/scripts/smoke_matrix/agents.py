@@ -9,8 +9,10 @@ def build_agent_command(
     agent: str,
     token: str,
     model: str,
+    claude_model: str,
     repo_root: Path,
     codex_output_path: Path,
+    claude_settings_path: Path | None,
     timeout_seconds: int,
 ) -> List[str]:
     prompt = f"Reply with exactly this token and nothing else: {token}"
@@ -56,6 +58,24 @@ def build_agent_command(
             "--timeout",
             str(timeout_seconds),
             "--message",
+            prompt,
+        ]
+
+    if agent == "claude":
+        if claude_settings_path is None:
+            raise ValueError("claude_settings_path is required for claude smoke runs")
+        return [
+            "claude",
+            "--print",
+            "--output-format",
+            "text",
+            "--permission-mode",
+            "bypassPermissions",
+            "--no-session-persistence",
+            "--settings",
+            str(claude_settings_path),
+            "--model",
+            claude_model,
             prompt,
         ]
 
