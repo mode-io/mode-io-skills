@@ -49,6 +49,35 @@ class TestProtocolRegistryResolver(unittest.TestCase):
         spec = resolve_plugin_runtime_spec(resolved=resolved, config_base_dir=REPO_ROOT / "modeio-middleware")
         self.assertTrue(spec.capabilities["can_patch"])
 
+    def test_runtime_cache_key_changes_when_runtime_config_changes(self):
+        resolved_a = ResolvedPluginConfig(
+            name="external_policy",
+            runtime="stdio_jsonrpc",
+            module_path=None,
+            enabled=True,
+            config={
+                "manifest": str(FIXTURES_DIR / "stdio_echo_manifest.json"),
+                "command": [sys.executable, str(FIXTURES_DIR / "stdio_echo_plugin.py")],
+                "rewrite_to": "alpha",
+            },
+        )
+        resolved_b = ResolvedPluginConfig(
+            name="external_policy",
+            runtime="stdio_jsonrpc",
+            module_path=None,
+            enabled=True,
+            config={
+                "manifest": str(FIXTURES_DIR / "stdio_echo_manifest.json"),
+                "command": [sys.executable, str(FIXTURES_DIR / "stdio_echo_plugin.py")],
+                "rewrite_to": "beta",
+            },
+        )
+
+        spec_a = resolve_plugin_runtime_spec(resolved=resolved_a, config_base_dir=REPO_ROOT / "modeio-middleware")
+        spec_b = resolve_plugin_runtime_spec(resolved=resolved_b, config_base_dir=REPO_ROOT / "modeio-middleware")
+
+        self.assertNotEqual(spec_a.runtime_cache_key(), spec_b.runtime_cache_key())
+
 
 if __name__ == "__main__":
     unittest.main()

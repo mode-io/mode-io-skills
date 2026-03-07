@@ -11,5 +11,8 @@ class PluginRuntime:
     def invoke(self, hook_name: str, hook_input: Dict[str, Any]) -> Any:
         raise NotImplementedError
 
+    def is_healthy(self) -> bool:
+        return True
+
     def shutdown(self) -> None:
         return

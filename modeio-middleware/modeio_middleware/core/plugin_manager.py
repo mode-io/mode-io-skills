@@ -11,19 +11,18 @@ from typing import Any, Dict, Iterable, List, Optional
 from modeio_middleware.core.config_resolver import resolve_plugin_runtime_config
 from modeio_middleware.core.contracts import (
     HOOK_ACTION_BLOCK,
-    HOOK_ACTION_DEFER,
     HOOK_ACTION_MODIFY,
     HOOK_ACTION_WARN,
 )
 from modeio_middleware.core.decision import normalize_decision_payload
 from modeio_middleware.core.errors import MiddlewareError
-from modeio_middleware.registry.loader import create_plugin_runtime
 from modeio_middleware.registry.resolver import (
     MODE_ASSIST,
     MODE_OBSERVE,
     resolve_plugin_runtime_spec,
 )
 from modeio_middleware.runtime.base import PluginRuntime
+from modeio_middleware.runtime.manager import PluginRuntimeManager
 
 
 @dataclass(frozen=True)
@@ -70,6 +69,7 @@ class PluginManager:
         plugins_config: Dict[str, Any],
         preset_registry: Optional[Dict[str, Any]] = None,
         config_base_dir: Optional[str] = None,
+        runtime_manager: Optional[PluginRuntimeManager] = None,
     ):
         if not isinstance(plugins_config, dict):
             raise MiddlewareError(
@@ -83,6 +83,7 @@ class PluginManager:
             self._config_base_dir = Path(config_base_dir.strip())
         else:
             self._config_base_dir = Path.cwd()
+        self._runtime_manager = runtime_manager or PluginRuntimeManager()
 
     def resolve_active_plugins(
         self,
@@ -126,7 +127,7 @@ class PluginManager:
                 resolved=resolved,
                 config_base_dir=self._config_base_dir,
             )
-            runtime = create_plugin_runtime(spec)
+            runtime = self._runtime_manager.acquire(spec)
             active.append(
                 ActivePlugin(
                     name=plugin_name,
@@ -140,11 +141,11 @@ class PluginManager:
         return active
 
     def shutdown_active_plugins(self, active_plugins: Iterable[ActivePlugin]) -> None:
-        for active in reversed(list(active_plugins)):
-            try:
-                active.runtime.shutdown()
-            except Exception:
-                continue
+        del active_plugins
+        return
+
+    def shutdown(self) -> None:
+        self._runtime_manager.shutdown()
 
     def _apply_action_controls(
         self,
@@ -159,31 +160,24 @@ class PluginManager:
 
         can_patch = bool(active.capabilities.get("can_patch", False))
         can_block = bool(active.capabilities.get("can_block", False))
-        can_defer = bool(active.capabilities.get("can_defer", False))
 
         if effective_action == HOOK_ACTION_MODIFY and not can_patch:
             effective_action = HOOK_ACTION_WARN
         elif effective_action == HOOK_ACTION_BLOCK and not can_block:
             effective_action = HOOK_ACTION_WARN
-        elif effective_action == HOOK_ACTION_DEFER and not can_defer:
-            effective_action = HOOK_ACTION_WARN
 
         if isinstance(connector_capabilities, dict):
             connector_can_patch = bool(connector_capabilities.get("can_patch", True))
             connector_can_block = bool(connector_capabilities.get("can_block", True))
-            connector_can_defer = bool(connector_capabilities.get("can_defer", True))
 
             if effective_action == HOOK_ACTION_MODIFY and not connector_can_patch:
                 effective_action = HOOK_ACTION_WARN
             elif effective_action == HOOK_ACTION_BLOCK and not connector_can_block:
                 effective_action = HOOK_ACTION_WARN
-            elif effective_action == HOOK_ACTION_DEFER and not connector_can_defer:
-                effective_action = HOOK_ACTION_WARN
 
         if active.mode == MODE_OBSERVE and effective_action in {
             HOOK_ACTION_MODIFY,
             HOOK_ACTION_BLOCK,
-            HOOK_ACTION_DEFER,
         }:
             effective_action = HOOK_ACTION_WARN
         elif active.mode == MODE_ASSIST and effective_action == HOOK_ACTION_BLOCK:

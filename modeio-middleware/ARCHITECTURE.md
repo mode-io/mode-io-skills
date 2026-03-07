@@ -32,9 +32,11 @@ modeio-middleware/
         common.py
         opencode.py
         claude.py
+    http_transport.py
     connectors/
       base.py
       claude_hooks.py
+      openai_http.py
     core/
       config_resolver.py
       contracts.py
@@ -46,7 +48,6 @@ modeio-middleware/
       plugin_manager.py
       profiles.py
       services/
-        defer_queue.py
         telemetry.py
     protocol/
       versions.py
@@ -60,6 +61,7 @@ modeio-middleware/
     runtime/
       base.py
       legacy_inprocess.py
+      manager.py
       stdio_jsonrpc.py
       supervisor.py
     plugins/
@@ -84,10 +86,11 @@ modeio-middleware/
 2. Core validates request and parses `modeio` metadata
 3. Config resolver computes final plugin config (defaults + preset + profile override + request override)
 4. Registry resolves runtime spec (mode, capabilities, transport)
-5. Plugin manager runs pre-request hooks through runtime adapters
-6. Core forwards request to upstream provider
+5. Runtime manager resolves or reuses pooled plugin runtimes
+6. Plugin manager runs pre-request hooks through runtime adapters
 7. Plugin manager runs post-response/stream hooks through runtime adapters
-8. Gateway returns provider-compatible JSON + middleware headers
+8. Core forwards request to upstream provider with `httpx`
+9. Gateway returns provider-compatible JSON + middleware headers through ASGI transport
 
 Claude hook connector flow:
 
@@ -101,13 +104,15 @@ Claude hook connector flow:
 
 - `plugins/base.py` defines plugin contract
 - Plugins can return dict payloads or typed `HookDecision`
-- Plugins can `allow`, `modify`, `warn`, `defer`, or `block`
-- In-process plugins run via `runtime/legacy_inprocess.py`
-- External plugins run via `runtime/stdio_jsonrpc.py` using MPP v1
+- Plugins can `allow`, `modify`, `warn`, or `block`
+- `runtime/legacy_inprocess.py` is internal-only for bundled plugins and tests
+- Public external plugins run via `runtime/stdio_jsonrpc.py` using MPP v1
 - Core does not hardcode plugin-specific policy decisions
 - Presets are registry-driven when provided (`config/presets/*.json`)
 - Runtime shared services are injected via `hook_input["services"]`
 - Mode controls (`observe`, `assist`, `enforce`) keep external plugins non-intrusive by default
+- Gateway transport is ASGI-based and upstream traffic flows through `core/upstream_client.py`
+- Streaming policy operates on full SSE events instead of single `data:` lines
 
 ## Compatibility and safety
 

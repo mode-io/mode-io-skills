@@ -69,6 +69,9 @@ class JsonRpcStdioSupervisor:
         if code is not None:
             raise RuntimeError(f"stdio plugin process exited with code {code}")
 
+    def is_alive(self) -> bool:
+        return self._process.poll() is None
+
     def _next_request_id(self) -> int:
         value = self._next_id
         self._next_id += 1

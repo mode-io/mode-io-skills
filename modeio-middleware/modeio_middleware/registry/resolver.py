@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -33,6 +34,38 @@ class PluginRuntimeSpec:
     timeout_ms: Dict[str, int]
     hook_config: Dict[str, Any]
     supported_hooks: List[str]
+
+    def runtime_cache_key(self) -> tuple[str, ...]:
+        manifest_key: Dict[str, Any] = {}
+        if self.manifest is not None:
+            manifest_key = {
+                "source_path": self.manifest.source_path,
+                "name": self.manifest.name,
+                "version": self.manifest.version,
+                "protocol_version": self.manifest.protocol_version,
+                "transport": self.manifest.transport,
+                "hooks": list(self.manifest.hooks),
+                "capabilities": dict(self.manifest.capabilities),
+                "timeout_ms": dict(self.manifest.timeout_ms),
+            }
+
+        fingerprint = {
+            "runtime": self.runtime,
+            "name": self.name,
+            "mode": self.mode,
+            "module_path": self.module_path or "",
+            "command": list(self.command),
+            "manifest": manifest_key,
+            "capabilities": dict(self.capabilities),
+            "timeout_ms": dict(self.timeout_ms),
+            "hook_config": dict(self.hook_config),
+            "supported_hooks": list(self.supported_hooks),
+        }
+        return (
+            self.runtime,
+            self.name,
+            json.dumps(fingerprint, sort_keys=True, separators=(",", ":"), ensure_ascii=True),
+        )
 
 
 def _normalize_mode(raw: Any, *, runtime: str) -> str:
@@ -99,7 +132,6 @@ def _resolve_capabilities(
         return {
             "can_patch": True,
             "can_block": True,
-            "can_defer": True,
         }
 
     if not isinstance(grant_raw, dict):
@@ -109,7 +141,6 @@ def _resolve_capabilities(
     capabilities = {
         "can_patch": bool(manifest_caps.get("can_patch", False)) and bool(grant_raw.get("can_patch", False)),
         "can_block": bool(manifest_caps.get("can_block", False)) and bool(grant_raw.get("can_block", False)),
-        "can_defer": bool(manifest_caps.get("can_defer", False)) and bool(grant_raw.get("can_defer", False)),
     }
     return capabilities
 
