@@ -199,7 +199,6 @@ def _write_stdio_plugin(repo_root: Path, module_name: str, class_name: str, forc
         "capabilities": {
             "can_patch": False,
             "can_block": False,
-            "can_defer": False,
             "needs_network": False,
             "needs_raw_body": False,
         },
@@ -225,8 +224,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--runtime",
         choices=["legacy_inprocess", "stdio_jsonrpc"],
-        default="legacy_inprocess",
-        help="Plugin runtime scaffold type",
+        default="stdio_jsonrpc",
+        help="Plugin runtime scaffold type (`legacy_inprocess` is internal-only for bundled plugins)",
     )
     parser.add_argument("--force", action="store_true", help="Overwrite existing files")
     args = parser.parse_args(argv)

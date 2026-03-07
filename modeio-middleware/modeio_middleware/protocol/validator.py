@@ -20,7 +20,7 @@ def normalize_protocol_decision_payload(raw: Any) -> Dict[str, Any]:
         payload["action"] = action
         return payload
 
-    if action in {"allow", "warn", "modify", "defer", "block"}:
+    if action in {"allow", "warn", "modify", "block"}:
         payload["action"] = action
         return payload
 

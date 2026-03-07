@@ -13,7 +13,6 @@
   "capabilities": {
     "can_patch": true,
     "can_block": true,
-    "can_defer": true,
     "needs_network": false,
     "needs_raw_body": false
   },

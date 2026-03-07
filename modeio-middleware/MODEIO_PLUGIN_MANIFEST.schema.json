@@ -54,9 +54,6 @@
         "can_block": {
           "type": "boolean"
         },
-        "can_defer": {
-          "type": "boolean"
-        },
         "needs_network": {
           "type": "boolean"
         },
