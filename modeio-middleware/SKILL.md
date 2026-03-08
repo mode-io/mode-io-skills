@@ -152,7 +152,7 @@ python modeio-middleware/scripts/run_plugin_conformance.py /path/to/manifest.jso
 ## When not to use
 
 - PII anonymization or de-anonymization (`modeio-redact`)
-- Command safety analysis or skill repo scanning (`modeio-guardrail`)
+- Command safety analysis (`modeio-guardrail`) or pre-install repository auditing (`modeio-skill-audit`)
 - Direct upstream API calls without local policy control
 
 ## Resources

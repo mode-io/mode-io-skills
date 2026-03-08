@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT_PATH = REPO_ROOT / "modeio-guardrail" / "scripts" / "skill_safety_assessment.py"
+SCRIPT_PATH = REPO_ROOT / "modeio-skill-audit" / "scripts" / "skill_safety_assessment.py"
 
 
 class TestSkillSafetyAssessmentV2(unittest.TestCase):
@@ -78,9 +78,15 @@ class TestSkillSafetyAssessmentV2(unittest.TestCase):
                 "findings",
             ):
                 self.assertIn(key, payload)
+            self.assertEqual(payload["tool"], "modeio-skill-audit")
 
             for run_key in ("run_id", "engine_version", "policy_version", "generated_at_utc", "commit_sha"):
                 self.assertIn(run_key, payload["run"])
+
+    def test_help_runs(self):
+        result = self._run_cli(["--help"])
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("Skill Safety Assessment v2 utilities", result.stdout)
 
     def test_evidence_ids_stable_for_same_repo(self):
         with tempfile.TemporaryDirectory() as tmpdir:

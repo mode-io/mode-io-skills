@@ -151,6 +151,33 @@ def _smoke_status(python_executable: str) -> List[Dict[str, Any]]:
         }
     )
 
+    skill_audit_command = [
+        python_executable,
+        "modeio-skill-audit/scripts/skill_safety_assessment.py",
+        "evaluate",
+        "--target-repo",
+        "modeio-skill-audit",
+        "--json",
+    ]
+    skill_audit_result = _run(skill_audit_command, cwd=root)
+    skill_audit_ok = False
+    skill_audit_message = skill_audit_result.stderr.strip()
+    if skill_audit_result.returncode == 0:
+        try:
+            payload = json.loads(skill_audit_result.stdout)
+            skill_audit_ok = payload.get("tool") == "modeio-skill-audit"
+            skill_audit_message = "deterministic audit ok" if skill_audit_ok else "unexpected JSON payload"
+        except ValueError:
+            skill_audit_message = "invalid JSON output"
+    checks.append(
+        {
+            "name": "modeio-skill-audit evaluate smoke",
+            "ok": skill_audit_ok,
+            "command": _format_command(skill_audit_command),
+            "message": skill_audit_message,
+        }
+    )
+
     middleware_command = [
         python_executable,
         "modeio-middleware/scripts/setup_middleware_gateway.py",
