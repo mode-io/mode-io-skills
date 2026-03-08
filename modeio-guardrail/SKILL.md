@@ -76,9 +76,9 @@ If the check fails with network/API/dependency issues, do not silently proceed.
 
 ## When not to use
 
-- Pre-install repository or skill auditing. Use `modeio-skill-audit`.
-- PII anonymization or de-anonymization. Use `modeio-redact`.
-- Local request routing or policy middleware. Use `modeio-middleware`.
+- Pre-install or repository-level inspection that should happen before any execution attempt
+- Data transformation tasks that need to rewrite or mask content rather than score runtime safety
+- Local routing or middleware scenarios where you need to sit in front of upstream model traffic
 
 ## Resources
 

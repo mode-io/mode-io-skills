@@ -27,7 +27,7 @@ Two workflows are supported:
 
 ### `modeio-middleware-gateway`
 
-Start the packaged gateway with the bundled default config:
+Start the packaged gateway with the bundled default config. It ships with no active plugins enabled:
 
 ```bash
 modeio-middleware-gateway \
@@ -113,8 +113,8 @@ Claude Code support is hook-based (`/connectors/claude/hooks`). The live smoke m
 
 ## Behavior notes
 
-- Plugin chain is config-driven; the bundled `redact` plugin is disabled by default.
-- The bundled `redact` plugin is intentionally lightweight and self-contained; it does not depend on the separate `modeio-redact` package.
+- Plugin chain is config-driven; the bundled default config starts with no active plugins.
+- A disabled `external_policy_example` stdio plugin is shipped as a scaffold/reference, not as an active policy default.
 - Missing `runtime` now defaults to:
   - `legacy_inprocess` when a bundled `module` is configured
   - `stdio_jsonrpc` for external plugin-style configs
@@ -141,9 +141,9 @@ Claude Code support is hook-based (`/connectors/claude/hooks`). The live smoke m
 
 ## When not to use
 
-- PII anonymization or de-anonymization (`modeio-redact`)
-- Command safety analysis (`modeio-guardrail`) or pre-install repository auditing (`modeio-skill-audit`)
-- Direct upstream API calls without local policy control
+- One-off model calls that do not need local policy routing, hooks, or audit headers
+- Standalone analysis tasks where you do not actually want to run a gateway process in front of an upstream
+- Direct upstream API calls where local interception would only add overhead
 
 ## Resources
 

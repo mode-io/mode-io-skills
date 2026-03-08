@@ -371,7 +371,7 @@ python modeio-middleware/scripts/smoke_agent_matrix.py \
   --model "openai/gpt-5.3-codex"
 ```
 
-> The gateway intercepts every request/response, runs plugin hooks (redact, guardrail, custom), and produces `x-modeio-*` headers for audit trail. Tap-proxy logs prove upstream traversal.
+> The gateway intercepts every request/response, runs configured policy plugins, and produces `x-modeio-*` headers for audit trail. Tap-proxy logs prove upstream traversal.
 
 ---
 
