@@ -2,16 +2,17 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-PACKAGE_ROOT = SCRIPT_DIR.parent
-if str(PACKAGE_ROOT) not in sys.path:
-    sys.path.insert(0, str(PACKAGE_ROOT))
 
-from modeio_guardrail.cli import skill_safety_assessment as _impl
+def main() -> int:
+    message = (
+        "modeio-guardrail no longer provides repository scanning.\n"
+        "Use modeio-skill-audit instead:\n"
+        "  python modeio-skill-audit/scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --json\n"
+    )
+    sys.stderr.write(message)
+    return 2
+
 
 if __name__ == "__main__":
-    raise SystemExit(_impl.main())
-
-sys.modules[__name__] = _impl
+    raise SystemExit(main())

@@ -7,13 +7,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PACKAGE_ROOT = REPO_ROOT / "modeio-guardrail"
+PACKAGE_ROOT = REPO_ROOT / "modeio-skill-audit"
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
-from modeio_guardrail.skill_safety.engine import scan_repository
-from modeio_guardrail.skill_safety.repo_intel import github_repo_slug_from_remote
-from modeio_guardrail.skill_safety import repo_intel
+from modeio_skill_audit.skill_safety.engine import scan_repository
+from modeio_skill_audit.skill_safety.repo_intel import github_repo_slug_from_remote
+from modeio_skill_audit.skill_safety import repo_intel
 
 
 class TestSkillSafetyPrecheck(unittest.TestCase):
@@ -55,7 +55,7 @@ class TestSkillSafetyPrecheck(unittest.TestCase):
             }
 
             with patch(
-                "modeio_guardrail.skill_safety.engine.run_github_osint_precheck",
+                "modeio_skill_audit.skill_safety.engine.run_github_osint_precheck",
                 return_value=precheck_payload,
             ):
                 payload = scan_repository(repo)
@@ -85,7 +85,7 @@ class TestSkillSafetyPrecheck(unittest.TestCase):
             }
 
             with patch(
-                "modeio_guardrail.skill_safety.engine.run_github_osint_precheck",
+                "modeio_skill_audit.skill_safety.engine.run_github_osint_precheck",
                 return_value=precheck_payload,
             ):
                 payload = scan_repository(repo)

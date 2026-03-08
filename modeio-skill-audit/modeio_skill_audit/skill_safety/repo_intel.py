@@ -47,7 +47,7 @@ HIGH_RISK_TEXT_RULES: Sequence[Tuple[re.Pattern[str], str]] = [
 def _github_headers(accept: str) -> Dict[str, str]:
     headers = {
         "Accept": accept,
-        "User-Agent": "modeio-guardrail-skill-safety",
+        "User-Agent": "modeio-skill-audit-skill-safety",
         "X-GitHub-Api-Version": "2022-11-28",
     }
     token = os.environ.get("GITHUB_TOKEN", "").strip()

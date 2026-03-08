@@ -71,7 +71,7 @@ def _metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run skill safety benchmark against a repo-set JSON manifest.")
+    parser = argparse.ArgumentParser(description="Run modeio-skill-audit benchmark against a repo-set JSON manifest.")
     parser.add_argument("--repo-set", required=True, help="Path to repo set JSON file.")
     parser.add_argument("--repos-root", required=True, help="Root directory containing cloned repos as owner__repo.")
     parser.add_argument(

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Sequence, Tuple
 
-TOOL_NAME = "modeio-guardrail"
+TOOL_NAME = "modeio-skill-audit"
 SCAN_VERSION = "skill-safety-assessment-v2"
 ENGINE_VERSION = "ssa-engine-2.0.0"
 POLICY_VERSION = "ssa-policy-2026.03"

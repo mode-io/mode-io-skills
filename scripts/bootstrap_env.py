@@ -132,6 +132,7 @@ def bootstrap_environment(
             activation_command(venv_dir),
             f"{shlex.quote(str(venv_python))} scripts/doctor_env.py",
             "make smoke-redact-lite",
+            "make skill-audit-tests",
         ],
     }
 

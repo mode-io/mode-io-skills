@@ -1,4 +1,4 @@
-.PHONY: bootstrap doctor setup-tests smoke-redact-lite guardrail-tests redact-tests middleware-gateway-setup middleware-gateway-uninstall middleware-gateway-tests
+.PHONY: bootstrap doctor setup-tests smoke-redact-lite guardrail-tests skill-audit-tests redact-tests middleware-gateway-setup middleware-gateway-uninstall middleware-gateway-tests
 
 PYTHON ?= python3
 
@@ -16,6 +16,10 @@ smoke-redact-lite:
 
 guardrail-tests:
 	$(PYTHON) -m unittest modeio-guardrail.tests.test_safety_contract
+	$(PYTHON) -m unittest modeio-guardrail.tests.test_repo_scan_deprecation
+
+skill-audit-tests:
+	$(PYTHON) -m unittest discover modeio-skill-audit/tests -p "test_*.py"
 
 redact-tests:
 	$(PYTHON) -m unittest discover modeio-redact/tests -p "test_*.py"

@@ -25,17 +25,19 @@
 
 **Mode IO.AI** is your **dynamic privacy and compliance protector**. We provide privacy, safety, and policy routing capabilities for HIPAA, GDPR, PIPL, and similar compliance scenarios — helping you safely anonymize and redact personally identifiable information (PII), gate risky operations, and route AI requests through local policy controls.
 
-This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, Cursor, and other AI environments. Three skills cover the core surface:
+This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, Cursor, and other AI environments. Four skills cover the core surface:
 
 - **`modeio-redact`** — PII anonymization and de-anonymization for text, files, and cross-border compliance.
-- **`modeio-guardrail`** — Real-time instruction safety checks and pre-install skill repo scanning.
+- **`modeio-guardrail`** — Real-time instruction safety checks for risky operations.
+- **`modeio-skill-audit`** — Deterministic pre-install repository safety audit for skills and plugins.
 - **`modeio-middleware`** — Local OpenAI-compatible policy gateway with plugin hooks for Codex, OpenCode, OpenClaw, and Claude Code.
 
 Through standardized skill descriptions and scripts, AI assistants can run local regex masking (`lite`) or call Modeio APIs (`dynamic`/`strict`/`crossborder`) whenever anonymization, redaction, PII removal, safety checks, or policy routing are needed.
 
 > [!NOTE]
-> `modeio-redact` `lite` runs fully local regex masking with no network call. Other anonymization levels (`dynamic`/`strict`/`crossborder`) and all safety checks perform real API requests (no caching) for auditable and traceable output.
+> `modeio-redact` `lite` runs fully local regex masking with no network call. Other anonymization levels (`dynamic`/`strict`/`crossborder`) and live guardrail safety checks perform real API requests (no caching) for auditable and traceable output.
 > For `crossborder`, you must provide explicit `--sender-code` and `--recipient-code` each run.
+> `modeio-skill-audit` is deterministic static analysis; its GitHub OSINT precheck may call GitHub APIs when the target repo has a GitHub origin.
 > `modeio-middleware` runs a local gateway process — no external service dependency for request routing.
 
 ## ✨ Why teams like this
@@ -315,6 +317,24 @@ is_reversible: true
 
 ---
 
+### Skill audit — pre-install repository scan
+
+> *A team wants to screen a third-party skill repository before installation and keep the review evidence-linked and repeatable.*
+
+```bash
+python modeio-skill-audit/scripts/skill_safety_assessment.py evaluate --target-repo /path/to/skill-repo --json > /tmp/skill_scan.json
+python modeio-skill-audit/scripts/skill_safety_assessment.py prompt --target-repo /path/to/skill-repo --scan-file /tmp/skill_scan.json --include-full-findings
+python modeio-skill-audit/scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
+```
+
+```text
+decision: caution
+risk_score: 42
+required_highlight_evidence_ids: [E-4AB12F390C, E-7D3110EF92]
+```
+
+---
+
 ### Middleware gateway — local policy routing
 
 > *A team wants every LLM request/response from Codex and OpenCode to pass through local policy hooks before hitting the upstream provider.*
@@ -361,15 +381,19 @@ python modeio-middleware/scripts/smoke_agent_matrix.py \
 
 > Trigger phrases: *"anonymize", "redact PII", "mask sensitive data", "scrub credentials", "detect personal data"*
 
-**`modeio-guardrail`** — Evaluates instructions for destructive operations, prompt injection, irreversible actions, and compliance violations. Also supports pre-install Skill Safety Assessment for third-party skill repos (static analysis, no execution).
+**`modeio-guardrail`** — Evaluates instructions for destructive operations, prompt injection, irreversible actions, and compliance violations at execution time.
 
-> Trigger phrases: *"safety check", "risk assessment", "security audit", "destructive check", "instruction audit", "skill safety assessment", "scan this skill repo", "is this skill dangerous"*
+> Trigger phrases: *"safety check", "risk assessment", "security audit", "destructive check", "instruction audit"*
+
+**`modeio-skill-audit`** — Runs a deterministic static safety audit for a third-party skill or plugin repository before install or execution.
+
+> Trigger phrases: *"scan this skill repo", "is this repo safe to install", "run a skill safety assessment", "audit this plugin repository"*
 
 **`modeio-middleware`** — Runs a local OpenAI-compatible policy gateway for Codex, OpenCode, OpenClaw, and Claude Code. Supports plugin-driven pre-request and post-response hooks, streaming pass-through, and tap-proxy evidence for audit.
 
 > Trigger phrases: *"middleware gateway", "route through local proxy", "pre request hook", "post response hook", "OpenCode baseURL middleware", "Codex OPENAI_BASE_URL", "Claude hooks connector"*
 
-Skill Safety Assessment contract: [`modeio-guardrail/prompts/static_repo_scan.md`](modeio-guardrail/prompts/static_repo_scan.md)
+Skill audit contract: [`modeio-skill-audit/references/prompt-contract.md`](modeio-skill-audit/references/prompt-contract.md)
 
 ## 🔬 Anonymization Levels
 
@@ -432,6 +456,13 @@ or
 
 ```text
 Install this skill:
+https://github.com/mode-io/mode-io-skills/tree/main/modeio-skill-audit
+```
+
+or
+
+```text
+Install this skill:
 https://github.com/mode-io/mode-io-skills/tree/main/modeio-middleware
 ```
 
@@ -442,6 +473,7 @@ For CLI installs below, add `-g` for global (user-level) install.
 ```bash
 npx skills add mode-io/mode-io-skills --skill modeio-redact --agent claude-code --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent claude-code --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-skill-audit --agent claude-code --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent claude-code --yes --copy
 ```
 
@@ -450,6 +482,7 @@ npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent claude-c
 ```bash
 npx skills add mode-io/mode-io-skills --skill modeio-redact --agent codex --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent codex --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-skill-audit --agent codex --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent codex --yes --copy
 ```
 
@@ -458,6 +491,7 @@ npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent codex --
 ```bash
 npx skills add mode-io/mode-io-skills --skill modeio-redact --agent opencode --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent opencode --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-skill-audit --agent opencode --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent opencode --yes --copy
 ```
 
@@ -466,6 +500,7 @@ npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent opencode
 ```bash
 npx skills add mode-io/mode-io-skills --skill modeio-redact --agent cursor --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent cursor --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-skill-audit --agent cursor --yes --copy
 npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent cursor --yes --copy
 ```
 
@@ -616,23 +651,23 @@ python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com" --l
 python modeio-guardrail/scripts/safety.py -i "Delete all log files"
 python modeio-guardrail/scripts/safety.py -i "Modify database permissions" -c '{"environment":"production","operation_intent":"permission-change","scope":"single-resource","data_sensitivity":"regulated","rollback":"partial","change_control":"ticket:SEC-118"}' -t "/var/lib/mysql" --json
 
-# Skill Safety Assessment (v2 layered evaluator)
-python modeio-guardrail/scripts/skill_safety_assessment.py evaluate --target-repo /path/to/skill-repo --json > /tmp/skill_scan.json
-python modeio-guardrail/scripts/skill_safety_assessment.py evaluate --target-repo /path/to/skill-repo --context-profile '{"environment":"ci","execution_mode":"build-test","risk_tolerance":"balanced","data_sensitivity":"internal"}' --json > /tmp/skill_scan.json
+# Skill audit (v2 layered evaluator)
+python modeio-skill-audit/scripts/skill_safety_assessment.py evaluate --target-repo /path/to/skill-repo --json > /tmp/skill_scan.json
+python modeio-skill-audit/scripts/skill_safety_assessment.py evaluate --target-repo /path/to/skill-repo --context-profile '{"environment":"ci","execution_mode":"build-test","risk_tolerance":"balanced","data_sensitivity":"internal"}' --json > /tmp/skill_scan.json
 
 # (compat) legacy alias still supported
-python modeio-guardrail/scripts/skill_safety_assessment.py scan --target-repo /path/to/skill-repo --json > /tmp/skill_scan.json
+python modeio-skill-audit/scripts/skill_safety_assessment.py scan --target-repo /path/to/skill-repo --json > /tmp/skill_scan.json
 
 # Build prompt payload for model analysis
-python modeio-guardrail/scripts/skill_safety_assessment.py prompt --target-repo /path/to/skill-repo --scan-file /tmp/skill_scan.json
+python modeio-skill-audit/scripts/skill_safety_assessment.py prompt --target-repo /path/to/skill-repo --scan-file /tmp/skill_scan.json
 
 # Validate model output against evidence references and score/decision consistency
-python modeio-guardrail/scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
-python modeio-guardrail/scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --target-repo /path/to/skill-repo --rescan-on-validate --json
+python modeio-skill-audit/scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
+python modeio-skill-audit/scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --target-repo /path/to/skill-repo --rescan-on-validate --json
 
 # Context-aware adjudication bridge (LLM interprets context; engine keeps deterministic decision)
-python modeio-guardrail/scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json > /tmp/adjudication_prompt.md
-python modeio-guardrail/scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json --assessment-file /tmp/adjudication.json --json
+python modeio-skill-audit/scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json > /tmp/adjudication_prompt.md
+python modeio-skill-audit/scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json --assessment-file /tmp/adjudication.json --json
 
 # Generic middleware gateway (Codex/OpenCode/Claude)
 python modeio-middleware/scripts/setup_middleware_gateway.py --health-check
@@ -655,6 +690,9 @@ python modeio-middleware/scripts/middleware_gateway.py \
 
 # Run middleware contract and plugin tests
 python -m unittest discover modeio-middleware/tests -p "test_*.py"
+
+# Run skill audit test suite
+python -m unittest discover modeio-skill-audit/tests -p "test_*.py"
 
 # Run redact test suite (focused anonymize/deanonymize and file workflows)
 python -m unittest discover modeio-redact/tests -p "test_*.py"
@@ -681,7 +719,7 @@ python modeio-redact/scripts/detect_local.py --input "Email: alice@example.com" 
 > File output JSON includes `applyReport`, `verificationReport`, and `assurancePolicy` for coverage + verification visibility.
 > `deanonymize.py` always continues on hash mismatch and emits an `input_hash_mismatch` warning.
 
-For full details, see [modeio-redact/SKILL.md](modeio-redact/SKILL.md), [modeio-guardrail/SKILL.md](modeio-guardrail/SKILL.md), and [modeio-middleware/SKILL.md](modeio-middleware/SKILL.md).
+For full details, see [modeio-redact/SKILL.md](modeio-redact/SKILL.md), [modeio-guardrail/SKILL.md](modeio-guardrail/SKILL.md), [modeio-skill-audit/SKILL.md](modeio-skill-audit/SKILL.md), and [modeio-middleware/SKILL.md](modeio-middleware/SKILL.md).
 
 ## 🔗 Links
 

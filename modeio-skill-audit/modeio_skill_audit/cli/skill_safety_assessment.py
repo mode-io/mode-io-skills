@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-modeio-guardrail Skill Safety Assessment (v2).
+modeio-skill-audit Skill Safety Assessment (v2).
 
 Thin CLI wrapper over modular skill_safety engine/validation utilities.
 """
@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from modeio_guardrail.skill_safety import (
+from modeio_skill_audit.skill_safety import (
     ContextProfile,
     build_adjudication_prompt,
     build_prompt_payload as _build_prompt_payload,

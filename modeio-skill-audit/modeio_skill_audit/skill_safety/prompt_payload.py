@@ -34,7 +34,7 @@ def build_prompt_payload(
 
     lines: list[str] = []
     lines.append("Skill Safety Assessment prompt input")
-    lines.append("Use contract: modeio-guardrail/prompts/static_repo_scan.md")
+    lines.append("Use contract: modeio-skill-audit/references/prompt-contract.md")
     lines.append("")
     lines.append("SCRIPT_SCAN_HIGHLIGHTS")
     if highlights:

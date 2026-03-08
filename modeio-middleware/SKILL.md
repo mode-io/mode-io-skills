@@ -139,6 +139,12 @@ Claude Code support is hook-based (`/connectors/claude/hooks`). The live smoke m
   - `x-modeio-streaming: true`
 - Middleware-generated failures use structured `modeio_error` payloads with stable error codes and `request_id`.
 
+## When not to use
+
+- PII anonymization or de-anonymization (`modeio-redact`)
+- Command safety analysis (`modeio-guardrail`) or pre-install repository auditing (`modeio-skill-audit`)
+- Direct upstream API calls without local policy control
+
 ## Resources
 
 - `QUICKSTART.md` — installed-first quickstart and repo maintainer notes
