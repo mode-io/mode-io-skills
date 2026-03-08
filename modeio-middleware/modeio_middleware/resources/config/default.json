@@ -3,28 +3,18 @@
   "profiles": {
     "dev": {
       "on_plugin_error": "fail_open",
-      "plugins": [
-        "redact"
-      ]
+      "plugins": []
     },
     "staging": {
       "on_plugin_error": "warn",
-      "plugins": [
-        "redact"
-      ]
+      "plugins": []
     },
     "prod": {
       "on_plugin_error": "fail_safe",
-      "plugins": [
-        "redact"
-      ]
+      "plugins": []
     }
   },
   "plugins": {
-    "redact": {
-      "enabled": false,
-      "module": "modeio_middleware.plugins.redact"
-    },
     "external_policy_example": {
       "enabled": false,
       "runtime": "stdio_jsonrpc",

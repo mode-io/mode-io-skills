@@ -25,7 +25,7 @@ python scripts/doctor_env.py
 
 ## 2) Start the gateway
 
-The installed entry point now ships with a bundled default config.
+The installed entry point now ships with a bundled default config that starts with no active plugins.
 
 ```bash
 export MODEIO_GATEWAY_UPSTREAM_API_KEY="<your-upstream-key>"
@@ -146,7 +146,7 @@ modeio-middleware-plugin-conformance \
   python3 ./plugins_external/my_policy/plugin.py
 ```
 
-The bundled default config also ships with a disabled example plugin. Its manifest and script paths are resolved relative to the config file, so if you copy the config elsewhere you should update those relative paths.
+The bundled default config also ships with a disabled external example plugin. Its manifest and script paths are resolved relative to the config file, so if you copy the config elsewhere you should update those relative paths.
 
 ## 7) Custom config
 

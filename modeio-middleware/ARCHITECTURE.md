@@ -129,7 +129,7 @@ Claude hook connector flow:
 - Core does not hardcode plugin-specific policy decisions
 - Presets are registry-driven when provided (`config/presets/*.json`)
 - Runtime shared services are injected via `hook_input["services"]`
-- The bundled `redact` plugin uses a lightweight local detector that lives inside `modeio-middleware`; it is not coupled to the separate `modeio-redact` package.
+- Packaged defaults start with no active policy plugins; the shipped example lives under `plugins_external/example/` and stays disabled until explicitly enabled.
 - Mode controls (`observe`, `assist`, `enforce`) keep external plugins non-intrusive by default
 - Packaged defaults live under `modeio_middleware/resources/` so the installed gateway works without repo layout assumptions
 - Relative `manifest` paths and local-file `command` arguments are resolved relative to the config file

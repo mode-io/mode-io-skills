@@ -25,7 +25,7 @@
 
 **Mode IO.AI** is your **dynamic privacy and compliance protector**. We provide privacy, safety, and policy routing capabilities for HIPAA, GDPR, PIPL, and similar compliance scenarios — helping you safely anonymize and redact personally identifiable information (PII), gate risky operations, and route AI requests through local policy controls.
 
-This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, Cursor, and other AI environments. Four skills cover the core surface:
+This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, and other AI environments. Four skills cover the core surface:
 
 - **`modeio-redact`** — PII anonymization and de-anonymization for text, files, and cross-border compliance.
 - **`modeio-guardrail`** — Real-time instruction safety checks for risky operations.
@@ -45,7 +45,7 @@ Through standardized skill descriptions and scripts, AI assistants can run local
 - **Fast onboarding** — install only the skill you need
 - **Flexible execution** — use local regex masking for `lite`, live API checks for higher-assurance analysis, or local gateway for policy routing
 - **Policy in front of every request** — middleware gateway intercepts LLM traffic for audit, redaction, and custom hooks
-- **Multi-agent friendly** — works across Claude Code, Codex CLI, OpenClaw, OpenCode, and Cursor
+- **Multi-agent friendly** — works across Claude Code, Codex CLI, OpenClaw, and OpenCode
 
 # 👀 See It In Action
 
@@ -371,7 +371,7 @@ python modeio-middleware/scripts/smoke_agent_matrix.py \
   --model "openai/gpt-5.3-codex"
 ```
 
-> The gateway intercepts every request/response, runs plugin hooks (redact, guardrail, custom), and produces `x-modeio-*` headers for audit trail. Tap-proxy logs prove upstream traversal.
+> The gateway intercepts every request/response, runs configured policy plugins, and produces `x-modeio-*` headers for audit trail. Tap-proxy logs prove upstream traversal.
 
 ---
 
@@ -495,14 +495,9 @@ npx skills add mode-io/mode-io-skills --skill modeio-skill-audit --agent opencod
 npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent opencode --yes --copy
 ```
 
-## 5) Install for Cursor
+## 5) Cursor Support
 
-```bash
-npx skills add mode-io/mode-io-skills --skill modeio-redact --agent cursor --yes --copy
-npx skills add mode-io/mode-io-skills --skill modeio-guardrail --agent cursor --yes --copy
-npx skills add mode-io/mode-io-skills --skill modeio-skill-audit --agent cursor --yes --copy
-npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent cursor --yes --copy
-```
+Cursor is not currently supported in this repo, so there is no Cursor installation guide here.
 
 ## 6) Bootstrap the local runtime (recommended for repo use) 📦
 

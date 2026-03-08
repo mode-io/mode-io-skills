@@ -28,6 +28,9 @@ class TestPackagingResources(unittest.TestCase):
         repo_payload = json.loads((PACKAGE_ROOT / "config" / "default.json").read_text(encoding="utf-8"))
         bundled_payload = json.loads(bundled_default_config_path().read_text(encoding="utf-8"))
         self.assertEqual(repo_payload, bundled_payload)
+        self.assertNotIn("redact", repo_payload["plugins"])
+        self.assertIn("external_policy_example", repo_payload["plugins"])
+        self.assertTrue(all(profile.get("plugins") == [] for profile in repo_payload["profiles"].values()))
 
     def test_repo_and_bundled_example_manifest_match(self):
         repo_payload = json.loads((PACKAGE_ROOT / "plugins_external" / "example" / "manifest.json").read_text(encoding="utf-8"))

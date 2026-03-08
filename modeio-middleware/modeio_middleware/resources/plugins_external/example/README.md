@@ -14,4 +14,4 @@ Behavior:
 - `pre.request` returns an `annotate` decision with a low-severity finding.
 - Other hooks return `pass`.
 
-This example is intentionally non-intrusive and is safe to keep disabled in the bundled default config.
+This example is intentionally non-intrusive and stays disabled in the bundled default config until you explicitly wire it into a profile.

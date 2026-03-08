@@ -66,9 +66,9 @@ python scripts/run_repo_set.py \
 
 ## When not to use
 
-- Live command or operation safety checks during execution time. Use `modeio-guardrail`.
-- PII anonymization or de-anonymization. Use `modeio-redact`.
-- Local routing or policy middleware. Use `modeio-middleware`.
+- Live execution-time safety checks for commands or operations
+- Content transformation tasks that need to mask, rewrite, or restore sensitive data
+- Local routing or middleware scenarios where requests must flow through a gateway
 
 ## References
 
