@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_DIR = REPO_ROOT / "modeio-middleware"
 sys.path.insert(0, str(PACKAGE_DIR))
 
@@ -126,6 +126,10 @@ class TestSetupGateway(unittest.TestCase):
             setup_gateway._codex_unset_env_command("powershell"),
             "Remove-Item Env:OPENAI_BASE_URL",
         )
+
+    def test_build_start_command_uses_installed_entrypoint(self):
+        command = setup_gateway._build_start_command("http://127.0.0.1:8787/v1")
+        self.assertTrue(command.startswith("modeio-middleware-gateway "))
 
     def test_apply_opencode_base_url_updates_nested_object(self):
         source = {

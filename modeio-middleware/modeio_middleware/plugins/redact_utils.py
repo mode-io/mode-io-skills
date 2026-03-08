@@ -4,13 +4,38 @@ from __future__ import annotations
 
 import copy
 import hashlib
-from typing import Any, Dict, List, Sequence, Tuple
-
-from modeio_redact.detection.detect_local import detect_sensitive_local
+import re
+from dataclasses import dataclass
+from typing import Any, Dict, List, Pattern, Sequence, Tuple
 
 from modeio_middleware.core.contracts import ENDPOINT_CHAT_COMPLETIONS, ENDPOINT_RESPONSES
 
 TEXT_PART_TYPES = {"text", "input_text", "output_text"}
+
+EMAIL_PATTERN = re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b")
+PHONE_PATTERN = re.compile(
+    r"(?<!\d)(?:\+?\d{1,3}[-.\s]?)?(?:\(\d{2,4}\)|\d{2,4})[-.\s]?\d{3,4}[-.\s]?\d{4}(?!\d)"
+)
+SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+IPV4_PATTERN = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+API_KEY_PATTERN = re.compile(r"\b(?:sk|rk|pk)_[A-Za-z0-9]{16,}\b")
+
+
+@dataclass(frozen=True)
+class DetectionCandidate:
+    entity_type: str
+    value: str
+    start: int
+    end: int
+
+
+DETECTION_RULES: Tuple[Tuple[str, Pattern[str]], ...] = (
+    ("email", EMAIL_PATTERN),
+    ("phone", PHONE_PATTERN),
+    ("ssn", SSN_PATTERN),
+    ("ipAddress", IPV4_PATTERN),
+    ("apiKey", API_KEY_PATTERN),
+)
 
 
 def _normalize_entity_type(raw: str) -> str:
@@ -69,6 +94,67 @@ def restore_tokens_deep(value: Any, entries: Sequence[Dict[str, str]]) -> Tuple[
     return value, 0
 
 
+def _iter_detection_candidates(text: str) -> List[DetectionCandidate]:
+    candidates: List[DetectionCandidate] = []
+    for entity_type, pattern in DETECTION_RULES:
+        for match in pattern.finditer(text):
+            value = match.group(0)
+            if entity_type == "ipAddress" and not _is_valid_ipv4(value):
+                continue
+            candidates.append(
+                DetectionCandidate(
+                    entity_type=entity_type,
+                    value=value,
+                    start=match.start(),
+                    end=match.end(),
+                )
+            )
+    return sorted(candidates, key=lambda item: (item.start, -(item.end - item.start), item.entity_type))
+
+
+def _is_valid_ipv4(value: str) -> bool:
+    parts = value.split(".")
+    if len(parts) != 4:
+        return False
+    return all(part.isdigit() and 0 <= int(part) <= 255 for part in parts)
+
+
+def _detect_sensitive_local(text: str) -> Dict[str, Any]:
+    if not text:
+        return {"sanitizedText": text or "", "items": []}
+
+    sanitized_parts: List[str] = []
+    items: List[Dict[str, Any]] = []
+    counters: Dict[str, int] = {}
+    cursor = 0
+
+    for candidate in _iter_detection_candidates(text):
+        if candidate.start < cursor:
+            continue
+
+        sanitized_parts.append(text[cursor : candidate.start])
+        index = counters.get(candidate.entity_type, 0) + 1
+        counters[candidate.entity_type] = index
+        placeholder = f"[{_normalize_entity_type(candidate.entity_type)}_{index}]"
+        sanitized_parts.append(placeholder)
+        items.append(
+            {
+                "type": candidate.entity_type,
+                "value": candidate.value,
+                "maskedValue": placeholder,
+                "startIndex": candidate.start,
+                "endIndex": candidate.end,
+            }
+        )
+        cursor = candidate.end
+
+    sanitized_parts.append(text[cursor:])
+    return {
+        "sanitizedText": "".join(sanitized_parts),
+        "items": items,
+    }
+
+
 def _shield_text(
     text: str,
     *,
@@ -77,7 +163,7 @@ def _shield_text(
     entries: List[Dict[str, str]],
     counters: Dict[str, int],
 ) -> Tuple[str, int]:
-    detection = detect_sensitive_local(text)
+    detection = _detect_sensitive_local(text)
     sanitized = detection.get("sanitizedText", text)
     if not isinstance(sanitized, str):
         raise ValueError("redact plugin detector returned non-string sanitizedText")
@@ -148,48 +234,89 @@ def _shield_content_value(
         total = 0
         updated_list: List[Any] = []
         for part_index, part in enumerate(value):
-            if isinstance(part, dict) and part.get("type") in TEXT_PART_TYPES and isinstance(part.get("text"), str):
-                sanitized, replaced = _shield_text(
-                    part["text"],
-                    request_id=request_id,
-                    entries_by_identity=entries_by_identity,
-                    entries=entries,
-                    counters=counters,
-                )
-                updated_part = dict(part)
-                updated_part["text"] = sanitized
-                updated_list.append(updated_part)
-                total += replaced
-            elif isinstance(part, str):
-                sanitized, replaced = _shield_text(
+            try:
+                updated_part, replaced = _shield_content_node(
                     part,
                     request_id=request_id,
                     entries_by_identity=entries_by_identity,
                     entries=entries,
                     counters=counters,
                 )
-                updated_list.append(sanitized)
-                total += replaced
-            elif isinstance(part, dict):
-                updated_part = dict(part)
-                if isinstance(updated_part.get("input_text"), str):
-                    sanitized, replaced = _shield_text(
-                        updated_part["input_text"],
-                        request_id=request_id,
-                        entries_by_identity=entries_by_identity,
-                        entries=entries,
-                        counters=counters,
-                    )
-                    updated_part["input_text"] = sanitized
-                    total += replaced
-                updated_list.append(updated_part)
-            else:
-                if isinstance(part, (dict, list)):
-                    raise ValueError(f"unsupported content part at index {part_index}")
-                updated_list.append(part)
+            except ValueError as error:
+                raise ValueError(f"unsupported content part at index {part_index}") from error
+            updated_list.append(updated_part)
+            total += replaced
         return updated_list, total
 
     return value, 0
+
+
+def _shield_content_node(
+    value: Any,
+    *,
+    request_id: str,
+    entries_by_identity: Dict[Tuple[str, str], str],
+    entries: List[Dict[str, str]],
+    counters: Dict[str, int],
+) -> Tuple[Any, int]:
+    if isinstance(value, str):
+        return _shield_text(
+            value,
+            request_id=request_id,
+            entries_by_identity=entries_by_identity,
+            entries=entries,
+            counters=counters,
+        )
+
+    if isinstance(value, list):
+        return _shield_content_value(
+            value,
+            request_id=request_id,
+            entries_by_identity=entries_by_identity,
+            entries=entries,
+            counters=counters,
+        )
+
+    if not isinstance(value, dict):
+        return value, 0
+
+    updated_value = dict(value)
+    total = 0
+
+    if updated_value.get("type") in TEXT_PART_TYPES and isinstance(updated_value.get("text"), str):
+        sanitized, replaced = _shield_text(
+            updated_value["text"],
+            request_id=request_id,
+            entries_by_identity=entries_by_identity,
+            entries=entries,
+            counters=counters,
+        )
+        updated_value["text"] = sanitized
+        total += replaced
+
+    if isinstance(updated_value.get("input_text"), str):
+        sanitized, replaced = _shield_text(
+            updated_value["input_text"],
+            request_id=request_id,
+            entries_by_identity=entries_by_identity,
+            entries=entries,
+            counters=counters,
+        )
+        updated_value["input_text"] = sanitized
+        total += replaced
+
+    if "content" in updated_value:
+        updated_content, replaced = _shield_content_value(
+            updated_value["content"],
+            request_id=request_id,
+            entries_by_identity=entries_by_identity,
+            entries=entries,
+            counters=counters,
+        )
+        updated_value["content"] = updated_content
+        total += replaced
+
+    return updated_value, total
 
 
 def _shield_chat_request_body(

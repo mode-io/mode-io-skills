@@ -132,8 +132,10 @@ class MiddlewareEngine:
         return ProcessResult(status=error.status, payload=payload, headers=headers)
 
     def _shutdown_session_plugins(self, session: PipelineSession) -> None:
-        del session
-        return
+        if session.plugins_released:
+            return
+        self.plugin_manager.shutdown_active_plugins(session.active_plugins)
+        session.plugins_released = True
 
     def _build_request_context(self, invocation: CanonicalInvocation) -> Dict[str, Any]:
         return {
@@ -158,6 +160,12 @@ class MiddlewareEngine:
         shared_state: Dict[str, Any] = {}
         request_context = self._build_request_context(invocation)
         return session, on_plugin_error, shared_state, request_context
+
+    def _release_stream_plugins(self, session: PipelineSession) -> None:
+        if session.plugins_released:
+            return
+        self.plugin_manager.shutdown_active_plugins(session.active_plugins)
+        session.plugins_released = True
 
     def shutdown(self) -> None:
         self.plugin_manager.shutdown()
@@ -473,7 +481,7 @@ class MiddlewareEngine:
                 degraded=session.degraded,
                 services=self.services,
                 connector_capabilities=connector_capabilities,
-                on_finish=lambda: self.plugin_manager.shutdown_active_plugins(session.active_plugins),
+                on_finish=lambda: self._release_stream_plugins(session),
             ),
             payload=None,
         )

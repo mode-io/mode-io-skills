@@ -25,9 +25,21 @@ modeio-middleware/
     setup_middleware_gateway.py
     validate_plugin_manifest.py
   modeio_middleware/
+    resources.py
+    resources/
+      config/
+        default.json
+      plugins_external/
+        example/
+      protocol/
+        MODEIO_PLUGIN_MANIFEST.schema.json
+        MODEIO_PLUGIN_MESSAGE.schema.json
     cli/
       gateway.py
+      new_plugin.py
+      plugin_conformance.py
       setup.py
+      validate_plugin_manifest.py
       setup_lib/
         common.py
         opencode.py
@@ -68,16 +80,23 @@ modeio-middleware/
       base.py
       redact.py
   tests/
-    test_claude_hook_connector.py
-    test_config_resolver.py
-    test_gateway_contract.py
-    test_protocol_manifest.py
-    test_protocol_registry.py
-    test_protocol_stdio_runtime.py
-    test_smoke_opencode_flow.py
-    test_setup_gateway.py
-    test_plugin_manager.py
-    test_profile_policy.py
+    helpers/
+      gateway_harness.py
+      plugin_modules.py
+    unit/
+      test_config_resolver.py
+      test_http_transport.py
+      test_plugin_manager.py
+      test_setup_gateway.py
+      test_stdio_supervisor.py
+      test_upstream_client.py
+    integration/
+      test_claude_hook_connector.py
+      test_gateway_contract.py
+      test_protocol_stdio_runtime.py
+    smoke/
+      test_protocol_example_plugin.py
+      test_smoke_opencode_flow.py
 ```
 
 ## Runtime data flow
@@ -86,7 +105,7 @@ modeio-middleware/
 2. Core validates request and parses `modeio` metadata
 3. Config resolver computes final plugin config (defaults + preset + profile override + request override)
 4. Registry resolves runtime spec (mode, capabilities, transport)
-5. Runtime manager resolves or reuses pooled plugin runtimes
+5. Runtime manager leases a runtime from a per-spec pool (`pool_size`)
 6. Plugin manager runs pre-request hooks through runtime adapters
 7. Plugin manager runs post-response/stream hooks through runtime adapters
 8. Core forwards request to upstream provider with `httpx`
@@ -110,7 +129,10 @@ Claude hook connector flow:
 - Core does not hardcode plugin-specific policy decisions
 - Presets are registry-driven when provided (`config/presets/*.json`)
 - Runtime shared services are injected via `hook_input["services"]`
+- The bundled `redact` plugin uses a lightweight local detector that lives inside `modeio-middleware`; it is not coupled to the separate `modeio-redact` package.
 - Mode controls (`observe`, `assist`, `enforce`) keep external plugins non-intrusive by default
+- Packaged defaults live under `modeio_middleware/resources/` so the installed gateway works without repo layout assumptions
+- Relative `manifest` paths and local-file `command` arguments are resolved relative to the config file
 - Gateway transport is ASGI-based and upstream traffic flows through `core/upstream_client.py`
 - Streaming policy operates on full SSE events instead of single `data:` lines
 

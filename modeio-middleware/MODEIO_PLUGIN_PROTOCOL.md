@@ -165,8 +165,10 @@ Plugin manifest/config can tighten or relax these values.
 ## Security and Operational Notes
 
 - External plugins run as local subprocesses.
+- Hosts may run multiple workers for the same plugin via config-level `pool_size`.
 - Plugins should not log protocol frames to stdout.
 - Any plugin diagnostics should go to stderr.
+- When host config uses relative local paths, manifest paths and local-file command arguments are resolved relative to the config file.
 
 ## Relation to ACP
 

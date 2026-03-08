@@ -32,6 +32,7 @@ class PluginRuntimeSpec:
     manifest: Optional[PluginManifest]
     capabilities: Dict[str, bool]
     timeout_ms: Dict[str, int]
+    pool_size: int
     hook_config: Dict[str, Any]
     supported_hooks: List[str]
 
@@ -58,6 +59,7 @@ class PluginRuntimeSpec:
             "manifest": manifest_key,
             "capabilities": dict(self.capabilities),
             "timeout_ms": dict(self.timeout_ms),
+            "pool_size": self.pool_size,
             "hook_config": dict(self.hook_config),
             "supported_hooks": list(self.supported_hooks),
         }
@@ -100,7 +102,7 @@ def _resolve_manifest(path_raw: Any, *, config_base_dir: Path) -> PluginManifest
     return load_plugin_manifest(path)
 
 
-def _resolve_command(raw: Any) -> List[str]:
+def _resolve_command(raw: Any, *, config_base_dir: Path) -> List[str]:
     if not isinstance(raw, list) or not raw:
         raise MiddlewareError(
             500,
@@ -118,8 +120,27 @@ def _resolve_command(raw: Any) -> List[str]:
                 f"stdio_jsonrpc plugin command[{index}] must be a non-empty string",
                 retryable=False,
             )
-        command.append(item.strip())
+        value = item.strip()
+        candidate = Path(value)
+        if not candidate.is_absolute():
+            resolved_candidate = (config_base_dir / candidate).resolve()
+            if resolved_candidate.exists():
+                value = str(resolved_candidate)
+        command.append(value)
     return command
+
+
+def _resolve_pool_size(raw: Any, *, runtime: str) -> int:
+    if raw is None:
+        return 1
+    if not isinstance(raw, int) or raw <= 0:
+        raise MiddlewareError(
+            500,
+            "MODEIO_CONFIG_ERROR",
+            f"{runtime} plugin pool_size must be a positive integer",
+            retryable=False,
+        )
+    return int(raw)
 
 
 def _resolve_capabilities(
@@ -150,6 +171,7 @@ def _sanitize_hook_config(raw: Dict[str, Any], runtime: str) -> Dict[str, Any]:
         "mode",
         "capabilities_grant",
         "timeout_ms",
+        "pool_size",
     }
     if runtime == RUNTIME_STDIO_JSONRPC:
         reserved.update({"command", "manifest"})
@@ -190,6 +212,7 @@ def resolve_plugin_runtime_spec(
         for key, value in timeout_ms_raw.items()
         if isinstance(key, str) and key.strip() and isinstance(value, int) and value > 0
     }
+    pool_size = _resolve_pool_size(resolved.config.get("pool_size"), runtime=runtime)
 
     if runtime == RUNTIME_LEGACY:
         if not isinstance(resolved.module_path, str) or not resolved.module_path.strip():
@@ -212,12 +235,13 @@ def resolve_plugin_runtime_spec(
                 grant_raw=resolved.config.get("capabilities_grant", {}),
             ),
             timeout_ms=timeout_ms,
+            pool_size=pool_size,
             hook_config=_sanitize_hook_config(resolved.config, runtime),
             supported_hooks=list(INTERNAL_TO_PROTOCOL_HOOK.keys()),
         )
 
     manifest = _resolve_manifest(resolved.config.get("manifest"), config_base_dir=config_base_dir)
-    command = _resolve_command(resolved.config.get("command"))
+    command = _resolve_command(resolved.config.get("command"), config_base_dir=config_base_dir)
 
     supported_hooks = [
         internal
@@ -238,6 +262,7 @@ def resolve_plugin_runtime_spec(
             grant_raw=resolved.config.get("capabilities_grant", {}),
         ),
         timeout_ms=timeout_ms,
+        pool_size=pool_size,
         hook_config=_sanitize_hook_config(resolved.config, runtime),
         supported_hooks=supported_hooks,
     )

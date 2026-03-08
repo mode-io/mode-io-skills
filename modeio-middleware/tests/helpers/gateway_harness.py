@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
@@ -50,6 +52,85 @@ def responses_payload(content: str) -> Dict[str, Any]:
             }
         ],
     }
+
+
+def http_get_json(base_url: str, path: str):
+    request = urllib.request.Request(f"{base_url}{path}", method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            return response.status, response.headers, body
+    except urllib.error.HTTPError as error:
+        try:
+            body = json.loads(error.read().decode("utf-8"))
+            return error.code, error.headers, body
+        finally:
+            error.close()
+
+
+def post_json(base_url: str, path: str, payload: Dict[str, Any], *, headers: Dict[str, str] | None = None):
+    request_headers = {"Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
+
+    request = urllib.request.Request(
+        f"{base_url}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=request_headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            return response.status, response.headers, body
+    except urllib.error.HTTPError as error:
+        try:
+            body = json.loads(error.read().decode("utf-8"))
+            return error.code, error.headers, body
+        finally:
+            error.close()
+
+
+def post_raw(base_url: str, path: str, body: bytes, *, headers: Dict[str, str] | None = None):
+    request_headers = {"Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
+
+    request = urllib.request.Request(
+        f"{base_url}{path}",
+        data=body,
+        headers=request_headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            return response.status, response.headers, payload
+    except urllib.error.HTTPError as error:
+        try:
+            payload = json.loads(error.read().decode("utf-8"))
+            return error.code, error.headers, payload
+        finally:
+            error.close()
+
+
+def post_stream(base_url: str, path: str, payload: Dict[str, Any]):
+    request = urllib.request.Request(
+        f"{base_url}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            body = response.read().decode("utf-8", errors="replace")
+            return response.status, response.headers, body
+    except urllib.error.HTTPError as error:
+        try:
+            body = error.read().decode("utf-8", errors="replace")
+            return error.code, error.headers, body
+        finally:
+            error.close()
 
 
 class UpstreamStub:
@@ -170,3 +251,15 @@ class GatewayStub:
             self._server.server_close()
         if self._thread is not None:
             self._thread.join(timeout=2)
+
+
+def start_gateway_pair(response_factory, *, status: int = 200, stream_factory=None, plugins=None, profiles=None):
+    upstream = UpstreamStub(response_factory=response_factory, status=status, stream_factory=stream_factory)
+    upstream.start()
+    gateway_stub = GatewayStub(
+        upstream_base_url=upstream.base_url,
+        plugins=plugins,
+        profiles=profiles,
+    )
+    gateway_stub.start()
+    return upstream, gateway_stub

@@ -4,7 +4,7 @@ import sys
 import unittest
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_ROOT = REPO_ROOT / "modeio-middleware"
 FIXTURES_DIR = REPO_ROOT / "modeio-middleware" / "tests" / "fixtures"
 
@@ -77,6 +77,25 @@ class TestProtocolRegistryResolver(unittest.TestCase):
         spec_b = resolve_plugin_runtime_spec(resolved=resolved_b, config_base_dir=REPO_ROOT / "modeio-middleware")
 
         self.assertNotEqual(spec_a.runtime_cache_key(), spec_b.runtime_cache_key())
+
+    def test_relative_stdio_command_is_resolved_against_config_directory(self):
+        resolved = ResolvedPluginConfig(
+            name="external_policy",
+            runtime="stdio_jsonrpc",
+            module_path=None,
+            enabled=True,
+            config={
+                "manifest": "../plugins_external/example/manifest.json",
+                "command": ["python3", "../plugins_external/example/plugin.py"],
+                "pool_size": 2,
+            },
+        )
+
+        spec = resolve_plugin_runtime_spec(resolved=resolved, config_base_dir=REPO_ROOT / "modeio-middleware" / "config")
+        self.assertEqual(spec.command[0], "python3")
+        self.assertTrue(Path(spec.command[1]).is_absolute())
+        self.assertTrue(Path(spec.command[1]).exists())
+        self.assertEqual(spec.pool_size, 2)
 
 
 if __name__ == "__main__":

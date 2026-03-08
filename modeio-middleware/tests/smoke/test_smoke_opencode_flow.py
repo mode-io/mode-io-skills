@@ -7,51 +7,21 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from urllib import request as urllib_request
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_DIR = REPO_ROOT / "modeio-middleware"
 HELPERS_DIR = REPO_ROOT / "modeio-middleware" / "tests" / "helpers"
 sys.path.insert(0, str(PACKAGE_DIR))
 sys.path.insert(0, str(HELPERS_DIR))
 
 from modeio_middleware.cli import setup as setup_gateway  # noqa: E402
-from gateway_harness import UpstreamStub, completion_payload, responses_payload  # noqa: E402
-from gateway_harness import GatewayStub  # noqa: E402
-
-
-def _post_json(base_url: str, path: str, payload: dict):
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib_request.Request(
-        f"{base_url}{path}",
-        data=body,
-        method="POST",
-        headers={"Content-Type": "application/json"},
-    )
-    with urllib_request.urlopen(req, timeout=10) as resp:
-        data = resp.read().decode("utf-8")
-        return resp.status, dict(resp.headers.items()), json.loads(data)
-
-
-def _post_stream(base_url: str, path: str, payload: dict):
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib_request.Request(
-        f"{base_url}{path}",
-        data=body,
-        method="POST",
-        headers={"Content-Type": "application/json"},
-    )
-    with urllib_request.urlopen(req, timeout=10) as resp:
-        lines = []
-        for _ in range(30):
-            line = resp.readline()
-            if not line:
-                break
-            decoded = line.decode("utf-8", errors="replace")
-            lines.append(decoded)
-            if "[DONE]" in decoded:
-                break
-        return resp.status, dict(resp.headers.items()), "".join(lines)
+from gateway_harness import (  # noqa: E402
+    completion_payload,
+    post_json,
+    post_stream,
+    responses_payload,
+    start_gateway_pair,
+)
 
 
 def _run_setup_json(args):
@@ -99,12 +69,10 @@ class TestSmokeOpenCodeFlow(unittest.TestCase):
                 "[DONE]",
             ]
 
-        upstream = UpstreamStub(response_factory=response_factory, stream_factory=stream_factory)
+        upstream = None
         gateway = None
-        upstream.start()
         try:
-            gateway = GatewayStub(upstream.base_url)
-            gateway.start()
+            upstream, gateway = start_gateway_pair(response_factory, stream_factory=stream_factory)
 
             with TemporaryDirectory() as temp_dir:
                 opencode_config = Path(temp_dir) / "opencode.json"
@@ -132,7 +100,7 @@ class TestSmokeOpenCodeFlow(unittest.TestCase):
                     gateway_base_url,
                 )
 
-                chat_status, chat_headers, chat_payload = _post_json(
+                chat_status, chat_headers, chat_payload = post_json(
                     gateway.base_url,
                     "/v1/chat/completions",
                     {
@@ -145,7 +113,7 @@ class TestSmokeOpenCodeFlow(unittest.TestCase):
                 self.assertEqual(chat_payload["choices"][0]["message"]["content"], "smoke-chat")
                 self.assertIn("x-modeio-request-id", {k.lower(): v for k, v in chat_headers.items()})
 
-                responses_status, responses_headers, responses_payload_data = _post_json(
+                responses_status, responses_headers, responses_payload_data = post_json(
                     gateway.base_url,
                     "/v1/responses",
                     {
@@ -158,7 +126,7 @@ class TestSmokeOpenCodeFlow(unittest.TestCase):
                 self.assertEqual(responses_payload_data["output_text"], "smoke-responses")
                 self.assertIn("x-modeio-request-id", {k.lower(): v for k, v in responses_headers.items()})
 
-                stream_status, stream_headers, stream_text = _post_stream(
+                stream_status, stream_headers, stream_text = post_stream(
                     gateway.base_url,
                     "/v1/chat/completions",
                     {
@@ -200,7 +168,8 @@ class TestSmokeOpenCodeFlow(unittest.TestCase):
         finally:
             if gateway is not None:
                 gateway.stop()
-            upstream.stop()
+            if upstream is not None:
+                upstream.stop()
 
 
 if __name__ == "__main__":

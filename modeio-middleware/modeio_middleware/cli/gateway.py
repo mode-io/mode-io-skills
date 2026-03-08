@@ -15,6 +15,7 @@ from modeio_middleware.core.engine import GatewayRuntimeConfig
 from modeio_middleware.core.errors import MiddlewareError
 from modeio_middleware.core.profiles import DEFAULT_PROFILE, normalize_profile_name
 from modeio_middleware.http_transport import create_server
+from modeio_middleware.resources import bundled_default_config_path
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8787
@@ -24,8 +25,7 @@ DEFAULT_UPSTREAM_TIMEOUT_SECONDS = 60
 DEFAULT_UPSTREAM_API_KEY_ENV = "MODEIO_GATEWAY_UPSTREAM_API_KEY"
 
 def _default_config_path() -> Path:
-    current = Path(__file__).resolve()
-    return current.parents[2] / "config" / "default.json"
+    return bundled_default_config_path()
 
 
 def _load_runtime_file(path: Path) -> Dict[str, Any]:
