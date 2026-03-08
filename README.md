@@ -30,7 +30,7 @@ This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claud
 - **`modeio-redact`** — PII anonymization and de-anonymization for text, files, and cross-border compliance.
 - **`modeio-guardrail`** — Real-time instruction safety checks for risky operations.
 - **`modeio-skill-audit`** — Deterministic pre-install repository safety audit for skills and plugins.
-- **`modeio-middleware`** — Local OpenAI-compatible policy gateway with plugin hooks for Codex, OpenCode, OpenClaw, and Claude Code.
+- **`modeio-middleware`** — Thin agent wrapper for the standalone `mode-io-middleware` product repo that runs the local policy gateway for Codex, OpenCode, OpenClaw, and Claude Code.
 
 Through standardized skill descriptions and scripts, AI assistants can run local regex masking (`lite`) or call Modeio APIs (`dynamic`/`strict`/`crossborder`) whenever anonymization, redaction, PII removal, safety checks, or policy routing are needed.
 
@@ -38,7 +38,7 @@ Through standardized skill descriptions and scripts, AI assistants can run local
 > `modeio-redact` `lite` runs fully local regex masking with no network call. Other anonymization levels (`dynamic`/`strict`/`crossborder`) and live guardrail safety checks perform real API requests (no caching) for auditable and traceable output.
 > For `crossborder`, you must provide explicit `--sender-code` and `--recipient-code` each run.
 > `modeio-skill-audit` is deterministic static analysis; its GitHub OSINT precheck may call GitHub APIs when the target repo has a GitHub origin.
-> `modeio-middleware` runs a local gateway process — no external service dependency for request routing.
+> `modeio-middleware` remains installable from this skills repo as a thin wrapper, while the runtime, tests, and release workflow now live in `https://github.com/mode-io/mode-io-middleware`.
 
 ## ✨ Why teams like this
 
@@ -340,8 +340,10 @@ required_highlight_evidence_ids: [E-4AB12F390C, E-7D3110EF92]
 > *A team wants every LLM request/response from Codex and OpenCode to pass through local policy hooks before hitting the upstream provider.*
 
 ```bash
-# Start gateway
-python modeio-middleware/scripts/middleware_gateway.py \
+# Install the standalone runtime, then start the gateway
+python -m pip install git+https://github.com/mode-io/mode-io-middleware
+
+modeio-middleware-gateway \
   --host 127.0.0.1 \
   --port 8787 \
   --upstream-chat-url "https://api.openai.com/v1/chat/completions" \
@@ -355,8 +357,7 @@ Routes: /v1/chat/completions, /v1/responses, /connectors/claude/hooks, /healthz
 
 ```bash
 # Configure Codex/OpenCode to route through the gateway
-python modeio-middleware/scripts/setup_middleware_gateway.py \
-  --apply-opencode --create-opencode-config
+modeio-middleware-setup --apply-opencode --create-opencode-config
 ```
 
 ```
@@ -365,10 +366,8 @@ Gateway health: healthy
 ```
 
 ```bash
-# Run live agent smoke matrix with tap-proxy evidence
-python modeio-middleware/scripts/smoke_agent_matrix.py \
-  --upstream-base-url "https://zenmux.ai/api/v1" \
-  --model "openai/gpt-5.3-codex"
+# Full product docs and live smoke tooling live in the standalone repo:
+# https://github.com/mode-io/mode-io-middleware
 ```
 
 > The gateway intercepts every request/response, runs configured policy plugins, and produces `x-modeio-*` headers for audit trail. Tap-proxy logs prove upstream traversal.
@@ -389,7 +388,7 @@ python modeio-middleware/scripts/smoke_agent_matrix.py \
 
 > Trigger phrases: *"scan this skill repo", "is this repo safe to install", "run a skill safety assessment", "audit this plugin repository"*
 
-**`modeio-middleware`** — Runs a local OpenAI-compatible policy gateway for Codex, OpenCode, OpenClaw, and Claude Code. Supports plugin-driven pre-request and post-response hooks, streaming pass-through, and tap-proxy evidence for audit.
+**`modeio-middleware`** — Thin skill wrapper that installs and configures the standalone `mode-io-middleware` local policy gateway. The product repo owns runtime code, plugin hosting, tests, and future traffic-visualization work.
 
 > Trigger phrases: *"middleware gateway", "route through local proxy", "pre request hook", "post response hook", "OpenCode baseURL middleware", "Codex OPENAI_BASE_URL", "Claude hooks connector"*
 
@@ -466,6 +465,8 @@ Install this skill:
 https://github.com/mode-io/mode-io-skills/tree/main/modeio-middleware
 ```
 
+Then install or clone the standalone runtime from `https://github.com/mode-io/mode-io-middleware` when you actually need to run the gateway.
+
 For CLI installs below, add `-g` for global (user-level) install.
 
 ## 2) Install for Claude Code
@@ -521,9 +522,9 @@ The doctor check tells you exactly what is missing for:
 
 - `modeio-redact` offline and API-backed modes
 - `modeio-guardrail` backend safety checks
-- `modeio-middleware` local helper health and live-routing readiness
+- `modeio-middleware` thin wrapper guidance and handoff into the standalone runtime repo
 
-Use `.env.example` as the reference template for optional env vars and live middleware values.
+Use `.env.example` as the reference template for optional env vars here. For live middleware runtime values and product-level smoke guidance, use `https://github.com/mode-io/mode-io-middleware`.
 
 ## 7) Verify in 30 seconds ✅
 
@@ -664,18 +665,21 @@ python modeio-skill-audit/scripts/skill_safety_assessment.py validate --scan-fil
 python modeio-skill-audit/scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json > /tmp/adjudication_prompt.md
 python modeio-skill-audit/scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json --assessment-file /tmp/adjudication.json --json
 
-# Generic middleware gateway (Codex/OpenCode/Claude)
-python modeio-middleware/scripts/setup_middleware_gateway.py --health-check
-python modeio-middleware/scripts/middleware_gateway.py --host 127.0.0.1 --port 8787 --upstream-chat-url "https://api.openai.com/v1/chat/completions" --upstream-responses-url "https://api.openai.com/v1/responses"
-# Quickstart: modeio-middleware/QUICKSTART.md
+# Generic middleware gateway (Codex/OpenCode/OpenClaw/Claude)
+python -m pip install git+https://github.com/mode-io/mode-io-middleware
+modeio-middleware-setup --health-check
+export OPENAI_BASE_URL="http://127.0.0.1:8787/v1"
+modeio-middleware-setup --apply-openclaw --create-openclaw-config
+modeio-middleware-gateway --host 127.0.0.1 --port 8787 --upstream-chat-url "https://api.openai.com/v1/chat/completions" --upstream-responses-url "https://api.openai.com/v1/responses"
+# Quickstart: https://github.com/mode-io/mode-io-middleware/blob/main/QUICKSTART.md
 
-# Middleware one-command uninstall (prints Codex unset and optional OpenCode/Claude rollback)
-python modeio-middleware/scripts/setup_middleware_gateway.py --uninstall --apply-opencode --apply-claude
+# Middleware one-command uninstall (plus optional OpenCode/OpenClaw/Claude rollback)
+modeio-middleware-setup --uninstall --apply-opencode --apply-openclaw --apply-claude
 
 # Runtime prompt shielding now belongs to modeio-middleware (not modeio-redact)
 # Start middleware gateway with separate upstream routes
 export MODEIO_GATEWAY_UPSTREAM_API_KEY="<your-upstream-key>"
-python modeio-middleware/scripts/middleware_gateway.py \
+modeio-middleware-gateway \
   --host 127.0.0.1 \
   --port 8787 \
   --upstream-chat-url "https://api.openai.com/v1/chat/completions" \
@@ -683,8 +687,8 @@ python modeio-middleware/scripts/middleware_gateway.py \
 
 # In your client, set base URL to: http://127.0.0.1:8787/v1
 
-# Run middleware contract and plugin tests
-python -m unittest discover modeio-middleware/tests -p "test_*.py"
+# Standalone middleware product tests
+# See: https://github.com/mode-io/mode-io-middleware
 
 # Run skill audit test suite
 python -m unittest discover modeio-skill-audit/tests -p "test_*.py"
@@ -714,7 +718,7 @@ python modeio-redact/scripts/detect_local.py --input "Email: alice@example.com" 
 > File output JSON includes `applyReport`, `verificationReport`, and `assurancePolicy` for coverage + verification visibility.
 > `deanonymize.py` always continues on hash mismatch and emits an `input_hash_mismatch` warning.
 
-For full details, see [modeio-redact/SKILL.md](modeio-redact/SKILL.md), [modeio-guardrail/SKILL.md](modeio-guardrail/SKILL.md), [modeio-skill-audit/SKILL.md](modeio-skill-audit/SKILL.md), and [modeio-middleware/SKILL.md](modeio-middleware/SKILL.md).
+For full details, see [modeio-redact/SKILL.md](modeio-redact/SKILL.md), [modeio-guardrail/SKILL.md](modeio-guardrail/SKILL.md), [modeio-skill-audit/SKILL.md](modeio-skill-audit/SKILL.md), [modeio-middleware/SKILL.md](modeio-middleware/SKILL.md), and the standalone middleware product repo at `https://github.com/mode-io/mode-io-middleware`.
 
 ## 🔗 Links
 
