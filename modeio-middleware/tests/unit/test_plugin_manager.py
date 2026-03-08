@@ -1,26 +1,22 @@
 #!/usr/bin/env python3
 
 import sys
-import types
 import unittest
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPTS_DIR = REPO_ROOT / "modeio-middleware" / "scripts"
+TESTS_DIR = REPO_ROOT / "modeio-middleware" / "tests"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
+sys.path.insert(0, str(TESTS_DIR))
 
 from modeio_middleware.core.contracts import ENDPOINT_CHAT_COMPLETIONS  # noqa: E402
 from modeio_middleware.core.decision import HookDecision  # noqa: E402
 from modeio_middleware.core.plugin_manager import PluginManager  # noqa: E402
 from modeio_middleware.core.services.telemetry import PluginTelemetry  # noqa: E402
 from modeio_middleware.plugins.base import MiddlewarePlugin  # noqa: E402
-
-
-def _register_test_plugin(module_name: str, plugin_cls):
-    module = types.ModuleType(module_name)
-    module.Plugin = plugin_cls
-    sys.modules[module_name] = module
+from helpers.plugin_modules import register_plugin_module  # noqa: E402
 
 
 class _ModifyPlugin(MiddlewarePlugin):
@@ -78,11 +74,11 @@ class _InvalidActionPlugin(MiddlewarePlugin):
 
 class TestPluginManager(unittest.TestCase):
     def setUp(self):
-        _register_test_plugin("modeio_middleware.tests.plugins.modify", _ModifyPlugin)
-        _register_test_plugin("modeio_middleware.tests.plugins.error", _ErrorPlugin)
-        _register_test_plugin("modeio_middleware.tests.plugins.block", _BlockPlugin)
-        _register_test_plugin("modeio_middleware.tests.plugins.decision", _DecisionPlugin)
-        _register_test_plugin("modeio_middleware.tests.plugins.invalid_action", _InvalidActionPlugin)
+        register_plugin_module("modeio_middleware.tests.plugins.modify", _ModifyPlugin)
+        register_plugin_module("modeio_middleware.tests.plugins.error", _ErrorPlugin)
+        register_plugin_module("modeio_middleware.tests.plugins.block", _BlockPlugin)
+        register_plugin_module("modeio_middleware.tests.plugins.decision", _DecisionPlugin)
+        register_plugin_module("modeio_middleware.tests.plugins.invalid_action", _InvalidActionPlugin)
 
     def test_resolve_active_plugins_enabled_order(self):
         manager = PluginManager(

@@ -1,15 +1,21 @@
 # modeio-middleware Quickstart
 
-This quickstart currently assumes a checkout of `mode-io-skills` and a repo-local Python environment.
-`modeio-middleware` now has a standalone `pyproject.toml`, but the supported path in this repo remains repo-first.
+`modeio-middleware` now supports two distinct workflows:
 
-Use this file in three passes:
+1. Installed operator workflow: use the packaged console scripts.
+2. Repo maintainer workflow: use the repo wrappers, smoke scripts, and local test tooling.
 
-1. Start the local gateway and verify `/healthz`.
-2. Route one host through it (`Codex`, `OpenCode`, `OpenClaw`, or Claude hooks).
-3. Only then move on to external plugin authoring.
+This file treats the installed workflow as the public default and calls out repo-only tooling explicitly.
 
-## 0) Bootstrap the repo-local Python environment
+## 1) Install the package
+
+Until it is published, install from the local checkout:
+
+```bash
+python -m pip install /path/to/modeio-middleware
+```
+
+Repo maintainers can still use the repo-local environment:
 
 ```bash
 python scripts/bootstrap_env.py
@@ -17,39 +23,55 @@ source .venv/bin/activate
 python scripts/doctor_env.py
 ```
 
-## 1) Start the gateway
+## 2) Start the gateway
+
+The installed entry point now ships with a bundled default config.
 
 ```bash
 export MODEIO_GATEWAY_UPSTREAM_API_KEY="<your-upstream-key>"
 
-python modeio-middleware/scripts/middleware_gateway.py \
+modeio-middleware-gateway \
   --host 127.0.0.1 \
   --port 8787 \
   --upstream-chat-url "https://api.openai.com/v1/chat/completions" \
   --upstream-responses-url "https://api.openai.com/v1/responses"
 ```
 
-## 2) Configure client routing
+Repo wrapper equivalent:
+
+```bash
+python modeio-middleware/scripts/middleware_gateway.py
+```
+
+## 3) Configure client routing
 
 ### Codex CLI
 
 ```bash
-python modeio-middleware/scripts/setup_middleware_gateway.py --health-check --json
+modeio-middleware-setup --health-check --json
 export OPENAI_BASE_URL="http://127.0.0.1:8787/v1"
 ```
 
 ### OpenCode
 
 ```bash
-python modeio-middleware/scripts/setup_middleware_gateway.py \
+modeio-middleware-setup \
   --apply-opencode \
   --create-opencode-config
+```
+
+### OpenClaw
+
+```bash
+modeio-middleware-setup \
+  --apply-openclaw \
+  --create-openclaw-config
 ```
 
 ### Claude Code hooks
 
 ```bash
-python modeio-middleware/scripts/setup_middleware_gateway.py \
+modeio-middleware-setup \
   --apply-claude \
   --create-claude-settings
 ```
@@ -57,9 +79,7 @@ python modeio-middleware/scripts/setup_middleware_gateway.py \
 This writes `~/.claude/settings.json` hook entries for `UserPromptSubmit` and `Stop`
 to `POST http://127.0.0.1:8787/connectors/claude/hooks`.
 
-The live smoke harness covers Claude separately from OpenAI-routed clients: it drives Claude through native hooks and records `/connectors/claude/hooks` traffic with a local hook tap.
-
-## 3) Health check
+## 4) Health check
 
 ```bash
 curl -s http://127.0.0.1:8787/healthz
@@ -75,7 +95,7 @@ Expected shape:
 }
 ```
 
-## 4) Send a request through middleware
+## 5) Send one request through middleware
 
 ```bash
 curl -i http://127.0.0.1:8787/v1/chat/completions \
@@ -91,7 +111,7 @@ curl -i http://127.0.0.1:8787/v1/chat/completions \
   }'
 ```
 
-Check middleware headers in response:
+Check these middleware headers in the response:
 
 - `x-modeio-request-id`
 - `x-modeio-profile`
@@ -99,51 +119,69 @@ Check middleware headers in response:
 - `x-modeio-post-actions`
 - `x-modeio-degraded`
 
-## 5) Use external protocol plugins (optional)
+## 6) Author or validate an external plugin
 
-External plugins use `stdio-jsonrpc` and default to non-intrusive `observe` mode.
-The shipped example plugin lives under `modeio-middleware/plugins_external/example/`.
+Public external plugins use `stdio-jsonrpc`.
 
-Example plugin config entry:
+Scaffold a new plugin into the current directory:
 
-```json
-{
-  "external_policy": {
-    "enabled": false,
-    "runtime": "stdio_jsonrpc",
-    "manifest": "plugins_external/example/manifest.json",
-    "command": ["python3", "plugins_external/example/plugin.py"],
-    "mode": "observe",
-    "capabilities_grant": {
-      "can_patch": false,
-      "can_block": false
-    }
-  }
-}
+```bash
+mkdir my-plugin-work
+cd my-plugin-work
+modeio-middleware-new-plugin my-policy
 ```
+
+This creates:
+
+- `./plugins_external/my_policy/plugin.py`
+- `./plugins_external/my_policy/manifest.json`
+- `./tests/test_protocol_plugin_my_policy.py`
 
 Validate and run conformance:
 
 ```bash
-python modeio-middleware/scripts/validate_plugin_manifest.py plugins_external/example/manifest.json
-python modeio-middleware/scripts/run_plugin_conformance.py plugins_external/example/manifest.json python3 plugins_external/example/plugin.py
+modeio-middleware-validate-plugin ./plugins_external/my_policy/manifest.json
+modeio-middleware-plugin-conformance \
+  ./plugins_external/my_policy/manifest.json \
+  python3 ./plugins_external/my_policy/plugin.py
 ```
 
-The example plugin is intentionally minimal: it emits an `annotate` decision on `pre.request` and otherwise passes through.
-Once this works, use `new_plugin.py` to scaffold your own plugin. The default scaffold is `stdio-jsonrpc`; `legacy_inprocess` remains internal-only for bundled plugins.
+The bundled default config also ships with a disabled example plugin. Its manifest and script paths are resolved relative to the config file, so if you copy the config elsewhere you should update those relative paths.
 
-## 6) Uninstall / rollback
+## 7) Custom config
+
+Use `--config` to point at your own JSON config:
 
 ```bash
-python modeio-middleware/scripts/setup_middleware_gateway.py \
+modeio-middleware-gateway --config /path/to/middleware.json
+```
+
+Important path rule:
+
+- `manifest` paths are resolved relative to the config file.
+- `command` arguments that point at existing local files are also resolved relative to the config file.
+
+## 8) Uninstall / rollback
+
+```bash
+modeio-middleware-setup \
   --uninstall \
   --apply-opencode \
+  --apply-openclaw \
   --apply-claude
 ```
 
-## 7) Scaffold a plugin
+## 9) Repo-only maintainer validation
+
+These helpers are intentionally repo-only and are not part of the installed package surface:
 
 ```bash
-python modeio-middleware/scripts/new_plugin.py my-plugin
-python modeio-middleware/scripts/new_plugin.py my-protocol-plugin --runtime stdio_jsonrpc
+# Offline matrix
+modeio-middleware/scripts/smoke_e2e.sh
+
+# Live gateway check
+modeio-middleware/scripts/smoke_e2e.sh --live
+
+# Live Codex/OpenCode/OpenClaw/Claude matrix via middleware
+modeio-middleware/scripts/smoke_e2e.sh --live-agents
 ```

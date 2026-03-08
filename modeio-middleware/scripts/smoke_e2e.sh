@@ -3,6 +3,32 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_VENV_PYTHON="${REPO_ROOT}/.venv/bin/python"
+
+resolve_python_bin() {
+  if [[ -n "${PYTHON_BIN:-}" ]]; then
+    printf '%s\n' "${PYTHON_BIN}"
+    return
+  fi
+
+  if [[ -x "${REPO_VENV_PYTHON}" ]]; then
+    printf '%s\n' "${REPO_VENV_PYTHON}"
+    return
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    command -v python3
+    return
+  fi
+
+  echo "[smoke] missing required Python interpreter; bootstrap the repo or set PYTHON_BIN" >&2
+  exit 1
+}
+
+PYTHON_BIN="$(resolve_python_bin)"
+if [[ -d "${REPO_ROOT}/.venv/bin" ]]; then
+  export PATH="${REPO_ROOT}/.venv/bin:${PATH}"
+fi
 
 run_live=0
 run_live_agents=0
@@ -37,7 +63,7 @@ require_cmd() {
 check_json_field() {
   local file="$1"
   local code="$2"
-  python3 - "$file" "$code" <<'PY'
+  "$PYTHON_BIN" - "$file" "$code" <<'PY'
 import json
 import sys
 
@@ -53,7 +79,7 @@ run_unit_matrix() {
   log "running full middleware unit matrix"
   (
     cd "$REPO_ROOT"
-    python3 -m unittest discover modeio-middleware/tests -p "test_*.py"
+    "$PYTHON_BIN" -m unittest discover modeio-middleware/tests -p "test_*.py"
   )
 }
 
@@ -65,7 +91,7 @@ run_setup_smoke() {
   log "running setup/uninstall smoke (temp config paths)"
   (
     cd "$REPO_ROOT"
-    python3 modeio-middleware/scripts/setup_middleware_gateway.py \
+    "$PYTHON_BIN" modeio-middleware/scripts/setup_middleware_gateway.py \
       --json \
       --apply-opencode \
       --create-opencode-config \
@@ -78,7 +104,7 @@ run_setup_smoke() {
       --claude-settings-path "$tmpdir/claude-settings.json" \
       >"$setup_json"
 
-    python3 modeio-middleware/scripts/setup_middleware_gateway.py \
+    "$PYTHON_BIN" modeio-middleware/scripts/setup_middleware_gateway.py \
       --json \
       --uninstall \
       --apply-opencode \
@@ -110,7 +136,7 @@ run_openclaw_cli_smoke() {
 
   (
     cd "$REPO_ROOT"
-    python3 modeio-middleware/scripts/setup_middleware_gateway.py \
+    "$PYTHON_BIN" modeio-middleware/scripts/setup_middleware_gateway.py \
       --json \
       --apply-openclaw \
       --create-openclaw-config \
@@ -129,7 +155,7 @@ run_offline_gateway_smoke() {
   local output_json="$1"
   log "running offline gateway e2e smoke with mock upstream"
 
-  python3 - "$REPO_ROOT" >"$output_json" <<'PY'
+  "$PYTHON_BIN" - "$REPO_ROOT" >"$output_json" <<'PY'
 import json
 import sys
 import threading
@@ -381,7 +407,7 @@ run_live_gateway_smoke() {
   (
     cd "$REPO_ROOT"
 
-    python3 modeio-middleware/scripts/middleware_gateway.py \
+    "$PYTHON_BIN" modeio-middleware/scripts/middleware_gateway.py \
       --host 127.0.0.1 \
       --port "$gateway_port" \
       --upstream-chat-url "https://api.openai.com/v1/chat/completions" \
@@ -424,12 +450,11 @@ run_live_agent_matrix_smoke() {
   log "running live agent matrix smoke (codex/opencode/openclaw/claude via middleware)"
   (
     cd "$REPO_ROOT"
-    python3 modeio-middleware/scripts/smoke_agent_matrix.py
+    "$PYTHON_BIN" modeio-middleware/scripts/smoke_agent_matrix.py
   )
 }
 
 main() {
-  require_cmd python3
   require_cmd mktemp
   require_cmd curl
   require_cmd openclaw

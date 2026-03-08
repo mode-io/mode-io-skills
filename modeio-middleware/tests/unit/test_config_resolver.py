@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_ROOT = REPO_ROOT / "modeio-middleware"
 sys.path.insert(0, str(PACKAGE_ROOT))
 
@@ -112,8 +112,8 @@ class TestConfigResolver(unittest.TestCase):
             plugin_config={
                 "enabled": True,
                 "runtime": "stdio_jsonrpc",
-                "manifest": "plugins_external/example/manifest.json",
-                "command": ["python3", "plugins_external/example/plugin.py"],
+                "manifest": "../plugins_external/example/manifest.json",
+                "command": ["python3", "../plugins_external/example/plugin.py"],
             },
             preset_registry={},
             profile_override={},
@@ -121,7 +121,21 @@ class TestConfigResolver(unittest.TestCase):
         )
         self.assertEqual(resolved.runtime, "stdio_jsonrpc")
         self.assertIsNone(resolved.module_path)
-        self.assertEqual(resolved.config["manifest"], "plugins_external/example/manifest.json")
+        self.assertEqual(resolved.config["manifest"], "../plugins_external/example/manifest.json")
+
+    def test_resolve_plugin_runtime_config_defaults_to_stdio_without_module(self):
+        resolved = resolve_plugin_runtime_config(
+            plugin_name="external_policy",
+            plugin_config={
+                "enabled": True,
+                "manifest": "../plugins_external/example/manifest.json",
+                "command": ["python3", "../plugins_external/example/plugin.py"],
+            },
+            preset_registry={},
+            profile_override={},
+            request_override={},
+        )
+        self.assertEqual(resolved.runtime, "stdio_jsonrpc")
 
 
 if __name__ == "__main__":

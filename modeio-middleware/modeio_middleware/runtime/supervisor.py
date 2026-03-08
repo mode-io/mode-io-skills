@@ -9,7 +9,7 @@ import threading
 from typing import Any, Dict, List
 
 from modeio_middleware.core.errors import MiddlewareError
-from modeio_middleware.protocol.messages import JSONRPC_VERSION
+from modeio_middleware.protocol.messages import JSONRPC_VERSION, METHOD_SHUTDOWN
 
 
 class JsonRpcStdioSupervisor:
@@ -133,6 +133,16 @@ class JsonRpcStdioSupervisor:
 
     def shutdown(self) -> None:
         process = self._process
+        if process.poll() is None:
+            try:
+                self.call(
+                    method=METHOD_SHUTDOWN,
+                    params={},
+                    timeout_ms=100,
+                )
+            except Exception:
+                pass
+
         if process.poll() is None:
             process.terminate()
             try:

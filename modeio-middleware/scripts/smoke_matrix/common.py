@@ -66,9 +66,7 @@ def free_port() -> int:
 
 
 def check_required_commands(agents: Sequence[str]) -> List[str]:
-    required = set(agents)
-    required.add("python3")
-    return [name for name in sorted(required) if shutil.which(name) is None]
+    return [name for name in sorted(set(agents)) if shutil.which(name) is None]
 
 
 def run_command_capture(

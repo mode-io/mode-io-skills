@@ -16,7 +16,22 @@ dependencies = [
 [project.scripts]
 modeio-middleware-gateway = "modeio_middleware.cli.gateway:main"
 modeio-middleware-setup = "modeio_middleware.cli.setup:main"
+modeio-middleware-new-plugin = "modeio_middleware.cli.new_plugin:main"
+modeio-middleware-validate-plugin = "modeio_middleware.cli.validate_plugin_manifest:main"
+modeio-middleware-plugin-conformance = "modeio_middleware.cli.plugin_conformance:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["modeio_middleware*"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+modeio_middleware = [
+  "resources/config/*.json",
+  "resources/plugins_external/example/*.json",
+  "resources/plugins_external/example/*.py",
+  "resources/plugins_external/example/*.md",
+  "resources/protocol/*.json",
+]

@@ -4,7 +4,7 @@ import sys
 import unittest
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_ROOT = REPO_ROOT / "modeio-middleware"
 EXAMPLE_DIR = PACKAGE_ROOT / "plugins_external" / "example"
 

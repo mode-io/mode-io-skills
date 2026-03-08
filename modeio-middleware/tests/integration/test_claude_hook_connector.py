@@ -2,20 +2,18 @@
 
 import json
 import sys
-import types
-import urllib.error
-import urllib.request
 import unittest
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPTS_DIR = REPO_ROOT / "modeio-middleware" / "scripts"
 TESTS_DIR = REPO_ROOT / "modeio-middleware" / "tests"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(TESTS_DIR))
 
-from helpers.gateway_harness import GatewayStub, UpstreamStub, completion_payload  # noqa: E402
+from helpers.gateway_harness import completion_payload, post_json, start_gateway_pair  # noqa: E402
+from helpers.plugin_modules import register_plugin_module  # noqa: E402
 from modeio_middleware.plugins.base import MiddlewarePlugin  # noqa: E402
 
 
@@ -89,48 +87,17 @@ class _ClaudeMetadataPlugin(MiddlewarePlugin):
         return {"action": "allow"}
 
 
-def _register_plugin(module_name: str, plugin_cls):
-    module = types.ModuleType(module_name)
-    module.Plugin = plugin_cls
-    sys.modules[module_name] = module
-
-
-def _post_json(gateway_url: str, path: str, payload: dict):
-    request = urllib.request.Request(
-        f"{gateway_url}{path}",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=5) as response:
-            body = json.loads(response.read().decode("utf-8"))
-            return response.status, response.headers, body
-    except urllib.error.HTTPError as error:
-        try:
-            body = json.loads(error.read().decode("utf-8"))
-            return error.code, error.headers, body
-        finally:
-            error.close()
-
-
 class TestClaudeHookConnector(unittest.TestCase):
     def _start_pair(self, *, plugins, profiles):
-        upstream = UpstreamStub(
-            response_factory=lambda _path, payload: completion_payload(payload.get("messages", [{}])[0].get("content", ""))
-        )
-        upstream.start()
-        gateway = GatewayStub(
-            upstream_base_url=upstream.base_url,
+        return start_gateway_pair(
+            lambda _path, payload: completion_payload(payload.get("messages", [{}])[0].get("content", "")),
             plugins=plugins,
             profiles=profiles,
         )
-        gateway.start()
-        return upstream, gateway
 
     def test_user_prompt_block_returns_claude_block_decision(self):
         module_name = "modeio_middleware.tests.plugins.claude_block"
-        _register_plugin(module_name, _ClaudeBlockPlugin)
+        register_plugin_module(module_name, _ClaudeBlockPlugin)
 
         upstream, gateway = self._start_pair(
             plugins={
@@ -147,7 +114,7 @@ class TestClaudeHookConnector(unittest.TestCase):
             },
         )
         try:
-            status, headers, payload = _post_json(
+            status, headers, payload = post_json(
                 gateway.base_url,
                 "/connectors/claude/hooks",
                 {
@@ -168,7 +135,7 @@ class TestClaudeHookConnector(unittest.TestCase):
 
     def test_stop_block_returns_claude_block_decision(self):
         module_name = "modeio_middleware.tests.plugins.claude_stop_block"
-        _register_plugin(module_name, _ClaudeBlockPlugin)
+        register_plugin_module(module_name, _ClaudeBlockPlugin)
 
         upstream, gateway = self._start_pair(
             plugins={
@@ -185,7 +152,7 @@ class TestClaudeHookConnector(unittest.TestCase):
             },
         )
         try:
-            status, headers, payload = _post_json(
+            status, headers, payload = post_json(
                 gateway.base_url,
                 "/connectors/claude/hooks",
                 {
@@ -205,7 +172,7 @@ class TestClaudeHookConnector(unittest.TestCase):
 
     def test_user_prompt_warn_returns_system_message(self):
         module_name = "modeio_middleware.tests.plugins.claude_warn"
-        _register_plugin(module_name, _ClaudeWarnPlugin)
+        register_plugin_module(module_name, _ClaudeWarnPlugin)
 
         upstream, gateway = self._start_pair(
             plugins={
@@ -222,7 +189,7 @@ class TestClaudeHookConnector(unittest.TestCase):
             },
         )
         try:
-            status, headers, payload = _post_json(
+            status, headers, payload = post_json(
                 gateway.base_url,
                 "/connectors/claude/hooks",
                 {
@@ -257,7 +224,7 @@ class TestClaudeHookConnector(unittest.TestCase):
             },
         )
         try:
-            status, _headers, payload = _post_json(
+            status, _headers, payload = post_json(
                 gateway.base_url,
                 "/connectors/claude/hooks",
                 {
@@ -273,7 +240,7 @@ class TestClaudeHookConnector(unittest.TestCase):
 
     def test_connector_metadata_is_available_on_pre_and_post_hooks(self):
         module_name = "modeio_middleware.tests.plugins.claude_metadata"
-        _register_plugin(module_name, _ClaudeMetadataPlugin)
+        register_plugin_module(module_name, _ClaudeMetadataPlugin)
 
         upstream, gateway = self._start_pair(
             plugins={
@@ -290,7 +257,7 @@ class TestClaudeHookConnector(unittest.TestCase):
             },
         )
         try:
-            pre_status, pre_headers, pre_payload = _post_json(
+            pre_status, pre_headers, pre_payload = post_json(
                 gateway.base_url,
                 "/connectors/claude/hooks",
                 {
@@ -303,7 +270,7 @@ class TestClaudeHookConnector(unittest.TestCase):
             self.assertEqual(pre_payload, {})
             self.assertIn("claude_metadata:allow", pre_headers["x-modeio-pre-actions"])
 
-            post_status, post_headers, post_payload = _post_json(
+            post_status, post_headers, post_payload = post_json(
                 gateway.base_url,
                 "/connectors/claude/hooks",
                 {

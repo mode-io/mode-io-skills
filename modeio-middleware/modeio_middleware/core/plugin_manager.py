@@ -22,13 +22,14 @@ from modeio_middleware.registry.resolver import (
     resolve_plugin_runtime_spec,
 )
 from modeio_middleware.runtime.base import PluginRuntime
-from modeio_middleware.runtime.manager import PluginRuntimeManager
+from modeio_middleware.runtime.manager import PluginRuntimeLease, PluginRuntimeManager
 
 
-@dataclass(frozen=True)
+@dataclass
 class ActivePlugin:
     name: str
     runtime: PluginRuntime
+    lease: Optional[PluginRuntimeLease]
     config: Dict[str, Any]
     mode: str
     capabilities: Dict[str, bool]
@@ -127,11 +128,12 @@ class PluginManager:
                 resolved=resolved,
                 config_base_dir=self._config_base_dir,
             )
-            runtime = self._runtime_manager.acquire(spec)
+            lease = self._runtime_manager.acquire(spec)
             active.append(
                 ActivePlugin(
                     name=plugin_name,
-                    runtime=runtime,
+                    runtime=lease.runtime,
+                    lease=lease,
                     config=spec.hook_config,
                     mode=spec.mode,
                     capabilities=spec.capabilities,
@@ -141,8 +143,14 @@ class PluginManager:
         return active
 
     def shutdown_active_plugins(self, active_plugins: Iterable[ActivePlugin]) -> None:
-        del active_plugins
-        return
+        for active in active_plugins:
+            lease = getattr(active, "lease", None)
+            if lease is None:
+                continue
+            try:
+                lease.release()
+            finally:
+                active.lease = None
 
     def shutdown(self) -> None:
         self._runtime_manager.shutdown()
