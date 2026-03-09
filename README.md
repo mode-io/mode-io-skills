@@ -28,9 +28,9 @@
 This repo (**mode-io-skills**) offers **Agent Skills** that integrate with Claude Code, Codex CLI, OpenClaw, OpenCode, and other AI environments. Four skills cover the core surface:
 
 - **`modeio-redact`** — PII anonymization and de-anonymization for text, files, and cross-border compliance.
-- **`modeio-guardrail`** — Real-time instruction safety checks for risky operations.
+- **`modeio-guardrail`** — Real-time pre-execution safety checks for instructions that may trigger tools or state changes.
 - **`modeio-skill-audit`** — Deterministic pre-install repository safety audit for skills and plugins.
-- **`modeio-middleware`** — Thin agent wrapper for the standalone `mode-io-middleware` product repo that runs the local policy gateway for Codex, OpenCode, OpenClaw, and Claude Code.
+- **`modeio-middleware`** — Thin agent wrapper for the standalone `mode-io-middleware` product repo that runs the local policy gateway and built-in monitoring surface for Codex, OpenCode, OpenClaw, and Claude Code.
 
 Through standardized skill descriptions and scripts, AI assistants can run local regex masking (`lite`) or call Modeio APIs (`dynamic`/`strict`/`crossborder`) whenever anonymization, redaction, PII removal, safety checks, or policy routing are needed.
 
@@ -380,17 +380,17 @@ Gateway health: healthy
 
 > Trigger phrases: *"anonymize", "redact PII", "mask sensitive data", "scrub credentials", "detect personal data"*
 
-**`modeio-guardrail`** — Evaluates instructions for destructive operations, prompt injection, irreversible actions, and compliance violations at execution time.
+**`modeio-guardrail`** — Evaluates instructions that may trigger tools, external calls, file edits, permission changes, destructive actions, or compliance risks before execution.
 
-> Trigger phrases: *"safety check", "risk assessment", "security audit", "destructive check", "instruction audit"*
+> Trigger phrases: *"safety check", "risk assessment", "before running this", "before editing files", "instruction audit"*
 
 **`modeio-skill-audit`** — Runs a deterministic static safety audit for a third-party skill or plugin repository before install or execution.
 
 > Trigger phrases: *"scan this skill repo", "is this repo safe to install", "run a skill safety assessment", "audit this plugin repository"*
 
-**`modeio-middleware`** — Thin skill wrapper that installs and configures the standalone `mode-io-middleware` local policy gateway. The product repo owns runtime code, plugin hosting, tests, and future traffic-visualization work.
+**`modeio-middleware`** — Thin skill wrapper that installs and configures the standalone `mode-io-middleware` local policy gateway plus its dashboard and monitoring APIs. The product repo owns runtime code, plugin hosting, observability surfaces, and tests.
 
-> Trigger phrases: *"middleware gateway", "route through local proxy", "pre request hook", "post response hook", "OpenCode baseURL middleware", "Codex OPENAI_BASE_URL", "Claude hooks connector"*
+> Trigger phrases: *"middleware gateway", "monitor model traffic", "dashboard for agent requests", "pre request hook", "post response hook", "OpenCode baseURL middleware", "Claude hooks connector"*
 
 Skill audit contract: [`modeio-skill-audit/references/prompt-contract.md`](modeio-skill-audit/references/prompt-contract.md)
 
