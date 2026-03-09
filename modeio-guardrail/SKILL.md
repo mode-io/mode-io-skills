@@ -1,23 +1,23 @@
 ---
 name: modeio-guardrail
 description: >-
-  Runs real-time safety analysis for instructions involving destructive
-  operations, permission changes, irreversible actions, prompt injection, or
-  compliance-sensitive operations. Use when asked for a safety check, risk
-  assessment, destructive check, instruction audit, or execution-time security
-  review before mutating state.
+  Runs real-time safety analysis for instructions that may trigger tool
+  execution, external calls, file edits, permission changes, destructive or
+  irreversible actions, prompt injection, or compliance-sensitive operations.
+  Use before executing instructions with side effects; skip pure read-only
+  chat, planning, or pre-install repository auditing.
 ---
 
 # Run live instruction safety checks
 
-Use this skill to gate risky operations behind a backend-backed safety decision before you execute them.
+Use this skill to gate instructions that may trigger tools or state changes behind a backend-backed safety decision before execution.
 
 This skill is for live instruction and operation safety only. For pre-install repository auditing, use `modeio-skill-audit`.
 
 ## Tool routing
 
 1. Use `scripts/safety.py` for instruction and operation safety checks.
-2. Always run the check before execution.
+2. Run the check before executing any instruction that may trigger tool use, external calls, file edits, permission changes, or other state changes.
 3. For state-changing work, provide both `--context` and `--target`.
 4. If the safety check cannot be completed, treat the operation as unverified.
 
@@ -77,6 +77,7 @@ If the check fails with network/API/dependency issues, do not silently proceed.
 ## When not to use
 
 - Pre-install or repository-level inspection that should happen before any execution attempt
+- Pure planning, summarization, or clearly read-only analysis with no tool call or state-change path
 - Data transformation tasks that need to rewrite or mask content rather than score runtime safety
 - Local routing or middleware scenarios where you need to sit in front of upstream model traffic
 
