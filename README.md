@@ -14,6 +14,8 @@
   <img src='https://img.shields.io/badge/Website-modeio.ai-blue?logo=google-chrome&logoColor=white'></a>
   <a href='https://github.com/mode-io/mode-io-skills'>
   <img src='https://img.shields.io/badge/GitHub-Code-black?style=flat&logo=github&logoColor=white'></a>
+  <a href='https://github.com/mode-io/mode-io-skills/blob/main/LICENSE'>
+  <img src='https://img.shields.io/badge/License-Apache%202.0-blue?logo=apache&logoColor=white'></a>
   <img src='https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white'>
   <img src='https://img.shields.io/badge/API-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white'>
   <a href='https://github.com/mode-io/mode-io-skills' target='_blank' rel='noopener noreferrer'>
