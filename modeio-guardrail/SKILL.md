@@ -6,6 +6,15 @@ description: >-
   irreversible actions, prompt injection, or compliance-sensitive operations.
   Use before executing instructions with side effects; skip pure read-only
   chat, planning, or pre-install repository auditing.
+version: 1.0.0
+metadata:
+  openclaw:
+    homepage: https://github.com/mode-io/mode-io-skills/tree/main/modeio-guardrail
+    requires:
+      bins:
+        - python3
+      env:
+        - SAFETY_API_URL
 ---
 
 # Run live instruction safety checks
@@ -24,12 +33,8 @@ This skill is for live instruction and operation safety only. For pre-install re
 ## Dependencies
 
 - `requests` is required for `scripts/safety.py`.
-- For repo-local setup from the repo root:
-
-```bash
-python scripts/bootstrap_env.py
-python scripts/doctor_env.py
-```
+- `SAFETY_API_URL` optionally overrides the backend endpoint.
+- Run these commands from inside the `modeio-guardrail` folder.
 
 ## Context contract
 

@@ -81,5 +81,5 @@ That keeps downstream code from reaching through arbitrary internal modules when
 ```bash
 python -m unittest discover modeio-redact/tests -p "test_*.py"
 python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
-modeio-redact/scripts/smoke_redact.sh
+bash scripts/smoke_redact.sh
 ```

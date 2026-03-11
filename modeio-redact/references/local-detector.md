@@ -25,11 +25,11 @@ Use the example files in `examples/detect-local/`:
 Example:
 
 ```bash
-python modeio-redact/scripts/detect_local.py \
+python scripts/detect_local.py \
   --input "Reach support@example.com or 10.0.4.12. Project codename Phoenix is approved." \
-  --allowlist-file modeio-redact/examples/detect-local/allowlist.json \
-  --blocklist-file modeio-redact/examples/detect-local/blocklist.json \
-  --thresholds-file modeio-redact/examples/detect-local/thresholds.json \
+  --allowlist-file examples/detect-local/allowlist.json \
+  --blocklist-file examples/detect-local/blocklist.json \
+  --thresholds-file examples/detect-local/thresholds.json \
   --json
 ```
 

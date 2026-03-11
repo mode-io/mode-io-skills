@@ -9,8 +9,8 @@ These example JSON files are meant to be copied and adjusted for real detector t
 Run them with:
 
 ```bash
-python modeio-redact/scripts/detect_local.py \
+python scripts/detect_local.py \
   --input "Reach support@example.com for status updates" \
-  --allowlist-file modeio-redact/examples/detect-local/allowlist.json \
+  --allowlist-file examples/detect-local/allowlist.json \
   --json
 ```

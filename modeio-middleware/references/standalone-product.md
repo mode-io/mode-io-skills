@@ -47,7 +47,7 @@ modeio-middleware-setup --apply-claude --create-claude-settings
 ```bash
 modeio-middleware-setup --health-check --json
 curl -s http://127.0.0.1:8787/healthz
-open http://127.0.0.1:8787/modeio/dashboard
+# Then visit http://127.0.0.1:8787/modeio/dashboard in a browser
 curl -s http://127.0.0.1:8787/modeio/api/events
 ```
 
