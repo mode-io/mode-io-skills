@@ -11,7 +11,7 @@
 ## Install
 
 ```bash
-python -m pip install git+https://github.com/mode-io/mode-io-middleware
+python3 -m pip install git+https://github.com/mode-io/mode-io-middleware
 ```
 
 ## Start
@@ -31,15 +31,15 @@ modeio-middleware-gateway \
 Codex CLI:
 
 ```bash
-export OPENAI_BASE_URL="http://127.0.0.1:8787/v1"
+export OPENAI_BASE_URL="http://127.0.0.1:8787/clients/codex/v1"
 ```
 
 OpenCode / OpenClaw / Claude Code:
 
 ```bash
-modeio-middleware-setup --apply-opencode --create-opencode-config
-modeio-middleware-setup --apply-openclaw --create-openclaw-config
-modeio-middleware-setup --apply-claude --create-claude-settings
+modeio-middleware-setup --apply-opencode
+modeio-middleware-setup --apply-openclaw
+modeio-middleware-setup --apply-claude
 ```
 
 ## Verify
@@ -48,16 +48,16 @@ modeio-middleware-setup --apply-claude --create-claude-settings
 modeio-middleware-setup --health-check --json
 curl -s http://127.0.0.1:8787/healthz
 # Then visit http://127.0.0.1:8787/modeio/dashboard in a browser
-curl -s http://127.0.0.1:8787/modeio/api/events
+curl -s http://127.0.0.1:8787/modeio/api/v1/events
 ```
 
 Monitoring routes owned by the standalone runtime:
 
 - `GET /modeio/dashboard`
-- `GET /modeio/api/events`
-- `GET /modeio/api/events/{request_id}`
-- `GET /modeio/api/stats`
-- `GET /modeio/api/events/live`
+- `GET /modeio/api/v1/events`
+- `GET /modeio/api/v1/events/{request_id}`
+- `GET /modeio/api/v1/stats`
+- `GET /modeio/api/v1/events/live`
 
 ## Roll back
 

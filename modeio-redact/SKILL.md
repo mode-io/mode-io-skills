@@ -5,21 +5,20 @@ description: >-
   detector checks for text and supported files. Use for redact/restore flows,
   file-first anonymization, or offline detector tuning with allowlist,
   blocklist, and threshold controls.
-version: 1.0.0
+version: 0.1.0
 metadata:
   openclaw:
     homepage: https://github.com/mode-io/mode-io-skills/tree/main/modeio-redact
     requires:
       bins:
         - python3
-      env:
-        - ANONYMIZE_API_URL
-        - MODEIO_REDACT_MAP_DIR
 ---
 
 # Run anonymization and restore flows
 
 Use this skill when you need to anonymize text/files, restore placeholders with a saved map, or tune the local detector.
+
+Tests are maintainer-only regression coverage and are excluded from ClawHub uploads.
 
 ## Scope
 
@@ -27,8 +26,8 @@ Use this skill when you need to anonymize text/files, restore placeholders with 
   - anonymize (`scripts/anonymize.py`)
   - deanonymize (`scripts/deanonymize.py`)
   - local detector diagnostics (`scripts/detect_local.py`)
-  - file/map workflow helpers
-  - fail-closed assurance for rich-file outputs
+  - quick smoke validation (`scripts/smoke_redact.sh`)
+  - file/map workflow helpers behind those entrypoints
 - Not included:
   - request/response gateway routing (`modeio-middleware`)
   - command safety analysis (`modeio-guardrail`)
@@ -38,20 +37,21 @@ Use this skill when you need to anonymize text/files, restore placeholders with 
 
 Run these commands from inside the `modeio-redact` folder.
 
-Optional packages:
+## Requirements
 
-- `requests` for non-`lite` API-backed anonymization
-- `python-docx` for `.docx`
-- `PyMuPDF` for `.pdf`
-- `ANONYMIZE_API_URL` overrides the backend endpoint for non-`lite` levels
-- `MODEIO_REDACT_MAP_DIR` overrides local map storage for saved placeholder maps
+- Hard requirement: `python3`
+- Optional package: `requests` for API-backed `dynamic`, `strict`, and `crossborder`
+- Optional package: `python-docx` for `.docx`
+- Optional package: `PyMuPDF` for `.pdf`
+- Optional override: `ANONYMIZE_API_URL` for non-`lite` levels
+- Optional override: `MODEIO_REDACT_MAP_DIR` for local map storage
 
 ## Core commands
 
 ### Anonymize text
 
 ```bash
-python scripts/anonymize.py \
+python3 scripts/anonymize.py \
   --input "Email: alice@example.com, Phone: 415-555-1234" \
   --level lite \
   --json
@@ -60,7 +60,7 @@ python scripts/anonymize.py \
 ### Anonymize a file
 
 ```bash
-python scripts/anonymize.py \
+python3 scripts/anonymize.py \
   --input ./incident.docx \
   --level lite \
   --json
@@ -69,7 +69,7 @@ python scripts/anonymize.py \
 ### Restore from a saved map
 
 ```bash
-python scripts/deanonymize.py \
+python3 scripts/deanonymize.py \
   --input "Email: [EMAIL_1]" \
   --map ~/.modeio/redact/maps/<map-id>.json \
   --json
@@ -78,7 +78,7 @@ python scripts/deanonymize.py \
 ### Tune the local detector
 
 ```bash
-python scripts/detect_local.py \
+python3 scripts/detect_local.py \
   --input "Project codename Phoenix is approved. Reach support@example.com." \
   --allowlist-file examples/detect-local/allowlist.json \
   --blocklist-file examples/detect-local/blocklist.json \
@@ -95,17 +95,23 @@ python scripts/detect_local.py \
 | Compliance-sensitive review | `strict` |
 | Cross-region transfer analysis | `crossborder` |
 
-For `crossborder`, pass both `--sender-code` and `--recipient-code`.
+`lite` runs fully local. `dynamic`, `strict`, and `crossborder` call the backend API. For `crossborder`, pass both `--sender-code` and `--recipient-code`.
 
-## Validation
+## File behavior
+
+- Supported file inputs: `.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`, `.jsonl`, `.yaml`, `.yml`, `.xml`, `.html`, `.htm`, `.rst`, `.log`, `.docx`, `.pdf`
+- Saved maps default to `~/.modeio/redact/maps`; use `MODEIO_REDACT_MAP_DIR` to override that location
+- Text-like outputs get embedded map markers or sidecar `.map.json` references when needed
+- `.pdf` supports anonymization only; de-anonymization is not supported
+- Rich-file outputs keep assurance metadata in the JSON response so callers can decide how strict they want to be
+
+## Quick smoke check
 
 ```bash
-python -m unittest discover tests -p "test_*.py"
-python -m unittest discover tests -p "test_smoke_matrix_extensive.py"
 bash scripts/smoke_redact.sh
 ```
 
-Set `MODEIO_REDACT_SKIP_API_SMOKE=1` when you want the extensive smoke matrix to skip remote API coverage.
+That smoke covers the shipped local anonymize, deanonymize, and detector flows without asking ClawHub users to run the maintainer test suite.
 
 ## Resources
 

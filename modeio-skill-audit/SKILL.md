@@ -5,16 +5,13 @@ description: >-
   repositories before install or execution. Use when asked to scan a skill repo,
   assess whether a repo is safe to install, run a skill safety assessment, or
   produce evidence-backed findings for pre-install security screening.
-version: 1.0.0
+version: 0.1.0
 metadata:
   openclaw:
     homepage: https://github.com/mode-io/mode-io-skills/tree/main/modeio-skill-audit
     requires:
       bins:
         - python3
-        - git
-      env:
-        - GITHUB_TOKEN
 ---
 
 # Run pre-install repository safety audits
@@ -23,7 +20,17 @@ Use this skill to evaluate a skill, plugin, or repository before you install it,
 
 This skill is for static evidence-backed auditing only. It does not execute code, install dependencies, or run hooks in the target repository.
 
-Run these commands from inside the `modeio-skill-audit` folder. Set `GITHUB_TOKEN` when you want higher GitHub API rate limits for the optional OSINT precheck.
+Tests and benchmark assets are maintainer-only and are excluded from ClawHub uploads.
+
+Run these commands from inside the `modeio-skill-audit` folder. Set `GITHUB_TOKEN` only when you want higher GitHub API rate limits for the automatic GitHub precheck.
+
+## Requirements
+
+- Hard requirement: `python3`
+- Optional enhancement: `git` for commit metadata and GitHub-origin discovery
+- Optional enhancement: `GITHUB_TOKEN` for higher GitHub API rate limits
+- The GitHub precheck only runs when the target repository has a GitHub `origin`
+- `evaluate` intentionally skips target-repo `tests/` and fixture paths so the result stays focused on installable runtime surfaces
 
 ## Use cases
 
@@ -45,28 +52,26 @@ Run these commands from inside the `modeio-skill-audit` folder. Set `GITHUB_TOKE
 
 Primary CLI for deterministic repository audit, prompt payload generation, validator checks, and adjudication merge.
 
+Packaged command alias when the project is installed:
+
 ```bash
-python scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --json > /tmp/skill_scan.json
-python scripts/skill_safety_assessment.py prompt --target-repo /path/to/repo --scan-file /tmp/skill_scan.json --include-full-findings
-python scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
-python scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json --assessment-file /tmp/adjudication.json --json
+modeio-skill-audit evaluate --target-repo /path/to/repo --json
+```
+
+```bash
+python3 scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --json > /tmp/skill_scan.json
+python3 scripts/skill_safety_assessment.py prompt --target-repo /path/to/repo --scan-file /tmp/skill_scan.json --include-full-findings
+python3 scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
+python3 scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json --assessment-file /tmp/adjudication.json --json
 ```
 
 Compatibility alias:
 
 ```bash
-python scripts/skill_safety_assessment.py scan --target-repo /path/to/repo --json > /tmp/skill_scan.json
+python3 scripts/skill_safety_assessment.py scan --target-repo /path/to/repo --json > /tmp/skill_scan.json
 ```
 
-### `scripts/run_repo_set.py`
-
-Batch benchmark runner for curated repo sets.
-
-```bash
-python scripts/run_repo_set.py \
-  --repo-set references/repo_sets/fresh_holdout_repos.json \
-  --repos-root /path/to/local/repo-cache
-```
+`scripts/run_repo_set.py` is a maintainer benchmark helper and is not part of the normal ClawHub runtime flow.
 
 ## Workflow rules
 
@@ -87,4 +92,3 @@ python scripts/run_repo_set.py \
 - `references/architecture.md` — package layout and scan pipeline.
 - `references/prompt-contract.md` — strict prompt contract for model-assisted review.
 - `references/output-contract.md` — JSON/report contract and compatibility expectations.
-- `references/benchmarking.md` — benchmark runner usage and repo-set interpretation.

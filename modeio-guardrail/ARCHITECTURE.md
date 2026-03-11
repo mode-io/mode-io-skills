@@ -23,6 +23,7 @@ modeio-guardrail/
 
 - `scripts/safety.py` is the repo-local wrapper for the live safety CLI.
 - `modeio_guardrail/cli/safety.py` owns request shaping, retry behavior, JSON envelope formatting, and CLI flow.
+- `tests/` are maintainer contract coverage and stay out of the ClawHub upload surface.
 
 ## Runtime flow
 
