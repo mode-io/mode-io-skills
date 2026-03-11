@@ -6,7 +6,7 @@
   </picture>
 </p>
 
-# Mode IO Skills
+# Mode IO Skills 🛡️🔍
 
 Privacy, safety, repository-audit, and middleware-routing skills for AI agents.
 
