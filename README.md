@@ -8,7 +8,7 @@
 
 # Mode IO Skills 🛡️🔍
 
-Privacy, safety, repository-audit, and middleware-routing skills for AI agents.
+🔒 Privacy, 🛡️ safety, 🔍 repository-audit, and ⚙️ middleware-routing skills for AI agents.
 
 <p align="center">
   <a href="https://www.modeio.ai/">
@@ -19,6 +19,9 @@ Privacy, safety, repository-audit, and middleware-routing skills for AI agents.
   </a>
   <a href="https://github.com/mode-io/mode-io-skills/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/License-Apache%202.0-blue?logo=apache&logoColor=white" alt="Apache 2.0">
+  </a>
+  <a href="https://github.com/mode-io/mode-io-skills">
+    <img src="https://visitor-badge.laobi.icu/badge?page_id=mode-io.mode-io-skills&left_color=gray&right_color=%2342b983" alt="Visitor badge">
   </a>
 </p>
 
