@@ -8,7 +8,7 @@
 
 # Mode IO Skills 🛡️🔍
 
-Privacy, safety, repository-audit, and middleware-routing skills for AI agents.
+🔒 Privacy, 🛡️ safety, 🔍 repository-audit, and ⚙️ middleware-routing skills for AI agents.
 
 <p align="center">
   <a href="https://www.modeio.ai/">
@@ -19,6 +19,9 @@ Privacy, safety, repository-audit, and middleware-routing skills for AI agents.
   </a>
   <a href="https://github.com/mode-io/mode-io-skills/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/License-Apache%202.0-blue?logo=apache&logoColor=white" alt="Apache 2.0">
+  </a>
+  <a href="https://github.com/mode-io/mode-io-skills">
+    <img src="https://visitor-badge.laobi.icu/badge?page_id=mode-io.mode-io-skills&left_color=gray&right_color=%2342b983" alt="Visitor badge">
   </a>
 </p>
 
@@ -38,7 +41,7 @@ This repository is the home of four skills:
 | [`privacy-protector`](./privacy-protector/) | Anonymizes and restores PII in text and supported files, with local detector tuning and higher-assurance API-backed modes |
 | [`security`](./security/) | Runs live safety checks on instructions that may trigger tools, edits, destructive actions, or compliance-sensitive operations |
 | [`skill-audit`](./skill-audit/) | Performs deterministic static safety audits for third-party skill and plugin repositories before install or execution |
-| [`modeio-middleware`](./modeio-middleware/) | Connects agents to the standalone Mode IO middleware gateway for routing, policy hooks, and monitoring |
+| [`⚠️ modeio-middleware`](./modeio-middleware/) | Experimental wrapper that connects agents to the standalone Mode IO middleware gateway for routing, policy hooks, and monitoring |
 
 ## Why Teams Use It
 
@@ -95,14 +98,14 @@ decision: caution
 risk_score: 42
 ```
 
-### `modeio-middleware`
+### ⚠️ `modeio-middleware` (experimental)
 
 ```bash
 python3 -m pip install git+https://github.com/mode-io/mode-io-middleware
 modeio-middleware-setup --health-check
 ```
 
-The standalone product repo for middleware runtime, monitoring UI, plugin development, and release flow is:
+The standalone product repo remains the source of truth for middleware runtime, monitoring UI, plugin development, and release flow:
 
 - [`mode-io-middleware`](https://github.com/mode-io/mode-io-middleware)
 
@@ -112,10 +115,13 @@ Install only the skill you need.
 
 ### Option 1: ClawHub / OpenClaw
 
-When a skill is listed in ClawHub, install it by slug:
+When a skill is listed in ClawHub, install the specific one you need:
 
 ```bash
-clawhub install <skill-slug>
+clawhub install privacy-protector
+clawhub install security
+clawhub install skill-audit
+clawhub install modeio-middleware
 ```
 
 ### Option 2: `npx skills add`
@@ -124,16 +130,19 @@ If you prefer the repo-path workflow, `npx skills add` is still supported:
 
 ```bash
 npx skills add mode-io/mode-io-skills --skill privacy-protector --agent codex --yes --copy
+npx skills add mode-io/mode-io-skills --skill security --agent codex --yes --copy
+npx skills add mode-io/mode-io-skills --skill skill-audit --agent codex --yes --copy
+npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent codex --yes --copy
 ```
 
-Swap `privacy-protector` for `security`, `skill-audit`, or `modeio-middleware`, and swap `codex` for `claude-code` or `opencode` as needed.
+Swap `codex` for `claude-code` or `opencode` as needed.
 
 ## Learn More
 
 - [`privacy-protector/SKILL.md`](./privacy-protector/SKILL.md)
 - [`security/SKILL.md`](./security/SKILL.md)
 - [`skill-audit/SKILL.md`](./skill-audit/SKILL.md)
-- [`modeio-middleware/SKILL.md`](./modeio-middleware/SKILL.md)
+- [`⚠️ modeio-middleware/SKILL.md`](./modeio-middleware/SKILL.md)
 
 ## License
 
