@@ -18,7 +18,7 @@ metadata:
 
 Use this skill when you need to anonymize text/files, restore placeholders with a saved map, or tune the local detector.
 
-Tests are maintainer-only regression coverage and are excluded from ClawHub uploads.
+Maintainer-only validation assets are excluded from ClawHub uploads.
 
 ## Scope
 
@@ -26,7 +26,6 @@ Tests are maintainer-only regression coverage and are excluded from ClawHub uplo
   - anonymize (`scripts/anonymize.py`)
   - deanonymize (`scripts/deanonymize.py`)
   - local detector diagnostics (`scripts/detect_local.py`)
-  - quick smoke validation (`scripts/smoke_redact.sh`)
   - file/map workflow helpers behind those entrypoints
 - Not included:
   - request/response gateway routing (`modeio-middleware`)
@@ -86,32 +85,16 @@ python3 scripts/detect_local.py \
   --json
 ```
 
-## Level selection
+## Runtime notes
 
-| Scenario | Level |
-|---|---|
-| Offline or no network | `lite` |
-| General anonymization | `dynamic` |
-| Compliance-sensitive review | `strict` |
-| Cross-region transfer analysis | `crossborder` |
-
-`lite` runs fully local. `dynamic`, `strict`, and `crossborder` call the backend API. For `crossborder`, pass both `--sender-code` and `--recipient-code`.
-
-## File behavior
-
+- `lite` runs fully local. `dynamic`, `strict`, and `crossborder` call the backend API
+- For `crossborder`, pass both `--sender-code` and `--recipient-code`
 - Supported file inputs: `.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`, `.jsonl`, `.yaml`, `.yml`, `.xml`, `.html`, `.htm`, `.rst`, `.log`, `.docx`, `.pdf`
 - Saved maps default to `~/.modeio/redact/maps`; use `MODEIO_REDACT_MAP_DIR` to override that location
 - Text-like outputs get embedded map markers or sidecar `.map.json` references when needed
 - `.pdf` supports anonymization only; de-anonymization is not supported
 - Rich-file outputs keep assurance metadata in the JSON response so callers can decide how strict they want to be
-
-## Quick smoke check
-
-```bash
-bash scripts/smoke_redact.sh
-```
-
-That smoke covers the shipped local anonymize, deanonymize, and detector flows without asking ClawHub users to run the maintainer test suite.
+- Use `--json` when you want the stable machine-readable envelope and file workflow metadata
 
 ## Resources
 
