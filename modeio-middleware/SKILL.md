@@ -20,17 +20,37 @@ Use this skill when you want an agent to install, start, verify, monitor, or wir
 
 This ClawHub upload is intentionally docs-only. It does not ship the middleware runtime, runtime tests, or product source code.
 
-## What this skill wraps
+## Scope
+
+- Included:
+  - install, start, verify, and rollback guidance for the standalone runtime
+  - client routing setup for Codex, OpenCode, OpenClaw, and Claude Code
+  - operator guidance for monitoring routes and external plugin tools
+- Not included:
+  - runtime source code, packaged tests, or contributor validation flows
+  - dashboard/frontend implementation work in the standalone repo
+  - plugin implementation internals beyond scaffold and conformance entrypoints
+
+## Product boundary
 
 - Standalone product repo: `https://github.com/mode-io/mode-io-middleware`
 - Product quickstart: `https://github.com/mode-io/mode-io-middleware/blob/main/QUICKSTART.md`
 - Architecture: `https://github.com/mode-io/mode-io-middleware/blob/main/ARCHITECTURE.md`
 - Plugin contract: `https://github.com/mode-io/mode-io-middleware/blob/main/MODEIO_PLUGIN_PROTOCOL.md`
 
-## Core routes
+## Requirements
+
+- Hard requirement: `python3` for installation
+- Optional tool: `curl` for manual HTTP verification
+- Typical startup env: `MODEIO_GATEWAY_UPSTREAM_API_KEY`
+- Codex routing env after setup: `OPENAI_BASE_URL`
+
+## Common routes
 
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
+- `POST /v1/messages`
+- `GET /v1/models`
 - `POST /connectors/claude/hooks`
 - `GET /healthz`
 - `GET /modeio/dashboard`
@@ -39,7 +59,7 @@ This ClawHub upload is intentionally docs-only. It does not ship the middleware 
 - `GET /modeio/api/v1/stats`
 - `GET /modeio/api/v1/events/live`
 
-## Recommended operator flow
+## Core commands
 
 ### 1) Install the standalone runtime
 
@@ -89,6 +109,7 @@ Claude Code:
 
 ```bash
 modeio-middleware-setup --apply-claude
+# add --create-claude-settings when ~/.claude/settings.json does not exist yet
 ```
 
 ### 4) Validate health and monitoring
@@ -120,21 +141,22 @@ unset OPENAI_BASE_URL
 modeio-middleware-setup --uninstall --apply-opencode --apply-openclaw --apply-claude
 ```
 
-## Behavior notes
+## Runtime notes
 
 - The standalone product repo is the runtime and packaging source of truth.
 - This skill is intentionally thin: it gives agents reliable install/setup/health-check guidance instead of shipping the product implementation.
 - The built-in dashboard, request journal, and monitoring APIs are runtime features owned by the standalone product repo; this wrapper should teach agents how to reach them.
+- Client-scoped `/clients/...` routes and admin `/modeio/admin/v1/*` routes also exist in the standalone product.
 - Public external plugins use `stdio-jsonrpc`; `legacy_inprocess` remains internal-only in the product repo.
 - The bundled default config starts with no active plugins enabled.
 - Maintainers working from a local checkout can also `python3 -m pip install /path/to/mode-io-middleware`, but that is not the main ClawHub user path.
+
+## Resources
+
+- `references/standalone-product.md` — standalone repo handoff, install commands, and operator notes
 
 ## When not to use
 
 - You only need direct upstream API calls and do not want a local gateway process.
 - You are editing the middleware product itself; use the standalone repo directly instead.
 - You want to extend the dashboard, request journal, or browser monitoring UI itself; that belongs in the standalone product repo, not this wrapper.
-
-## References in this repo
-
-- `references/standalone-product.md` — standalone repo handoff, install commands, and operator notes

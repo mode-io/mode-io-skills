@@ -40,6 +40,7 @@ OpenCode / OpenClaw / Claude Code:
 modeio-middleware-setup --apply-opencode
 modeio-middleware-setup --apply-openclaw
 modeio-middleware-setup --apply-claude
+# add --create-claude-settings when ~/.claude/settings.json does not exist yet
 ```
 
 ## Verify
@@ -53,6 +54,10 @@ curl -s http://127.0.0.1:8787/modeio/api/v1/events
 
 Monitoring routes owned by the standalone runtime:
 
+- `POST /v1/chat/completions`
+- `POST /v1/responses`
+- `POST /v1/messages`
+- `GET /v1/models`
 - `GET /modeio/dashboard`
 - `GET /modeio/api/v1/events`
 - `GET /modeio/api/v1/events/{request_id}`
