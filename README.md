@@ -513,6 +513,8 @@ This repo root is a catalog and source index. Source execution happens inside ea
 
 If you are running commands locally, `cd` into the matching skill folder first and follow that folder's `SKILL.md`. There is no shared repo-root bootstrap or env template anymore.
 
+Each skill folder also includes its own `LICENSE` and `NOTICE` so per-folder distribution stays under Apache License 2.0.
+
 ## 7) Verify in 30 seconds ✅
 
 After installing, ask your agent:
