@@ -5,6 +5,16 @@ description: >-
   repositories before install or execution. Use when asked to scan a skill repo,
   assess whether a repo is safe to install, run a skill safety assessment, or
   produce evidence-backed findings for pre-install security screening.
+version: 1.0.0
+metadata:
+  openclaw:
+    homepage: https://github.com/mode-io/mode-io-skills/tree/main/modeio-skill-audit
+    requires:
+      bins:
+        - python3
+        - git
+      env:
+        - GITHUB_TOKEN
 ---
 
 # Run pre-install repository safety audits
@@ -12,6 +22,8 @@ description: >-
 Use this skill to evaluate a skill, plugin, or repository before you install it, trust it, or recommend it.
 
 This skill is for static evidence-backed auditing only. It does not execute code, install dependencies, or run hooks in the target repository.
+
+Run these commands from inside the `modeio-skill-audit` folder. Set `GITHUB_TOKEN` when you want higher GitHub API rate limits for the optional OSINT precheck.
 
 ## Use cases
 

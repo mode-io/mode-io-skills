@@ -5,6 +5,17 @@ description: >-
   `modeio-middleware` product repo. Use this thin skill wrapper to connect
   Codex, OpenCode, OpenClaw, and Claude Code to the local policy gateway and
   built-in monitoring surface.
+version: 1.0.0
+metadata:
+  openclaw:
+    homepage: https://github.com/mode-io/mode-io-middleware
+    requires:
+      bins:
+        - python3
+        - curl
+      env:
+        - MODEIO_GATEWAY_UPSTREAM_API_KEY
+        - OPENAI_BASE_URL
 ---
 
 # Run standalone middleware gateway for Codex, Claude Code, OpenCode, and OpenClaw
@@ -92,7 +103,7 @@ modeio-middleware-setup --apply-claude --create-claude-settings
 
 ```bash
 curl -s http://127.0.0.1:8787/healthz
-open http://127.0.0.1:8787/modeio/dashboard
+# Then visit http://127.0.0.1:8787/modeio/dashboard in a browser
 curl -s http://127.0.0.1:8787/modeio/api/events
 ```
 

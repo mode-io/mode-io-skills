@@ -502,31 +502,16 @@ npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent opencode
 
 Cursor is not currently supported in this repo, so there is no Cursor installation guide here.
 
-## 6) Bootstrap the local runtime (recommended for repo use) 📦
+## 6) Work From Source 📦
 
-If you cloned this repo and want a smooth local first run, do this before verification:
+This repo root is a catalog and source index. Source execution happens inside each skill folder:
 
-```bash
-python scripts/bootstrap_env.py
-source .venv/bin/activate
-python scripts/doctor_env.py
-```
+- `modeio-redact/` for anonymize, deanonymize, local detector, and file workflows
+- `modeio-guardrail/` for live safety checks
+- `modeio-skill-audit/` for deterministic pre-install repository audits
+- `modeio-middleware/` for the thin wrapper that points to the standalone `mode-io-middleware` product repo
 
-Quick shortcuts:
-
-```bash
-make bootstrap
-make doctor
-make smoke-redact-lite
-```
-
-The doctor check tells you exactly what is missing for:
-
-- `modeio-redact` offline and API-backed modes
-- `modeio-guardrail` backend safety checks
-- `modeio-middleware` thin wrapper guidance and handoff into the standalone runtime repo
-
-Use `.env.example` as the reference template for optional env vars here. For live middleware runtime values and product-level smoke guidance, use `https://github.com/mode-io/mode-io-middleware`.
+If you are running commands locally, `cd` into the matching skill folder first and follow that folder's `SKILL.md`. There is no shared repo-root bootstrap or env template anymore.
 
 ## 7) Verify in 30 seconds ✅
 
@@ -587,138 +572,65 @@ Health: healthy
 > [!TIP]
 > If you see redacted placeholders and a structured risk response like above, you are fully set up.
 
-## 8) Manual dependency install (alternative to bootstrap)
+## 8) Local Source Commands
+
+For source usage, run commands inside the matching skill folder. Examples:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
+cd modeio-redact
+python scripts/anonymize.py --input "Email: alice@example.com" --level lite --json
+
+cd ../modeio-guardrail
+python -m pip install requests
+python scripts/safety.py --help
+
+cd ../modeio-skill-audit
+python scripts/skill_safety_assessment.py evaluate --target-repo /path/to/skill-repo --json > /tmp/skill_scan.json
 ```
 
-Reuse one environment for all AI clients.
+For middleware runtime setup, use the standalone product repo: `https://github.com/mode-io/mode-io-middleware`.
 
 <details>
-<summary><h1>🛠 Manual API Call (Advanced)</h1></summary>
+<summary><h1>🛠 Manual Source Usage (Advanced)</h1></summary>
 
 > **Warning:** This section is for manual operation only. In normal usage, install the skills and let the agent invoke them automatically.
 
-## Run scripts manually
+Use the individual skill folder as the working directory. The repo root is intentionally catalog-only.
 
-From the repo root:
+## `modeio-redact`
 
 ```bash
-# Default level is dynamic (LLM-powered, no jurisdiction codes needed)
-python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com"
-
-# Local-only lite mode — no network, runs in milliseconds
-python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com, Phone: 415-555-1234" --level lite
-
-# Crossborder — full compliance + legal analysis (requires jurisdiction codes)
-python modeio-redact/scripts/anonymize.py --input "Name: 张伟, ID: 310101199001011234" --level crossborder --sender-code "CN SHA" --recipient-code "US NYC"
-
-# File path input is auto-detected for supported formats
-python modeio-redact/scripts/anonymize.py --input ./sensitive_notes.txt --level dynamic
-python modeio-redact/scripts/anonymize.py --input ./handoff.md --level lite
-python modeio-redact/scripts/anonymize.py --input ./incident.docx --level lite
-python modeio-redact/scripts/anonymize.py --input ./incident.pdf --level lite
-
-# File input writes output files by default:
-# ./sensitive_notes.redacted.txt + ./sensitive_notes.redacted.map.json
-
-# PDF note:
-# - .pdf anonymization is supported for text-layer PDFs across lite/dynamic/strict/crossborder.
-# - non-lite PDF flows require API mapping entries for fail-closed projection.
-# - Redaction removes underlying text and applies black fill.
-# - .pdf de-anonymization is not supported.
-# - file outputs enforce coverage checks by default.
-# - .docx/.pdf also run residual verification by default.
-
-# Optional file output controls
-python modeio-redact/scripts/anonymize.py --input ./sensitive_notes.txt --level lite --in-place
-python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com" --output ./manual-redacted.txt --json
-
-# Local de-anonymization (auto map resolution for file input)
-python modeio-redact/scripts/deanonymize.py --input ./sensitive_notes.redacted.txt --json
-python modeio-redact/scripts/deanonymize.py --input ./sensitive_notes.redacted.txt --in-place --json
-python modeio-redact/scripts/deanonymize.py --input "Email: [EMAIL_1]" --map 20260304T050000Z-a1b2c3d4 --json
-
-# Machine-readable JSON output (works with any level)
-python modeio-redact/scripts/anonymize.py --input "Email: alice@example.com" --level dynamic --json
-
-# Safety checks
-python modeio-guardrail/scripts/safety.py -i "Delete all log files"
-python modeio-guardrail/scripts/safety.py -i "Modify database permissions" -c '{"environment":"production","operation_intent":"permission-change","scope":"single-resource","data_sensitivity":"regulated","rollback":"partial","change_control":"ticket:SEC-118"}' -t "/var/lib/mysql" --json
-
-# Skill audit (v2 layered evaluator)
-python modeio-skill-audit/scripts/skill_safety_assessment.py evaluate --target-repo /path/to/skill-repo --json > /tmp/skill_scan.json
-python modeio-skill-audit/scripts/skill_safety_assessment.py evaluate --target-repo /path/to/skill-repo --context-profile '{"environment":"ci","execution_mode":"build-test","risk_tolerance":"balanced","data_sensitivity":"internal"}' --json > /tmp/skill_scan.json
-
-# (compat) legacy alias still supported
-python modeio-skill-audit/scripts/skill_safety_assessment.py scan --target-repo /path/to/skill-repo --json > /tmp/skill_scan.json
-
-# Build prompt payload for model analysis
-python modeio-skill-audit/scripts/skill_safety_assessment.py prompt --target-repo /path/to/skill-repo --scan-file /tmp/skill_scan.json
-
-# Validate model output against evidence references and score/decision consistency
-python modeio-skill-audit/scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
-python modeio-skill-audit/scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --target-repo /path/to/skill-repo --rescan-on-validate --json
-
-# Context-aware adjudication bridge (LLM interprets context; engine keeps deterministic decision)
-python modeio-skill-audit/scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json > /tmp/adjudication_prompt.md
-python modeio-skill-audit/scripts/skill_safety_assessment.py adjudicate --scan-file /tmp/skill_scan.json --assessment-file /tmp/adjudication.json --json
-
-# Generic middleware gateway (Codex/OpenCode/OpenClaw/Claude)
-python -m pip install git+https://github.com/mode-io/mode-io-middleware
-modeio-middleware-setup --health-check
-export OPENAI_BASE_URL="http://127.0.0.1:8787/v1"
-modeio-middleware-setup --apply-openclaw --create-openclaw-config
-modeio-middleware-gateway --host 127.0.0.1 --port 8787 --upstream-chat-url "https://api.openai.com/v1/chat/completions" --upstream-responses-url "https://api.openai.com/v1/responses"
-# Quickstart: https://github.com/mode-io/mode-io-middleware/blob/main/QUICKSTART.md
-
-# Middleware one-command uninstall (plus optional OpenCode/OpenClaw/Claude rollback)
-modeio-middleware-setup --uninstall --apply-opencode --apply-openclaw --apply-claude
-
-# Runtime prompt shielding now belongs to modeio-middleware (not modeio-redact)
-# Start middleware gateway with separate upstream routes
-export MODEIO_GATEWAY_UPSTREAM_API_KEY="<your-upstream-key>"
-modeio-middleware-gateway \
-  --host 127.0.0.1 \
-  --port 8787 \
-  --upstream-chat-url "https://api.openai.com/v1/chat/completions" \
-  --upstream-responses-url "https://api.openai.com/v1/responses"
-
-# In your client, set base URL to: http://127.0.0.1:8787/v1
-
-# Standalone middleware product tests
-# See: https://github.com/mode-io/mode-io-middleware
-
-# Run skill audit test suite
-python -m unittest discover modeio-skill-audit/tests -p "test_*.py"
-
-# Run redact test suite (focused anonymize/deanonymize and file workflows)
-python -m unittest discover modeio-redact/tests -p "test_*.py"
-
-# Run extensive anonymize/deanonymize smoke matrix (includes real API smoke by default)
-python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
-
-# Optional: disable API smoke when working fully offline
-MODEIO_REDACT_SKIP_API_SMOKE=1 python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
-
-# Offline local detection (detailed risk scoring)
-python modeio-redact/scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json
-python modeio-redact/scripts/detect_local.py --input "Name: Alice Wang" --profile precision --json
-python modeio-redact/scripts/detect_local.py --input "Project codename Phoenix" --blocklist-file ./blocklist.json --json
-python modeio-redact/scripts/detect_local.py --input "Email: alice@example.com" --explain
+cd modeio-redact
+python scripts/anonymize.py --input "Email: alice@example.com" --level lite --json
+python scripts/deanonymize.py --input "Email: [EMAIL_1]" --map ~/.modeio/redact/maps/<map-id>.json --json
+python scripts/detect_local.py --input "Phone 13812345678 Email test@example.com" --json
+bash scripts/smoke_redact.sh
 ```
 
-> Local detector score fields are heuristic decision scores (for threshold gating), not statistical confidence intervals.
+## `modeio-guardrail`
 
-> `--input` auto-reads supported file paths (`.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`, `.jsonl`, `.yaml`, `.yml`, `.xml`, `.html`, `.htm`, `.rst`, `.log`, `.docx`, `.pdf`).
-> `.pdf` requires a text layer, supports all anonymization levels when mapping entries are available, and is anonymize-only.
-> `.docx` and `.pdf` outputs run verified fail-closed checks by default.
-> For file workflows, anonymize/deanonymize now write output files by default unless you use explicit `--output` or `--in-place`.
-> File output JSON includes `applyReport`, `verificationReport`, and `assurancePolicy` for coverage + verification visibility.
-> `deanonymize.py` always continues on hash mismatch and emits an `input_hash_mismatch` warning.
+```bash
+cd modeio-guardrail
+python -m pip install requests
+python scripts/safety.py -i "Delete all log files"
+python scripts/safety.py -i "Modify database permissions" -c '{"environment":"production","operation_intent":"permission-change","scope":"single-resource","data_sensitivity":"regulated","rollback":"partial","change_control":"ticket:SEC-118"}' -t "/var/lib/mysql" --json
+```
+
+## `modeio-skill-audit`
+
+```bash
+cd modeio-skill-audit
+python scripts/skill_safety_assessment.py evaluate --target-repo /path/to/skill-repo --json > /tmp/skill_scan.json
+python scripts/skill_safety_assessment.py prompt --target-repo /path/to/skill-repo --scan-file /tmp/skill_scan.json
+python scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
+```
+
+## `modeio-middleware`
+
+Use the standalone product repo for runtime install, gateway startup, monitoring, and product-level tests:
+
+- `https://github.com/mode-io/mode-io-middleware`
+- Quickstart: `https://github.com/mode-io/mode-io-middleware/blob/main/QUICKSTART.md`
 
 For full details, see [modeio-redact/SKILL.md](modeio-redact/SKILL.md), [modeio-guardrail/SKILL.md](modeio-guardrail/SKILL.md), [modeio-skill-audit/SKILL.md](modeio-skill-audit/SKILL.md), [modeio-middleware/SKILL.md](modeio-middleware/SKILL.md), and the standalone middleware product repo at `https://github.com/mode-io/mode-io-middleware`.
 

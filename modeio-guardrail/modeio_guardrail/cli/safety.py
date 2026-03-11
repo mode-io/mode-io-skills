@@ -44,7 +44,7 @@ except ModuleNotFoundError:
         def post(*_args, **_kwargs):
             raise _RequestsShim.MissingDependencyError(
                 "requests package is required for backend-backed safety checks. "
-                "Install dependencies from requirements.txt."
+                "Install requests to enable backend-backed safety checks."
             )
 
     requests = _RequestsShim()

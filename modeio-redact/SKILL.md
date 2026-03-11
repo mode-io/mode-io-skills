@@ -5,6 +5,16 @@ description: >-
   detector checks for text and supported files. Use for redact/restore flows,
   file-first anonymization, or offline detector tuning with allowlist,
   blocklist, and threshold controls.
+version: 1.0.0
+metadata:
+  openclaw:
+    homepage: https://github.com/mode-io/mode-io-skills/tree/main/modeio-redact
+    requires:
+      bins:
+        - python3
+      env:
+        - ANONYMIZE_API_URL
+        - MODEIO_REDACT_MAP_DIR
 ---
 
 # Run anonymization and restore flows
@@ -24,28 +34,24 @@ Use this skill when you need to anonymize text/files, restore placeholders with 
   - command safety analysis (`modeio-guardrail`)
   - staged-diff or git pre-commit scanning
 
-## First-run path
+## Working directory
 
-From the repo root:
-
-```bash
-python scripts/bootstrap_env.py
-python scripts/doctor_env.py
-modeio-redact/scripts/smoke_redact.sh
-```
+Run these commands from inside the `modeio-redact` folder.
 
 Optional packages:
 
 - `requests` for non-`lite` API-backed anonymization
 - `python-docx` for `.docx`
 - `PyMuPDF` for `.pdf`
+- `ANONYMIZE_API_URL` overrides the backend endpoint for non-`lite` levels
+- `MODEIO_REDACT_MAP_DIR` overrides local map storage for saved placeholder maps
 
 ## Core commands
 
 ### Anonymize text
 
 ```bash
-python modeio-redact/scripts/anonymize.py \
+python scripts/anonymize.py \
   --input "Email: alice@example.com, Phone: 415-555-1234" \
   --level lite \
   --json
@@ -54,7 +60,7 @@ python modeio-redact/scripts/anonymize.py \
 ### Anonymize a file
 
 ```bash
-python modeio-redact/scripts/anonymize.py \
+python scripts/anonymize.py \
   --input ./incident.docx \
   --level lite \
   --json
@@ -63,7 +69,7 @@ python modeio-redact/scripts/anonymize.py \
 ### Restore from a saved map
 
 ```bash
-python modeio-redact/scripts/deanonymize.py \
+python scripts/deanonymize.py \
   --input "Email: [EMAIL_1]" \
   --map ~/.modeio/redact/maps/<map-id>.json \
   --json
@@ -72,11 +78,11 @@ python modeio-redact/scripts/deanonymize.py \
 ### Tune the local detector
 
 ```bash
-python modeio-redact/scripts/detect_local.py \
+python scripts/detect_local.py \
   --input "Project codename Phoenix is approved. Reach support@example.com." \
-  --allowlist-file modeio-redact/examples/detect-local/allowlist.json \
-  --blocklist-file modeio-redact/examples/detect-local/blocklist.json \
-  --thresholds-file modeio-redact/examples/detect-local/thresholds.json \
+  --allowlist-file examples/detect-local/allowlist.json \
+  --blocklist-file examples/detect-local/blocklist.json \
+  --thresholds-file examples/detect-local/thresholds.json \
   --json
 ```
 
@@ -94,9 +100,9 @@ For `crossborder`, pass both `--sender-code` and `--recipient-code`.
 ## Validation
 
 ```bash
-python -m unittest discover modeio-redact/tests -p "test_*.py"
-python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
-modeio-redact/scripts/smoke_redact.sh
+python -m unittest discover tests -p "test_*.py"
+python -m unittest discover tests -p "test_smoke_matrix_extensive.py"
+bash scripts/smoke_redact.sh
 ```
 
 Set `MODEIO_REDACT_SKIP_API_SMOKE=1` when you want the extensive smoke matrix to skip remote API coverage.
