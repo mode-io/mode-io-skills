@@ -8,7 +8,7 @@
 
 # Mode IO Skills
 
-Source repository for Mode IO's privacy, safety, repository-audit, and middleware-routing skills for AI agents.
+Privacy, safety, repository-audit, and middleware-routing skills for AI agents.
 
 <p align="center">
   <a href="https://www.modeio.ai/">
@@ -20,213 +20,121 @@ Source repository for Mode IO's privacy, safety, repository-audit, and middlewar
   <a href="https://github.com/mode-io/mode-io-skills/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/License-Apache%202.0-blue?logo=apache&logoColor=white" alt="Apache 2.0">
   </a>
-  <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
 </p>
 
 </div>
 
-## Overview
+Mode IO helps agents do four things well:
 
-`mode-io-skills` is a centralized source repo with four distinct skill boundaries:
+- protect sensitive data before it leaves the prompt
+- check risky instructions before tools or state changes run
+- audit third-party skills and plugins before install
+- route traffic through a local middleware layer with policy hooks and monitoring
 
-| Skill | Use it for | Runtime model |
-|---|---|---|
-| [`privacy-protector`](./privacy-protector/) | PII anonymization, deanonymization, file workflows, local detector tuning | `lite` is local-only; higher levels call the backend API |
-| [`security`](./security/) | Pre-execution safety checks for risky or state-changing instructions | Backend-backed live check |
-| [`skill-audit`](./skill-audit/) | Deterministic pre-install repository safety audit for third-party skills and plugins | Static analysis only |
-| [`modeio-middleware`](./modeio-middleware/) | Thin skill wrapper for the standalone gateway product | Docs-only wrapper to the standalone repo |
+This repository is the home of four skills:
 
-The repo root is intentionally catalog-only. There is no repo-root bootstrap, shared `requirements.txt`, or shared `.env` template anymore.
+| Skill | What it does |
+|---|---|
+| [`privacy-protector`](./privacy-protector/) | Anonymizes and restores PII in text and supported files, with local detector tuning and higher-assurance API-backed modes |
+| [`security`](./security/) | Runs live safety checks on instructions that may trigger tools, edits, destructive actions, or compliance-sensitive operations |
+| [`skill-audit`](./skill-audit/) | Performs deterministic static safety audits for third-party skill and plugin repositories before install or execution |
+| [`modeio-middleware`](./modeio-middleware/) | Connects agents to the standalone Mode IO middleware gateway for routing, policy hooks, and monitoring |
 
-## What Is Current
+## Why Teams Use It
 
-- Public skill names are now `privacy-protector`, `security`, and `skill-audit`.
-- Each top-level skill folder is the publish/install unit for ClawHub.
-- `modeio-middleware` in this repo is intentionally a thin wrapper; the runtime, tests, and product implementation live in [`mode-io-middleware`](https://github.com/mode-io/mode-io-middleware).
-- ClawHub-facing metadata is carried in each skill's `SKILL.md`.
-- Maintainer-only tests, smoke helpers, and benchmark assets are excluded from ClawHub uploads via per-skill `.clawhubignore`.
+- **Safer prompts**: redact sensitive data before it reaches shared channels or external models
+- **Safer execution**: stop risky instructions before they become destructive actions
+- **Safer installs**: screen third-party skills and plugins with evidence-backed static analysis
+- **Safer routing**: put a local policy layer in front of agent traffic
+- **Multi-agent ready**: designed for Claude Code, Codex CLI, OpenCode, OpenClaw, and middleware-driven workflows
 
-## Highlights
+## See It In Action
 
 ### `privacy-protector`
-
-- Supports local regex masking with `--level lite`.
-- Supports API-backed `dynamic`, `strict`, and `crossborder` analysis.
-- Supports text-like files plus `.docx` and `.pdf` for anonymization.
-- Supports local deanonymization through persisted map files.
 
 ```bash
 cd privacy-protector
 python3 scripts/anonymize.py \
-  --input "Email: alice@example.com, Phone: 415-555-1234" \
-  --level lite \
-  --json
+  --input "Name: John Doe, Email: john@company.com, SSN: 123-45-6789" \
+  --level lite
+```
+
+```text
+Name: [NAME_1], Email: [EMAIL_1], SSN: [SSN_1]
 ```
 
 ### `security`
 
-- Designed for live instruction gating before tool execution or state changes.
-- Expects structured context for mutating work.
-- Returns stable JSON envelopes for both success and failure.
-
 ```bash
 cd security
-python3 -m pip install requests
 python3 scripts/safety.py \
-  -i "DROP TABLE users" \
+  -i "Drop all tables in the production database" \
   -c '{"environment":"production","operation_intent":"destructive","scope":"broad","data_sensitivity":"regulated","rollback":"none","change_control":"ticket:DB-9021"}' \
-  -t "postgres://prod/maindb.users" \
+  -t "postgres://prod/main" \
   --json
 ```
 
-### `skill-audit`
+```json
+{
+  "approved": false,
+  "risk_level": "critical"
+}
+```
 
-- Deterministic static audit only: it does not install dependencies or execute target-repo code.
-- Primary commands are `evaluate`, `prompt`, `validate`, and `adjudicate`.
-- Deliberately skips target-repo `tests/` and fixture paths so results stay focused on installable runtime surfaces.
+### `skill-audit`
 
 ```bash
 cd skill-audit
 python3 scripts/skill_safety_assessment.py evaluate \
   --target-repo /path/to/repo \
-  --json > /tmp/skill_scan.json
+  --json
+```
+
+```text
+decision: caution
+risk_score: 42
 ```
 
 ### `modeio-middleware`
-
-- Teaches agents how to install, start, verify, and monitor the standalone gateway.
-- Points operators to the dashboard and monitoring APIs in the standalone product.
-- Does not bundle middleware runtime code in this repo.
 
 ```bash
 python3 -m pip install git+https://github.com/mode-io/mode-io-middleware
 modeio-middleware-setup --health-check
 ```
 
-## Repository Layout
-
-```text
-mode-io-skills/
-  README.md
-  privacy-protector/
-  security/
-  skill-audit/
-  modeio-middleware/
-```
-
-Each skill folder contains its own:
-
-- `SKILL.md`
-- `LICENSE`
-- `NOTICE`
-- references and examples relevant to that skill
-
-## Work From Source
-
-Use the individual skill folder as the working directory.
-
-### `privacy-protector`
-
-```bash
-cd privacy-protector
-python3 scripts/anonymize.py --input "Email: alice@example.com" --level lite --json
-python3 scripts/deanonymize.py --input "Email: [EMAIL_1]" --map ~/.modeio/redact/maps/<map-id>.json --json
-python3 scripts/detect_local.py --input "Reach support@example.com" --json
-```
-
-### `security`
-
-```bash
-cd security
-python3 -m pip install requests
-python3 scripts/safety.py --help
-```
-
-### `skill-audit`
-
-```bash
-cd skill-audit
-python3 scripts/skill_safety_assessment.py evaluate --target-repo /path/to/repo --json
-python3 scripts/skill_safety_assessment.py prompt --target-repo /path/to/repo --scan-file /tmp/skill_scan.json
-python3 scripts/skill_safety_assessment.py validate --scan-file /tmp/skill_scan.json --assessment-file /tmp/assessment.md --json
-```
-
-### `modeio-middleware`
-
-Use the standalone product repo for runtime install, gateway startup, monitoring, plugin development, and product-level tests:
+The standalone product repo for middleware runtime, monitoring UI, plugin development, and release flow is:
 
 - [`mode-io-middleware`](https://github.com/mode-io/mode-io-middleware)
-- [`QUICKSTART.md`](https://github.com/mode-io/mode-io-middleware/blob/main/QUICKSTART.md)
-- [`ARCHITECTURE.md`](https://github.com/mode-io/mode-io-middleware/blob/main/ARCHITECTURE.md)
-- [`MODEIO_PLUGIN_PROTOCOL.md`](https://github.com/mode-io/mode-io-middleware/blob/main/MODEIO_PLUGIN_PROTOCOL.md)
 
-## ClawHub Notes
+## Install
 
-- This repository is centralized, but ClawHub publishes per skill folder, not per repo root.
-- The publishable units are:
-  - `privacy-protector/`
-  - `security/`
-  - `skill-audit/`
-  - `modeio-middleware/`
-- The repo root is not a single installable skill.
-- Once a skill is listed in ClawHub, the current OpenClaw install flow is `clawhub install <skill-slug>`.
+Install only the skill you need.
 
-If you prefer the older repo-path install workflow, keep `npx skills add` as an alternative:
+### Option 1: ClawHub / OpenClaw
+
+When a skill is listed in ClawHub, install it by slug:
 
 ```bash
-# Claude Code
-npx skills add mode-io/mode-io-skills --skill privacy-protector --agent claude-code --yes --copy
-npx skills add mode-io/mode-io-skills --skill security --agent claude-code --yes --copy
-npx skills add mode-io/mode-io-skills --skill skill-audit --agent claude-code --yes --copy
-npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent claude-code --yes --copy
+clawhub install <skill-slug>
+```
 
-# Codex CLI
+### Option 2: `npx skills add`
+
+If you prefer the repo-path workflow, `npx skills add` is still supported:
+
+```bash
 npx skills add mode-io/mode-io-skills --skill privacy-protector --agent codex --yes --copy
-npx skills add mode-io/mode-io-skills --skill security --agent codex --yes --copy
-npx skills add mode-io/mode-io-skills --skill skill-audit --agent codex --yes --copy
-npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent codex --yes --copy
-
-# OpenCode
-npx skills add mode-io/mode-io-skills --skill privacy-protector --agent opencode --yes --copy
-npx skills add mode-io/mode-io-skills --skill security --agent opencode --yes --copy
-npx skills add mode-io/mode-io-skills --skill skill-audit --agent opencode --yes --copy
-npx skills add mode-io/mode-io-skills --skill modeio-middleware --agent opencode --yes --copy
 ```
 
-For maintainers publishing from source:
+Swap `privacy-protector` for `security`, `skill-audit`, or `modeio-middleware`, and swap `codex` for `claude-code` or `opencode` as needed.
 
-```bash
-clawhub publish /path/to/mode-io-skills/privacy-protector
-clawhub publish /path/to/mode-io-skills/security
-clawhub publish /path/to/mode-io-skills/skill-audit
-clawhub publish /path/to/mode-io-skills/modeio-middleware
-```
+## Learn More
 
-Then use sync for ongoing updates:
-
-```bash
-clawhub sync --root /path/to/mode-io-skills
-```
-
-## Maintainer Validation
-
-Typical focused validation commands:
-
-```bash
-python3 -m unittest discover privacy-protector/tests -p 'test_*.py'
-python3 -m unittest discover security/tests -p 'test_*.py'
-python3 -m unittest discover skill-audit/tests -p 'test_*.py'
-bash privacy-protector/scripts/smoke_redact.sh
-python3 skill-audit/scripts/skill_safety_assessment.py evaluate --target-repo privacy-protector --json
-```
-
-These tests and maintainer helpers are not part of the ClawHub upload surface.
-
-## Related Repos
-
-- Website: [modeio.ai](https://www.modeio.ai/)
-- Standalone middleware product: [mode-io/mode-io-middleware](https://github.com/mode-io/mode-io-middleware)
+- [`privacy-protector/SKILL.md`](./privacy-protector/SKILL.md)
+- [`security/SKILL.md`](./security/SKILL.md)
+- [`skill-audit/SKILL.md`](./skill-audit/SKILL.md)
+- [`modeio-middleware/SKILL.md`](./modeio-middleware/SKILL.md)
 
 ## License
 
-This repository is licensed under Apache License 2.0. Each distributed skill folder also carries its own `LICENSE` and `NOTICE`.
+Apache License 2.0.
