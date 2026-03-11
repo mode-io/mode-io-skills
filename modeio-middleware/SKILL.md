@@ -7,7 +7,7 @@ description: >-
   built-in monitoring surface.
 version: 0.1.0
 metadata:
-  openclaw:
+  clawdbot:
     homepage: https://github.com/mode-io/mode-io-middleware
     requires:
       bins:

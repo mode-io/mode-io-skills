@@ -7,7 +7,7 @@ description: >-
   produce evidence-backed findings for pre-install security screening.
 version: 0.1.0
 metadata:
-  openclaw:
+  clawdbot:
     homepage: https://github.com/mode-io/mode-io-skills/tree/main/skill-audit
     requires:
       bins:

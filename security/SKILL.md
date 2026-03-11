@@ -8,7 +8,7 @@ description: >-
   read-only chat, planning, or pre-install repository auditing.
 version: 0.1.0
 metadata:
-  openclaw:
+  clawdbot:
     homepage: https://github.com/mode-io/mode-io-skills/tree/main/security
     requires:
       bins:

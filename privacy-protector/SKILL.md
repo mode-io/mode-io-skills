@@ -7,7 +7,7 @@ description: >-
   blocklist, and threshold controls.
 version: 0.1.0
 metadata:
-  openclaw:
+  clawdbot:
     homepage: https://github.com/mode-io/mode-io-skills/tree/main/privacy-protector
     requires:
       bins:
