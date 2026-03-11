@@ -51,7 +51,8 @@ modeio-skill-audit/
 - `scanners/*` own domain-specific findings.
 - `repo_intel.py` owns the GitHub OSINT precheck layer.
 - `prompt_payload.py` and `validation.py` own model-assist support without changing the deterministic scan baseline.
-- `scripts/run_repo_set.py` is the repeatable batch benchmark runner.
+- `scripts/run_repo_set.py` is the repeatable batch benchmark runner for maintainers, not the normal published skill flow.
+- `tests/` and benchmark assets stay out of the ClawHub upload surface.
 
 ## Pipeline
 

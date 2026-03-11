@@ -53,6 +53,7 @@ modeio-redact/
 - `scripts/` are stable repo-local entrypoints and smoke helpers.
 - `references/` keeps deep behavior/docs out of `SKILL.md`.
 - `examples/` contains working config artifacts, not placeholder prose.
+- `tests/` are maintainer regression coverage and stay out of the ClawHub upload surface.
 - Middleware- and guardrail-specific behavior does not live in redact.
 
 ## Core Pipelines
@@ -76,10 +77,10 @@ The package-level surface in `modeio_redact/__init__.py` intentionally exposes:
 
 That keeps downstream code from reaching through arbitrary internal modules when a stable surface is enough.
 
-## Regression Checklist
+## Maintainer Validation Checklist
 
 ```bash
-python -m unittest discover modeio-redact/tests -p "test_*.py"
-python -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
+python3 -m unittest discover modeio-redact/tests -p "test_*.py"
+python3 -m unittest discover modeio-redact/tests -p "test_smoke_matrix_extensive.py"
 bash scripts/smoke_redact.sh
 ```

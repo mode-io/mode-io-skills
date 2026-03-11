@@ -1,4 +1,7 @@
 tests/
+scripts/run_repo_set.py
+references/benchmarking.md
+references/repo_sets/
 __pycache__/
 *.pyc
 .pytest_cache/

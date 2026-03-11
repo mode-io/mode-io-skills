@@ -1,44 +1,45 @@
 ---
 name: modeio-guardrail
 description: >-
-  Runs real-time safety analysis for instructions that may trigger tool
-  execution, external calls, file edits, permission changes, destructive or
-  irreversible actions, prompt injection, or compliance-sensitive operations.
-  Use before executing instructions with side effects; skip pure read-only
-  chat, planning, or pre-install repository auditing.
-version: 1.0.0
+  Runs a backend-backed live safety check for instructions that may trigger
+  tool execution, external calls, file edits, permission changes, destructive
+  or irreversible actions, prompt injection, or compliance-sensitive
+  operations. Use before executing instructions with side effects; skip pure
+  read-only chat, planning, or pre-install repository auditing.
+version: 0.1.0
 metadata:
   openclaw:
     homepage: https://github.com/mode-io/mode-io-skills/tree/main/modeio-guardrail
     requires:
       bins:
         - python3
-      env:
-        - SAFETY_API_URL
 ---
 
-# Run live instruction safety checks
+# Run backend-backed live safety checks
 
 Use this skill to gate instructions that may trigger tools or state changes behind a backend-backed safety decision before execution.
 
 This skill is for live instruction and operation safety only. For pre-install repository auditing, use `modeio-skill-audit`.
 
+Tests are maintainer-only contract coverage and are excluded from ClawHub uploads.
+
 ## Tool routing
 
 1. Use `scripts/safety.py` for instruction and operation safety checks.
 2. Run the check before executing any instruction that may trigger tool use, external calls, file edits, permission changes, or other state changes.
-3. For state-changing work, provide both `--context` and `--target`.
+3. For state-changing work, provide both `--context` and `--target` so the backend has enough context to judge risk.
 4. If the safety check cannot be completed, treat the operation as unverified.
 
 ## Dependencies
 
-- `requests` is required for `scripts/safety.py`.
-- `SAFETY_API_URL` optionally overrides the backend endpoint.
-- Run these commands from inside the `modeio-guardrail` folder.
+- Hard requirement: `python3`
+- Required package for successful live checks: `requests`
+- Required runtime condition: network reachability to the safety backend
+- Optional override: `SAFETY_API_URL`
 
 ## Context contract
 
-Pass `--context` as JSON with these keys:
+Pass `--context` as JSON with these keys when the instruction may change state:
 
 ```json
 {
@@ -51,21 +52,27 @@ Pass `--context` as JSON with these keys:
 }
 ```
 
-`--target` must be a concrete resource identifier such as an absolute path, table name, service name, or URL.
+`--target` should be a concrete resource identifier such as an absolute path, table name, service name, or URL.
 
 ## Script
 
 ### `scripts/safety.py`
 
 ```bash
-python scripts/safety.py -i "Delete /tmp/cache/build-123.log" \
+python3 scripts/safety.py -i "Delete /tmp/cache/build-123.log" \
   -c '{"environment":"local-dev","operation_intent":"cleanup","scope":"single-resource","data_sensitivity":"internal","rollback":"easy","change_control":"none"}' \
   -t "/tmp/cache/build-123.log" --json
 
-python scripts/safety.py -i "DROP TABLE users" \
+python3 scripts/safety.py -i "DROP TABLE users" \
   -c '{"environment":"production","operation_intent":"destructive","scope":"broad","data_sensitivity":"regulated","rollback":"none","change_control":"ticket:DB-9021"}' \
   -t "postgres://prod/maindb.users" --json
 ```
+
+## JSON contract
+
+- Success envelope: `success`, `tool`, `mode`, `data`
+- Error envelope: `success`, `tool`, `mode`, `error`
+- Error types: `validation_error`, `dependency_error`, `network_error`, `api_error`
 
 ## Action policy
 
@@ -78,6 +85,8 @@ python scripts/safety.py -i "DROP TABLE users" \
 | `false` | `critical` | Block and require explicit acknowledgement before any override. |
 
 If the check fails with network/API/dependency issues, do not silently proceed.
+
+This table is caller policy guidance. The CLI itself forwards the request and returns the backend result; it does not locally enforce the action table.
 
 ## When not to use
 

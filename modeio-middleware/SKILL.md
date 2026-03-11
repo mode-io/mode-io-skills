@@ -5,22 +5,20 @@ description: >-
   `modeio-middleware` product repo. Use this thin skill wrapper to connect
   Codex, OpenCode, OpenClaw, and Claude Code to the local policy gateway and
   built-in monitoring surface.
-version: 1.0.0
+version: 0.1.0
 metadata:
   openclaw:
     homepage: https://github.com/mode-io/mode-io-middleware
     requires:
       bins:
         - python3
-        - curl
-      env:
-        - MODEIO_GATEWAY_UPSTREAM_API_KEY
-        - OPENAI_BASE_URL
 ---
 
 # Run standalone middleware gateway for Codex, Claude Code, OpenCode, and OpenClaw
 
 Use this skill when you want an agent to install, start, verify, monitor, or wire up the standalone `modeio-middleware` runtime from `https://github.com/mode-io/mode-io-middleware`.
+
+This ClawHub upload is intentionally docs-only. It does not ship the middleware runtime, runtime tests, or product source code.
 
 ## What this skill wraps
 
@@ -36,10 +34,10 @@ Use this skill when you want an agent to install, start, verify, monitor, or wir
 - `POST /connectors/claude/hooks`
 - `GET /healthz`
 - `GET /modeio/dashboard`
-- `GET /modeio/api/events`
-- `GET /modeio/api/events/{request_id}`
-- `GET /modeio/api/stats`
-- `GET /modeio/api/events/live`
+- `GET /modeio/api/v1/events`
+- `GET /modeio/api/v1/events/{request_id}`
+- `GET /modeio/api/v1/stats`
+- `GET /modeio/api/v1/events/live`
 
 ## Recommended operator flow
 
@@ -48,13 +46,7 @@ Use this skill when you want an agent to install, start, verify, monitor, or wir
 From GitHub:
 
 ```bash
-python -m pip install git+https://github.com/mode-io/mode-io-middleware
-```
-
-From a local checkout:
-
-```bash
-python -m pip install /path/to/mode-io-middleware
+python3 -m pip install git+https://github.com/mode-io/mode-io-middleware
 ```
 
 ### 2) Start the gateway
@@ -78,25 +70,25 @@ modeio-middleware-setup --health-check
 Codex CLI:
 
 ```bash
-export OPENAI_BASE_URL="http://127.0.0.1:8787/v1"
+export OPENAI_BASE_URL="http://127.0.0.1:8787/clients/codex/v1"
 ```
 
 OpenCode:
 
 ```bash
-modeio-middleware-setup --apply-opencode --create-opencode-config
+modeio-middleware-setup --apply-opencode
 ```
 
 OpenClaw:
 
 ```bash
-modeio-middleware-setup --apply-openclaw --create-openclaw-config
+modeio-middleware-setup --apply-openclaw
 ```
 
 Claude Code:
 
 ```bash
-modeio-middleware-setup --apply-claude --create-claude-settings
+modeio-middleware-setup --apply-claude
 ```
 
 ### 4) Validate health and monitoring
@@ -104,13 +96,13 @@ modeio-middleware-setup --apply-claude --create-claude-settings
 ```bash
 curl -s http://127.0.0.1:8787/healthz
 # Then visit http://127.0.0.1:8787/modeio/dashboard in a browser
-curl -s http://127.0.0.1:8787/modeio/api/events
+curl -s http://127.0.0.1:8787/modeio/api/v1/events
 ```
 
 ### 5) Watch live traffic and request outcomes
 
 - Open the built-in dashboard at `http://127.0.0.1:8787/modeio/dashboard`
-- Use `/modeio/api/events` for recent requests, `/modeio/api/stats` for summary counters, and `/modeio/api/events/live` for SSE updates
+- Use `/modeio/api/v1/events` for recent requests, `/modeio/api/v1/stats` for summary counters, and `/modeio/api/v1/events/live` for SSE updates
 - Use the standalone repo if you need to extend the dashboard implementation itself
 
 ### 6) Author or validate an external plugin
@@ -135,6 +127,7 @@ modeio-middleware-setup --uninstall --apply-opencode --apply-openclaw --apply-cl
 - The built-in dashboard, request journal, and monitoring APIs are runtime features owned by the standalone product repo; this wrapper should teach agents how to reach them.
 - Public external plugins use `stdio-jsonrpc`; `legacy_inprocess` remains internal-only in the product repo.
 - The bundled default config starts with no active plugins enabled.
+- Maintainers working from a local checkout can also `python3 -m pip install /path/to/mode-io-middleware`, but that is not the main ClawHub user path.
 
 ## When not to use
 
